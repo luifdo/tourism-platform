@@ -44,14 +44,16 @@ La inteligencia artificial **no es el objetivo principal**, sino un servicio com
 
 ## 2. Identificación de Stakeholders
 
-| Stakeholder | Rol / Interés | Expectativas principales |
-|---|---|---|
-| Turistas / visitantes | Usuarios finales de la plataforma | Encontrar, comparar y reservar servicios turísticos de forma sencilla y confiable |
-| Prestadores de servicios turísticos (hoteles, restaurantes, operadores) | Ofertan sus servicios en la plataforma | Visibilidad, gestión de disponibilidad, acceso equitativo (incluye pequeños operadores) |
-| Entidades de gestión del destino (ej. secretarías de turismo, cámara de comercio) | Interesadas en indicadores y planificación | Reportes, indicadores de demanda, apoyo a decisiones de política turística |
-| Administradores de la plataforma | Gestionan usuarios, contenido y seguridad | Herramientas de control de acceso, trazabilidad, moderación |
+La identificación y clasificación de los interesados (*stakeholders*) permite comprender sus necesidades, delimitar los límites del sistema y asegurar la trazabilidad hacia los requerimientos funcionales, atributos de calidad y restricciones del proyecto (conforme a la norma ISO/IEC/IEEE 29148:2018).
 
-> *Nota: esta tabla es un punto de partida, analizar si es necesario agregar o quitar algun stakeholder.*
+| Tipo | Stakeholder | Rol frente al sistema | Intereses / Necesidades principales |
+|---|---|---|---|
+| **Actor Directo** | **Turista nacional / internacional** | Usuario final — consulta, compara y reserva servicios. | • Información confiable y actualizada.<br>• Recomendaciones personalizadas.<br>• Proceso de reserva simple y seguro.<br>• Disponibilidad en español e inglés.<br>• Accesibilidad digital. |
+| **Actor Directo** | **Prestador de servicios turísticos** *(hoteles, restaurantes, operadores, guías)* | Proveedor de información y disponibilidad. | • Visibilidad equitativa en la plataforma.<br>• Gestión sencilla de su oferta, tarifas y disponibilidad.<br>• Protección de su información comercial sensible. |
+| **Actor Directo** | **Entidad de gestión del destino** *(Secretarías de Turismo, Cámara de Comercio, entes territoriales)* | Usuario institucional — planificación y monitoreo. | • Indicadores de demanda, ocupación y tendencias.<br>• Datos para diseño de políticas de turismo sostenible.<br>• Control y monitoreo de capacidad de carga en zonas sensibles. |
+| **Actor Directo** | **Administradores de la plataforma** | Gestión operativa y técnica del sistema. | • Gestión integral de usuarios, roles y permisos.<br>• Seguridad, trazabilidad y bitácoras de auditoría.<br>• Monitoreo de desempeño y alta disponibilidad del servicio. |
+| **Stakeholder Indirecto / Normativo** | **Ente regulador** *(Protección de datos personales / SIC)* | Stakeholder normativo — no interactúa directamente. | • Cumplimiento estricto de la Ley Estatutaria 1581 de 2012.<br>• Tratamiento transparente y seguro de datos personales (*Habeas Data*). |
+| **Stakeholder Indirecto / Proveedor** | **Proveedor de infraestructura / servicios cloud** | Soporte técnico de despliegue, hosting y operación. | • Garantizar disponibilidad mínima del sistema (≥ 99%).<br>• Escalabilidad elástica en picos de temporada.<br>• Operación contenida dentro del presupuesto límite definido (USD 20.000). |
 
 ---
 
@@ -59,53 +61,218 @@ La inteligencia artificial **no es el objetivo principal**, sino un servicio com
 
 ### 3.1 Actores identificados
 
-- **Turista** (usuario no registrado / registrado)
-- **Prestador de servicios turísticos**
-- **Administrador de la plataforma**
-- **Sistema de recomendación (IA)** (actor secundario / servicio)
+- **Turista** (`Tur`): Usuario final (visitante nacional o internacional) que consulta, reserva y califica servicios turísticos.
+- **Entidad de Gestión del Destino** (`Entidad`): Secretarías de turismo, entidades territoriales y organismos de planificación interesados en indicadores de demanda, capacidad de carga y alertas.
+- **Prestador de Servicios Turísticos** (`Prest`): Hoteles, restaurantes, operadores turísticos y guías que publican y gestionan su oferta de servicios, disponibilidad y tarifas.
+- **Administrador de la Plataforma** (`Admin`): Encargado del mantenimiento técnico, gestión de usuarios/roles, moderación de contenidos, seguridad, auditoría e integraciones externas.
 
-### 3.2 Posibles casos de usos iniciales (Falta analizar la prioridad)
+### 3.2 Casos de Uso Identificados
 
-- Consultar atractivos, actividades y eventos.
-- Buscar y filtrar servicios turísticos según preferencias.
-- Consultar disponibilidad de un servicio/actividad.
-- Reservar una actividad o servicio.
-- Recibir recomendaciones personalizadas.
-- Registrar/publicar un servicio (prestador).
-- Gestionar disponibilidad y precios (prestador).
-- Consultar indicadores de demanda (entidad de gestión / administrador).
-- Gestionar usuarios y accesos (administrador).
-- Consultar/clasificar opiniones de visitantes (según alternativa de IA elegida).
-- Detallar la informacion de los diferentes sitios turisticos/restaurantes (comida, costo, habitaciones, promociones, etc.)
-- El lenguaje de la aplicación debe ser tanto en ingles como español
+| Código | Caso de Uso | Actor(es) Principal(es) | Relaciones (`include` / `extend`) |
+|---|---|---|---|
+| **UC1** | Registrarse | Turista, Prestador | `<<include>>` UC6 |
+| **UC2** | Iniciar sesión | Turista, Entidad, Prestador, Admin | Punto de acceso autenticado |
+| **UC3** | Recuperar / cambiar contraseña | Turista | - |
+| **UC4** | Gestionar perfil propio | Turista | - |
+| **UC5** | Cambiar idioma (Español / Inglés) | Turista, Entidad | - |
+| **UC6** | Aceptar tratamiento de datos personales | Sistema / Transversal | Incluido en UC1 |
+| **UC7** | Consultar atractivos, actividades y eventos | Turista | Incluido en UC8, UC9 |
+| **UC8** | Buscar y filtrar servicios según preferencias | Turista | `<<include>>` UC7 |
+| **UC9** | Consultar detalle de sitio (comida, costo, habitaciones, promociones) | Turista | `<<include>>` UC7 |
+| **UC10** | Consultar disponibilidad de servicio/actividad | Turista | Incluido en UC11 |
+| **UC11** | Reservar actividad o servicio | Turista | `<<include>>` UC2, `<<include>>` UC10 |
+| **UC12** | Cancelar / modificar reserva | Turista | `<<include>>` UC13 |
+| **UC13** | Consultar historial de reservas | Turista | Extendido por UC14, Incluido en UC12 |
+| **UC14** | Recibir recomendaciones personalizadas | Turista | `<<extend>>` UC13 |
+| **UC15** | Calificar / comentar experiencia | Turista | Extendido por UC29 |
+| **UC16** | Consultar mapa de zonas y capacidad | Turista | - |
+| **UC17** | Registrar / publicar servicio | Prestador | `<<include>>` UC2, `<<include>>` UC28 |
+| **UC18** | Editar información de su servicio | Prestador | - |
+| **UC19** | Gestionar disponibilidad y precios | Prestador | `<<include>>` UC2 |
+| **UC20** | Gestionar reservas recibidas | Prestador | - |
+| **UC21** | Responder comentarios de visitantes | Prestador | - |
+| **UC22** | Consultar indicadores de su oferta | Prestador | - |
+| **UC23** | Consultar indicadores de demanda y ocupación | Entidad | Incluido en UC25 |
+| **UC24** | Consultar capacidad de carga de zonas turísticas | Entidad | Incluido en UC25 |
+| **UC25** | Generar reportes de planificación turística | Entidad | `<<include>>` UC23, `<<include>>` UC24 |
+| **UC26** | Publicar alertas o recomendaciones oficiales | Entidad | - |
+| **UC27** | Gestionar usuarios y roles | Admin | - |
+| **UC28** | Aprobar / verificar prestadores nuevos | Admin | Incluido en UC17 |
+| **UC29** | Moderar opiniones y contenido publicado | Admin | `<<extend>>` UC15 |
+| **UC30** | Configurar integración de fuentes externas | Admin | - |
+| **UC31** | Monitorear disponibilidad y desempeño del sistema | Admin | - |
+| **UC32** | Gestionar seguridad y control de acceso | Admin | - |
+| **UC33** | Consultar bitácora de auditoría | Admin | - |
 
-### 3.3 Diagrama (borrador en notación Mermaid)
+### 3.3 Diagrama de Casos de Uso
 
+**Visualización del Diagrama:**
 
+![Diagrama de Casos de Uso - Plataforma Digital de Turismo Santa Marta](./CasosDeUso_PlataformaTurismoSantaMarta.svg)
 
-```mermaid
-graph TD
-    Turista((Turista))
-    Prestador((Prestador de servicios))
-    Admin((Administrador))
-    IA((Sistema de recomendación))
+> *Nota: También disponible en formato PNG de alta resolución: [CasosDeUso_PlataformaTurismoSantaMarta.png](./CasosDeUso_PlataformaTurismoSantaMarta.png)*
 
-    Turista --> UC1[Consultar atractivos y actividades]
-    Turista --> UC2[Buscar/filtrar servicios]
-    Turista --> UC3[Consultar disponibilidad]
-    Turista --> UC4[Reservar actividad/servicio]
-    Turista --> UC5[Recibir recomendaciones]
-    IA --> UC5
+<details>
+<summary><b>Haz clic aquí para ver el código fuente PlantUML</b></summary>
 
-    Prestador --> UC6[Publicar/gestionar servicio]
-    Prestador --> UC7[Gestionar disponibilidad y precios]
+```plantuml
+@startuml CasosDeUso_PlataformaTurismoSantaMarta
 
-    Admin --> UC8[Gestionar usuarios y accesos]
-    Admin --> UC9[Consultar indicadores de demanda]
+skinparam dpi 300
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam ranksep 15
+skinparam nodesep 10
+hide stereotype
+
+actor Turista as Tur
+actor "Entidad de Gestión\ndel Destino" as Entidad
+
+actor "Prestador de\nServicios Turísticos" as Prest
+actor "Administrador de\nla Plataforma" as Admin
+
+rectangle "Plataforma Digital de Turismo - Santa Marta" {
+
+  ' ===== COLUMNA IZQUIERDA (Turista + Entidad) =====
+  usecase "Registrarse" as UC1
+  usecase "Iniciar sesión" as UC2
+  usecase "Recuperar / cambiar contraseña" as UC3
+  usecase "Gestionar perfil propio" as UC4
+  usecase "Cambiar idioma\n(Español / Inglés)" as UC5
+  usecase "Aceptar tratamiento\nde datos personales" as UC6
+  usecase "Consultar atractivos,\nactividades y eventos" as UC7
+  usecase "Buscar y filtrar servicios\nsegún preferencias" as UC8
+  usecase "Consultar detalle de sitio\n(comida, costo, habitaciones,\npromociones)" as UC9
+  usecase "Consultar disponibilidad\nde servicio/actividad" as UC10
+  usecase "Reservar actividad o servicio" as UC11
+  usecase "Cancelar / modificar reserva" as UC12
+  usecase "Consultar historial\nde reservas" as UC13
+  usecase "Recibir recomendaciones\npersonalizadas" as UC14
+  usecase "Calificar / comentar\nexperiencia" as UC15
+  usecase "Consultar mapa de\nzonas y capacidad" as UC16
+  usecase "Consultar indicadores\nde demanda y ocupación" as UC23
+  usecase "Consultar capacidad de carga\nde zonas turísticas" as UC24
+  usecase "Generar reportes de\nplanificación turística" as UC25
+  usecase "Publicar alertas o\nrecomendaciones oficiales" as UC26
+
+  ' Encadenado invisible para forzar apilado vertical (columna izquierda)
+  UC1 -[hidden]-> UC2
+  UC2 -[hidden]-> UC3
+  UC3 -[hidden]-> UC4
+  UC4 -[hidden]-> UC5
+  UC5 -[hidden]-> UC6
+  UC6 -[hidden]-> UC7
+  UC7 -[hidden]-> UC8
+  UC8 -[hidden]-> UC9
+  UC9 -[hidden]-> UC10
+  UC10 -[hidden]-> UC11
+  UC11 -[hidden]-> UC12
+  UC12 -[hidden]-> UC13
+  UC13 -[hidden]-> UC14
+  UC14 -[hidden]-> UC15
+  UC15 -[hidden]-> UC16
+  UC16 -[hidden]-> UC23
+  UC23 -[hidden]-> UC24
+  UC24 -[hidden]-> UC25
+  UC25 -[hidden]-> UC26
+
+  ' ===== COLUMNA DERECHA (Prestador + Administrador) =====
+  usecase "Registrar / publicar servicio" as UC17
+  usecase "Editar información\nde su servicio" as UC18
+  usecase "Gestionar disponibilidad\ny precios" as UC19
+  usecase "Gestionar reservas recibidas" as UC20
+  usecase "Responder comentarios\nde visitantes" as UC21
+  usecase "Consultar indicadores\nde su oferta" as UC22
+  usecase "Gestionar usuarios y roles" as UC27
+  usecase "Aprobar / verificar\nprestadores nuevos" as UC28
+  usecase "Moderar opiniones\ny contenido publicado" as UC29
+  usecase "Configurar integración\nde fuentes externas" as UC30
+  usecase "Monitorear disponibilidad\ny desempeño del sistema" as UC31
+  usecase "Gestionar seguridad y\ncontrol de acceso" as UC32
+  usecase "Consultar bitácora\nde auditoría" as UC33
+
+  ' Encadenado invisible para forzar apilado vertical (columna derecha)
+  UC17 -[hidden]-> UC18
+  UC18 -[hidden]-> UC19
+  UC19 -[hidden]-> UC20
+  UC20 -[hidden]-> UC21
+  UC21 -[hidden]-> UC22
+  UC22 -[hidden]-> UC27
+  UC27 -[hidden]-> UC28
+  UC28 -[hidden]-> UC29
+  UC29 -[hidden]-> UC30
+  UC30 -[hidden]-> UC31
+  UC31 -[hidden]-> UC32
+  UC32 -[hidden]-> UC33
+
+  ' Alinea el inicio de ambas columnas en la misma fila
+  UC1 -[hidden]-> UC17
+}
+
+' ----- Relaciones: Turista -----
+Tur --> UC1
+Tur --> UC2
+Tur --> UC3
+Tur --> UC4
+Tur --> UC5
+Tur --> UC7
+Tur --> UC8
+Tur --> UC9
+Tur --> UC10
+Tur --> UC11
+Tur --> UC12
+Tur --> UC13
+Tur --> UC14
+Tur --> UC15
+Tur --> UC16
+
+' ----- Relaciones: Entidad de Gestión -----
+Entidad --> UC2
+Entidad --> UC5
+Entidad --> UC23
+Entidad --> UC24
+Entidad --> UC25
+Entidad --> UC26
+
+' ----- Relaciones: Prestador -----
+UC17 <-- Prest
+UC18 <-- Prest
+UC19 <-- Prest
+UC20 <-- Prest
+UC21 <-- Prest
+UC22 <-- Prest
+UC2 <-- Prest
+UC1 <-- Prest
+
+' ----- Relaciones: Administrador -----
+UC27 <-- Admin
+UC28 <-- Admin
+UC29 <-- Admin
+UC30 <-- Admin
+UC31 <-- Admin
+UC32 <-- Admin
+UC33 <-- Admin
+UC2 <-- Admin
+
+' ----- Include / Extend -----
+UC1 .> UC6   : <<include>>
+UC11 .> UC2  : <<include>>
+UC11 .> UC10 : <<include>>
+UC12 .> UC13 : <<include>>
+UC9 .> UC7   : <<include>>
+UC8 .> UC7   : <<include>>
+UC14 .> UC13 : <<extend>>
+UC17 .> UC2  : <<include>>
+UC17 .> UC28 : <<include>>
+UC19 .> UC2  : <<include>>
+UC29 .> UC15 : <<extend>>
+UC25 .> UC23 : <<include>>
+UC25 .> UC24 : <<include>>
+
+@enduml
 ```
-> *Nota: Diagrama generado por ia nuestra compañera Nieves trabaja con el diagrama de casos de usos, poner diagrama en este apartado.*
 
-**Pendiente para el equipo:** construir el diagrama de casos de uso formal (UML) con relaciones `<<include>>` / `<<extend>>`, y priorizar cuáles son "arquitectónicamente significativos" (los que ejercitan más atributos de calidad).
+</details>
 
 ---
 

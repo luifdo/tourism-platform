@@ -55,6 +55,7 @@ La identificación y clasificación de los interesados (*stakeholders*) permite 
 | **Stakeholder Indirecto / Normativo** | **Ente regulador** *(Protección de datos personales / SIC)* | Stakeholder normativo — no interactúa directamente. | • Cumplimiento estricto de la Ley Estatutaria 1581 de 2012.<br>• Tratamiento transparente y seguro de datos personales (*Habeas Data*). |
 | **Stakeholder Indirecto / Proveedor** | **Proveedor de infraestructura / servicios cloud** | Soporte técnico de despliegue, hosting y operación. | • Garantizar disponibilidad mínima del sistema (≥ 99%).<br>• Escalabilidad elástica en picos de temporada.<br>• Operación contenida dentro del presupuesto límite definido (USD 20.000). |
 
+> **Nota**: Un actor directo se refiere a que manipula directamente el sistema y un actor indirecto se refiere a que no manipula directamente el sistema pero tiene intereses en él o recibe algún beneficio del mismo sin manipular directamente el sistema.
 ---
 
 ## 3. Diagramas de Casos de Uso

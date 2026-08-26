@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 180" width="100%" height="100%">
+  <defs>
+    <style>
+      .node-title { font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 13px; font-weight: bold; }
+      .node-sub { font-family: 'Segoe UI', sans-serif; font-size: 11px; font-style: italic; }
+      .arrow { stroke: #64748b; stroke-width: 2.2; fill: none; }
+      .label-step { font-family: 'Segoe UI', sans-serif; font-size: 10px; font-weight: bold; fill: #475569; }
+    </style>
+    <filter id="shadow7" x="-2%" y="-3%" width="104%" height="108%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow7" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <polygon points="0 0, 6 3, 0 6" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="1020" height="180" fill="#f8fafc" rx="12"/>
+
+  <!-- Step 1: Stakeholders -->
+  <g transform="translate(20, 45)">
+    <rect width="170" height="90" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.8" filter="url(#shadow7)"/>
+    <text x="85" y="38" text-anchor="middle" class="node-title" fill="#1e40af">Stakeholders</text>
+    <text x="85" y="58" text-anchor="middle" class="node-sub" fill="#3b82f6">Turista, Prestador,</text>
+    <text x="85" y="73" text-anchor="middle" class="node-sub" fill="#3b82f6">Entidad, Admin</text>
+  </g>
+
+  <!-- Arrow 1 -> 2 -->
+  <path d="M 190 90 L 225 90" class="arrow" marker-end="url(#arrow7)"/>
+  <text x="207" y="80" text-anchor="middle" class="label-step">Originan</text>
+
+  <!-- Step 2: Casos de Uso -->
+  <g transform="translate(225, 45)">
+    <rect width="170" height="90" rx="8" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.8" filter="url(#shadow7)"/>
+    <text x="85" y="38" text-anchor="middle" class="node-title" fill="#5b21b6">Casos de Uso</text>
+    <text x="85" y="58" text-anchor="middle" class="node-sub" fill="#7c3aed">UC1 a UC38</text>
+    <text x="85" y="73" text-anchor="middle" class="node-sub" fill="#7c3aed">Alcance Funcional</text>
+  </g>
+
+  <!-- Arrow 2 -> 3 -->
+  <path d="M 395 90 L 430 90" class="arrow" marker-end="url(#arrow7)"/>
+  <text x="412" y="80" text-anchor="middle" class="label-step">Definen</text>
+
+  <!-- Step 3: Requerimientos -->
+  <g transform="translate(430, 45)">
+    <rect width="170" height="90" rx="8" fill="#f0fdf4" stroke="#10b981" stroke-width="1.8" filter="url(#shadow7)"/>
+    <text x="85" y="38" text-anchor="middle" class="node-title" fill="#065f46">Requerimientos</text>
+    <text x="85" y="58" text-anchor="middle" class="node-sub" fill="#047857">RF-01 a RF-13</text>
+    <text x="85" y="73" text-anchor="middle" class="node-sub" fill="#047857">RNF-01 a RNF-12</text>
+  </g>
+
+  <!-- Arrow 3 -> 4 -->
+  <path d="M 600 90 L 635 90" class="arrow" marker-end="url(#arrow7)"/>
+  <text x="617" y="80" text-anchor="middle" class="label-step">Construyen</text>
+
+  <!-- Step 4: Microservicios -->
+  <g transform="translate(635, 45)">
+    <rect width="170" height="90" rx="8" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.8" filter="url(#shadow7)"/>
+    <text x="85" y="38" text-anchor="middle" class="node-title" fill="#92400e">Microservicios</text>
+    <text x="85" y="58" text-anchor="middle" class="node-sub" fill="#b45309">Módulos 1 a 6</text>
+    <text x="85" y="73" text-anchor="middle" class="node-sub" fill="#b45309">+ API Gateway</text>
+  </g>
+
+  <!-- Arrow 4 -> 5 -->
+  <path d="M 805 90 L 840 90" class="arrow" marker-end="url(#arrow7)"/>
+  <text x="822" y="80" text-anchor="middle" class="label-step">Validan</text>
+
+  <!-- Step 5: Escenarios de Calidad -->
+  <g transform="translate(840, 45)">
+    <rect width="160" height="90" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.8" filter="url(#shadow7)"/>
+    <text x="80" y="38" text-anchor="middle" class="node-title" fill="#064e3b">Escenarios Calidad</text>
+    <text x="80" y="58" text-anchor="middle" class="node-sub" fill="#047857">ESC-01 a ESC-07</text>
+    <text x="80" y="73" text-anchor="middle" class="node-sub" fill="#047857">Pruebas Medibles</text>
+  </g>
+</svg>

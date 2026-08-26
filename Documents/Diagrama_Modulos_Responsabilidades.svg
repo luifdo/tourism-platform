@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 440" width="100%" height="100%">
+  <defs>
+    <style>
+      .card-title { font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 14px; font-weight: bold; }
+      .card-item { font-family: 'Segoe UI', sans-serif; font-size: 12px; }
+    </style>
+    <filter id="shadow3" x="-2%" y="-3%" width="104%" height="108%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <rect width="1080" height="440" fill="#f8fafc" rx="12"/>
+
+  <!-- Row 1: M1, M2, M3 -->
+  <!-- M1: IAM & Seguridad -->
+  <g transform="translate(30, 25)">
+    <rect width="320" height="185" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.8" filter="url(#shadow3)"/>
+    <rect width="320" height="36" rx="8" fill="#dbeafe"/>
+    <text x="16" y="24" class="card-title" fill="#1e40af">Módulo 1: Seguridad &amp; IAM</text>
+    <text x="18" y="62" class="card-item" fill="#1e3a8a">• Autenticación OAuth2 / JWT sin estado</text>
+    <text x="18" y="86" class="card-item" fill="#1e3a8a">• Control de acceso RBAC multi-actor</text>
+    <text x="18" y="110" class="card-item" fill="#1e3a8a">• Verificación de prestadores (UC37/UC28)</text>
+    <text x="18" y="134" class="card-item" fill="#1e3a8a">• Bitácora de auditoría inmutable (RNF-10)</text>
+    <text x="18" y="158" class="card-item" fill="#1e3a8a">• Hashing Argon2id &amp; rate limiting en Redis</text>
+  </g>
+
+  <!-- M2: Catálogo & GIS -->
+  <g transform="translate(380, 25)">
+    <rect width="320" height="185" rx="8" fill="#f0fdf4" stroke="#10b981" stroke-width="1.8" filter="url(#shadow3)"/>
+    <rect width="320" height="36" rx="8" fill="#d1fae5"/>
+    <text x="16" y="24" class="card-title" fill="#065f46">Módulo 2: Catálogo &amp; GIS</text>
+    <text x="18" y="62" class="card-item" fill="#064e3b">• Gestión de atractivos, actividades y eventos</text>
+    <text x="18" y="86" class="card-item" fill="#064e3b">• Motor de búsqueda y filtros multicriterio</text>
+    <text x="18" y="110" class="card-item" fill="#064e3b">• Capas espaciales con OpenStreetMap (UC16)</text>
+    <text x="18" y="134" class="card-item" fill="#064e3b">• Integración con PostGIS para geo-consultas</text>
+    <text x="18" y="158" class="card-item" fill="#064e3b">• Publicación y edición de fichas turísticas</text>
+  </g>
+
+  <!-- M3: Reservas & Cupos -->
+  <g transform="translate(730, 25)">
+    <rect width="320" height="185" rx="8" fill="#fefce8" stroke="#eab308" stroke-width="1.8" filter="url(#shadow3)"/>
+    <rect width="320" height="36" rx="8" fill="#fef08a"/>
+    <text x="16" y="24" class="card-title" fill="#854d0e">Módulo 3: Reservas &amp; Cupos</text>
+    <text x="18" y="62" class="card-item" fill="#713f12">• Motor de consulta atómica de cupos</text>
+    <text x="18" y="86" class="card-item" fill="#713f12">• Ciclo de vida de solicitudes de reserva</text>
+    <text x="18" y="110" class="card-item" fill="#713f12">• Historial y gestión de reservas del turista</text>
+    <text x="18" y="134" class="card-item" fill="#713f12">• Panel del prestador para aceptar/rechazar</text>
+    <text x="18" y="158" class="card-item" fill="#713f12">• Prevención de overbooking en picos</text>
+  </g>
+
+  <!-- Row 2: M4, M5, M6 -->
+  <!-- M4: Reseñas & Moderación -->
+  <g transform="translate(30, 230)">
+    <rect width="320" height="185" rx="8" fill="#fff1f2" stroke="#f43f5e" stroke-width="1.8" filter="url(#shadow3)"/>
+    <rect width="320" height="36" rx="8" fill="#ffe4e6"/>
+    <text x="16" y="24" class="card-title" fill="#9f1239">Módulo 4: Reseñas &amp; Moderación</text>
+    <text x="18" y="62" class="card-item" fill="#881337">• Calificaciones multidimensionales (1 a 5)</text>
+    <text x="18" y="86" class="card-item" fill="#881337">• Comentarios y opiniones de experiencias</text>
+    <text x="18" y="110" class="card-item" fill="#881337">• Respuestas públicas de los operadores</text>
+    <text x="18" y="134" class="card-item" fill="#881337">• Pre-moderación heurística embebida</text>
+    <text x="18" y="158" class="card-item" fill="#881337">• Cola administrativa para revisión de reportes</text>
+  </g>
+
+  <!-- M5: IA & Recomendación -->
+  <g transform="translate(380, 230)">
+    <rect width="320" height="185" rx="8" fill="#fdf4ff" stroke="#d946ef" stroke-width="1.8" filter="url(#shadow3)"/>
+    <rect width="320" height="36" rx="8" fill="#fae8ff"/>
+    <text x="16" y="24" class="card-title" fill="#86198f">Módulo 5: IA &amp; Recomendación</text>
+    <text x="18" y="62" class="card-item" fill="#701a75">• Procesamiento asíncrono vía RabbitMQ</text>
+    <text x="18" y="86" class="card-item" fill="#701a75">• Filtrado híbrido (contenido + colaborativo)</text>
+    <text x="18" y="110" class="card-item" fill="#701a75">• Motor de explicabilidad transparente (RNF-08)</text>
+    <text x="18" y="134" class="card-item" fill="#701a75">• Generación con dataset sintético validado</text>
+    <text x="18" y="158" class="card-item" fill="#701a75">• Dispersión del flujo hacia zonas emergentes</text>
+  </g>
+
+  <!-- M6: Analítica & Destino -->
+  <g transform="translate(730, 230)">
+    <rect width="320" height="185" rx="8" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.8" filter="url(#shadow3)"/>
+    <rect width="320" height="36" rx="8" fill="#ede9fe"/>
+    <text x="16" y="24" class="card-title" fill="#5b21b6">Módulo 6: Analítica &amp; Destino</text>
+    <text x="18" y="62" class="card-item" fill="#4c1d95">• Agregación de indicadores de demanda</text>
+    <text x="18" y="86" class="card-item" fill="#4c1d95">• Estimación de capacidad de carga por zona</text>
+    <text x="18" y="110" class="card-item" fill="#4c1d95">• Tableros y exportación de reportes (CSV/PDF)</text>
+    <text x="18" y="134" class="card-item" fill="#4c1d95">• Emisión de avisos y alertas oficiales</text>
+    <text x="18" y="158" class="card-item" fill="#4c1d95">• Despacho de correos de confirmación (UC36)</text>
+  </g>
+</svg>

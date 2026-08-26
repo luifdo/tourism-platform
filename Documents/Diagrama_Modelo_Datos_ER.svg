@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 760" width="100%" height="100%">
+  <defs>
+    <style>
+      .entity-title { font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 13px; font-weight: bold; fill: #ffffff; }
+      .entity-sub { font-family: 'Segoe UI', sans-serif; font-size: 10px; fill: #e2e8f0; font-style: italic; }
+      .attr-pk { font-family: 'Segoe UI', sans-serif; font-size: 11px; font-weight: bold; fill: #b91c1c; }
+      .attr-fk { font-family: 'Segoe UI', sans-serif; font-size: 11px; font-weight: bold; fill: #4338ca; }
+      .attr-name { font-family: 'Segoe UI', sans-serif; font-size: 11px; fill: #1e293b; }
+      .attr-type { font-family: 'Courier New', monospace; font-size: 10px; fill: #64748b; }
+      .rel-line { stroke: #64748b; stroke-width: 1.8; fill: none; }
+      .rel-label { font-family: 'Segoe UI', sans-serif; font-size: 10px; fill: #475569; font-weight: 600; }
+    </style>
+    <filter id="shadow6" x="-2%" y="-3%" width="104%" height="108%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.07"/>
+    </filter>
+  </defs>
+
+  <rect width="1140" height="760" fill="#f8fafc" rx="12"/>
+
+  <!-- ==================== MÓDULO 1: IAM & SEGURIDAD ==================== -->
+  <!-- Entity: USUARIO -->
+  <g transform="translate(40, 40)">
+    <rect width="250" height="175" rx="6" fill="#ffffff" stroke="#3b82f6" stroke-width="1.5" filter="url(#shadow6)"/>
+    <rect width="250" height="32" rx="6" fill="#3b82f6"/>
+    <text x="12" y="21" class="entity-title">USUARIO</text>
+    <text x="238" y="21" text-anchor="end" class="entity-sub">M1: IAM</text>
+    
+    <text x="12" y="52" class="attr-pk">PK  id</text><text x="238" y="52" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="72" class="attr-name">    email (UK)</text><text x="238" y="72" text-anchor="end" class="attr-type">string</text>
+    <text x="12" y="92" class="attr-name">    password_hash</text><text x="238" y="92" text-anchor="end" class="attr-type">Argon2id</text>
+    <text x="12" y="112" class="attr-name">    rol</text><text x="238" y="112" text-anchor="end" class="attr-type">enum</text>
+    <text x="12" y="132" class="attr-name">    email_verificado</text><text x="238" y="132" text-anchor="end" class="attr-type">boolean</text>
+    <text x="12" y="152" class="attr-name">    habeas_data_ok</text><text x="238" y="152" text-anchor="end" class="attr-type">boolean</text>
+    <text x="12" y="172" class="attr-name">    creado_en</text><text x="238" y="172" text-anchor="end" class="attr-type">timestamp</text>
+  </g>
+
+  <!-- Entity: DOCUMENTO_VERIFICACION -->
+  <g transform="translate(40, 245)">
+    <rect width="250" height="135" rx="6" fill="#ffffff" stroke="#3b82f6" stroke-width="1.5" filter="url(#shadow6)"/>
+    <rect width="250" height="32" rx="6" fill="#3b82f6"/>
+    <text x="12" y="21" class="entity-title">DOCUMENTO_VERIFICACION</text>
+    <text x="238" y="21" text-anchor="end" class="entity-sub">M1</text>
+    
+    <text x="12" y="52" class="attr-pk">PK  id</text><text x="238" y="52" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="72" class="attr-fk">FK  usuario_id</text><text x="238" y="72" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="92" class="attr-name">    tipo_documento</text><text x="238" y="92" text-anchor="end" class="attr-type">RNT/RUT</text>
+    <text x="12" y="112" class="attr-name">    url_almacenamiento</text><text x="238" y="112" text-anchor="end" class="attr-type">string</text>
+    <text x="12" y="132" class="attr-name">    estado</text><text x="238" y="132" text-anchor="end" class="attr-type">enum</text>
+  </g>
+
+  <!-- Entity: BITACORA_AUDITORIA -->
+  <g transform="translate(40, 410)">
+    <rect width="250" height="135" rx="6" fill="#ffffff" stroke="#3b82f6" stroke-width="1.5" filter="url(#shadow6)"/>
+    <rect width="250" height="32" rx="6" fill="#3b82f6"/>
+    <text x="12" y="21" class="entity-title">BITACORA_AUDITORIA</text>
+    <text x="238" y="21" text-anchor="end" class="entity-sub">M1</text>
+    
+    <text x="12" y="52" class="attr-pk">PK  id</text><text x="238" y="52" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="72" class="attr-fk">FK  usuario_id</text><text x="238" y="72" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="92" class="attr-name">    accion</text><text x="238" y="92" text-anchor="end" class="attr-type">string</text>
+    <text x="12" y="112" class="attr-name">    ip_origen</text><text x="238" y="112" text-anchor="end" class="attr-type">string</text>
+    <text x="12" y="132" class="attr-name">    detalles</text><text x="238" y="132" text-anchor="end" class="attr-type">jsonb</text>
+  </g>
+
+  <!-- ==================== MÓDULO 2: CATÁLOGO & GIS ==================== -->
+  <!-- Entity: PRESTADOR_PERFIL -->
+  <g transform="translate(430, 40)">
+    <rect width="270" height="135" rx="6" fill="#ffffff" stroke="#10b981" stroke-width="1.5" filter="url(#shadow6)"/>
+    <rect width="270" height="32" rx="6" fill="#10b981"/>
+    <text x="12" y="21" class="entity-title">PRESTADOR_PERFIL</text>
+    <text x="258" y="21" text-anchor="end" class="entity-sub">M2: GIS</text>
+    
+    <text x="12" y="52" class="attr-pk">PK  id</text><text x="258" y="52" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="72" class="attr-fk">FK  usuario_id</text><text x="258" y="72" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="92" class="attr-name">    razon_social</text><text x="258" y="92" text-anchor="end" class="attr-type">string</text>
+    <text x="12" y="112" class="attr-name">    telefono</text><text x="258" y="112" text-anchor="end" class="attr-type">string</text>
+    <text x="12" y="132" class="attr-name">    direccion</text><text x="258" y="132" text-anchor="end" class="attr-type">string</text>
+  </g>
+
+  <!-- Entity: ATRACTIVO_SERVICIO -->
+  <g transform="translate(430, 215)">
+    <rect width="270" height="175" rx="6" fill="#ffffff" stroke="#10b981" stroke-width="1.5" filter="url(#shadow6)"/>
+    <rect width="270" height="32" rx="6" fill="#10b981"/>
+    <text x="12" y="21" class="entity-title">ATRACTIVO_SERVICIO</text>
+    <text x="258" y="21" text-anchor="end" class="entity-sub">M2: GIS</text>
+    
+    <text x="12" y="52" class="attr-pk">PK  id</text><text x="258" y="52" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="72" class="attr-fk">FK  prestador_id</text><text x="258" y="72" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="92" class="attr-name">    nombre</text><text x="258" y="92" text-anchor="end" class="attr-type">string</text>
+    <text x="12" y="112" class="attr-name">    categoria</text><text x="258" y="112" text-anchor="end" class="attr-type">enum</text>
+    <text x="12" y="132" class="attr-name">    coordenadas_gis</text><text x="258" y="132" text-anchor="end" class="attr-type">PostGIS Point</text>
+    <text x="12" y="152" class="attr-name">    tarifa_base</text><text x="258" y="152" text-anchor="end" class="attr-type">decimal</text>
+    <text x="12" y="172" class="attr-name">    imagenes_urls</text><text x="258" y="172" text-anchor="end" class="attr-type">string[]</text>
+  </g>
+
+  <!-- ==================== MÓDULO 3: RESERVAS & DISPONIBILIDAD ==================== -->
+  <!-- Entity: DISPONIBILIDAD_CUPO -->
+  <g transform="translate(430, 420)">
+    <rect width="270" height="135" rx="6" fill="#ffffff" stroke="#eab308" stroke-width="1.5" filter="url(#shadow6)"/>
+    <rect width="270" height="32" rx="6" fill="#eab308"/>
+    <text x="12" y="21" class="entity-title" fill="#713f12">DISPONIBILIDAD_CUPO</text>
+    <text x="258" y="21" text-anchor="end" class="entity-sub">M3: Reservas</text>
+    
+    <text x="12" y="52" class="attr-pk">PK  id</text><text x="258" y="52" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="72" class="attr-fk">FK  servicio_id</text><text x="258" y="72" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="92" class="attr-name">    fecha</text><text x="258" y="92" text-anchor="end" class="attr-type">date</text>
+    <text x="12" y="112" class="attr-name">    cupos_totales</text><text x="258" y="112" text-anchor="end" class="attr-type">int</text>
+    <text x="12" y="132" class="attr-name">    cupos_disponibles</text><text x="258" y="132" text-anchor="end" class="attr-type">int</text>
+  </g>
+
+  <!-- Entity: SOLICITUD_RESERVA -->
+  <g transform="translate(430, 580)">
+    <rect width="270" height="155" rx="6" fill="#ffffff" stroke="#eab308" stroke-width="1.5" filter="url(#shadow6)"/>
+    <rect width="270" height="32" rx="6" fill="#eab308"/>
+    <text x="12" y="21" class="entity-title" fill="#713f12">SOLICITUD_RESERVA</text>
+    <text x="258" y="21" text-anchor="end" class="entity-sub">M3: Reservas</text>
+    
+    <text x="12" y="52" class="attr-pk">PK  id</text><text x="258" y="52" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="72" class="attr-fk">FK  turista_id</text><text x="258" y="72" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="92" class="attr-fk">FK  servicio_id</text><text x="258" y="92" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="112" class="attr-name">    fecha_reserva</text><text x="258" y="112" text-anchor="end" class="attr-type">date</text>
+    <text x="12" y="132" class="attr-name">    numero_personas</text><text x="258" y="132" text-anchor="end" class="attr-type">int</text>
+    <text x="12" y="152" class="attr-name">    estado</text><text x="258" y="152" text-anchor="end" class="attr-type">enum</text>
+  </g>
+
+  <!-- ==================== MÓDULO 4: RESEÑAS & MODERACIÓN ==================== -->
+  <!-- Entity: RESENA_OPINION -->
+  <g transform="translate(830, 40)">
+    <rect width="270" height="175" rx="6" fill="#ffffff" stroke="#f43f5e" stroke-width="1.5" filter="url(#shadow6)"/>
+    <rect width="270" height="32" rx="6" fill="#f43f5e"/>
+    <text x="12" y="21" class="entity-title">RESENA_OPINION</text>
+    <text x="258" y="21" text-anchor="end" class="entity-sub">M4: MongoDB</text>
+    
+    <text x="12" y="52" class="attr-pk">PK  _id</text><text x="258" y="52" text-anchor="end" class="attr-type">ObjectId</text>
+    <text x="12" y="72" class="attr-fk">REF servicio_id</text><text x="258" y="72" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="92" class="attr-fk">REF turista_id</text><text x="258" y="92" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="112" class="attr-name">    puntuacion (1-5)</text><text x="258" y="112" text-anchor="end" class="attr-type">int</text>
+    <text x="12" y="132" class="attr-name">    comentario</text><text x="258" y="132" text-anchor="end" class="attr-type">string</text>
+    <text x="12" y="152" class="attr-name">    estado_moderacion</text><text x="258" y="152" text-anchor="end" class="attr-type">enum</text>
+    <text x="12" y="172" class="attr-name">    respuesta_prestador</text><text x="258" y="172" text-anchor="end" class="attr-type">string</text>
+  </g>
+
+  <!-- ==================== MÓDULO 5: IA & RECOMENDACIONES ==================== -->
+  <!-- Entity: RECOMENDACION_LOG -->
+  <g transform="translate(830, 245)">
+    <rect width="270" height="155" rx="6" fill="#ffffff" stroke="#d946ef" stroke-width="1.5" filter="url(#shadow6)"/>
+    <rect width="270" height="32" rx="6" fill="#d946ef"/>
+    <text x="12" y="21" class="entity-title">RECOMENDACION_LOG</text>
+    <text x="258" y="21" text-anchor="end" class="entity-sub">M5: IA</text>
+    
+    <text x="12" y="52" class="attr-pk">PK  id</text><text x="258" y="52" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="72" class="attr-fk">FK  turista_id</text><text x="258" y="72" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="92" class="attr-fk">FK  servicio_id</text><text x="258" y="92" text-anchor="end" class="attr-type">uuid</text>
+    <text x="12" y="112" class="attr-name">    puntaje_afinidad</text><text x="258" y="112" text-anchor="end" class="attr-type">float</text>
+    <text x="12" y="132" class="attr-name">    justificacion (RNF-08)</text><text x="258" y="132" text-anchor="end" class="attr-type">string</text>
+    <text x="12" y="152" class="attr-name">    fecha_generacion</text><text x="258" y="152" text-anchor="end" class="attr-type">timestamp</text>
+  </g>
+
+  <!-- Connectors -->
+  <!-- Usuario -> Prestador Perfil -->
+  <path d="M 290 100 L 430 100" class="rel-line"/>
+  <text x="360" y="92" text-anchor="middle" class="rel-label">1:1</text>
+
+  <!-- Prestador Perfil -> Atractivo Servicio -->
+  <path d="M 565 175 L 565 215" class="rel-line"/>
+  <text x="580" y="200" class="rel-label">1:N</text>
+
+  <!-- Atractivo Servicio -> Disponibilidad Cupo -->
+  <path d="M 565 390 L 565 420" class="rel-line"/>
+  <text x="580" y="410" class="rel-label">1:N</text>
+
+  <!-- Atractivo Servicio -> Solicitud Reserva -->
+  <path d="M 565 555 L 565 580" class="rel-line"/>
+  <text x="580" y="570" class="rel-label">1:N</text>
+
+  <!-- Atractivo Servicio -> Resena Opinion -->
+  <path d="M 700 290 L 830 120" class="rel-line"/>
+  <text x="765" y="195" class="rel-label">1:N</text>
+
+  <!-- Atractivo Servicio -> Recomendacion Log -->
+  <path d="M 700 320 L 830 320" class="rel-line"/>
+  <text x="765" y="312" class="rel-label">1:N</text>
+</svg>

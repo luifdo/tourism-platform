@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 360" width="100%" height="100%">
+  <defs>
+    <style>
+      .timeline-title { font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 16px; font-weight: bold; fill: #0f172a; }
+      .header-text { font-family: 'Segoe UI', sans-serif; font-size: 11px; font-weight: bold; fill: #475569; }
+      .phase-name { font-family: 'Segoe UI', sans-serif; font-size: 12px; font-weight: bold; fill: #1e293b; }
+      .phase-dates { font-family: 'Segoe UI', sans-serif; font-size: 11px; fill: #64748b; }
+      .bar-label { font-family: 'Segoe UI', sans-serif; font-size: 11px; font-weight: bold; fill: #ffffff; }
+      .grid-line { stroke: #e2e8f0; stroke-width: 1; stroke-dasharray: 2,2; }
+    </style>
+    <filter id="shadow4" x="-2%" y="-3%" width="104%" height="108%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="1000" height="360" fill="#f8fafc" rx="12"/>
+
+  <!-- Title -->
+  <text x="30" y="38" class="timeline-title">Cronograma General de Ejecución (14 Semanas Reales)</text>
+
+  <!-- Table Header Background -->
+  <rect x="30" y="60" width="940" height="30" rx="4" fill="#e2e8f0"/>
+  <text x="45" y="80" class="header-text">FASE Y ENTREGABLE</text>
+  <text x="350" y="80" class="header-text">SEMANAS (1 a 14)</text>
+
+  <!-- Week grid columns (14 weeks) -->
+  <!-- 350 to 950 = 600px width / 14 weeks ≈ 42.85px per week -->
+  <g transform="translate(350, 60)">
+    <!-- Week labels -->
+    <text x="21" y="20" text-anchor="middle" class="header-text">S1-2</text>
+    <text x="64" y="20" text-anchor="middle" class="header-text">S3-4</text>
+    <text x="107" y="20" text-anchor="middle" class="header-text">S5-6</text>
+    <text x="150" y="20" text-anchor="middle" class="header-text">S7</text>
+    <text x="193" y="20" text-anchor="middle" class="header-text">S8</text>
+    <text x="236" y="20" text-anchor="middle" class="header-text">S9</text>
+    <text x="279" y="20" text-anchor="middle" class="header-text">S10</text>
+    <text x="322" y="20" text-anchor="middle" class="header-text">S11</text>
+    <text x="365" y="20" text-anchor="middle" class="header-text">S12</text>
+    <text x="408" y="20" text-anchor="middle" class="header-text">S13</text>
+    <text x="451" y="20" text-anchor="middle" class="header-text">S14</text>
+
+    <!-- Vertical grid lines -->
+    <line x1="0" y1="30" x2="0" y2="280" class="grid-line"/>
+    <line x1="86" y1="30" x2="86" y2="280" class="grid-line"/>
+    <line x1="172" y1="30" x2="172" y2="280" class="grid-line"/>
+    <line x1="258" y1="30" x2="258" y2="280" class="grid-line"/>
+    <line x1="387" y1="30" x2="387" y2="280" class="grid-line"/>
+    <line x1="515" y1="30" x2="515" y2="280" class="grid-line"/>
+    <line x1="600" y1="30" x2="600" y2="280" class="grid-line"/>
+  </g>
+
+  <!-- Row 1: Fase 1 -->
+  <g transform="translate(30, 105)">
+    <text x="15" y="20" class="phase-name">1. Requerimientos &amp; Contexto</text>
+    <text x="15" y="36" class="phase-dates">24 ago – 6 sep (Congelación v2.0)</text>
+    <!-- Bar: Week 1-2 (width ≈ 86px) -->
+    <rect x="320" y="8" width="86" height="30" rx="5" fill="#3b82f6" filter="url(#shadow4)"/>
+    <text x="363" y="27" text-anchor="middle" class="bar-label">Fase 1</text>
+  </g>
+
+  <!-- Row 2: Fase 2 -->
+  <g transform="translate(30, 155)">
+    <text x="15" y="20" class="phase-name">2. Comparación de Arquitecturas</text>
+    <text x="15" y="36" class="phase-dates">7 sep – 20 sep (Selección de Patrones)</text>
+    <!-- Bar: Week 3-4 (width ≈ 86px) -->
+    <rect x="406" y="8" width="86" height="30" rx="5" fill="#6366f1" filter="url(#shadow4)"/>
+    <text x="449" y="27" text-anchor="middle" class="bar-label">Fase 2</text>
+  </g>
+
+  <!-- Row 3: Fase 3 -->
+  <g transform="translate(30, 205)">
+    <text x="15" y="20" class="phase-name">3. Diseño Arquitectónico &amp; Mockups</text>
+    <text x="15" y="36" class="phase-dates">21 sep – 4 oct (Diseño Técnico &amp; Figma)</text>
+    <!-- Bar: Week 5-6 (width ≈ 86px) -->
+    <rect x="492" y="8" width="86" height="30" rx="5" fill="#8b5cf6" filter="url(#shadow4)"/>
+    <text x="535" y="27" text-anchor="middle" class="bar-label">Fase 3</text>
+  </g>
+
+  <!-- Row 4: Fase 4 -->
+  <g transform="translate(30, 255)">
+    <text x="15" y="20" class="phase-name">4. Implementación del Prototipo</text>
+    <text x="15" y="36" class="phase-dates">5 oct – 15 nov (≥60% Must Have)</text>
+    <!-- Bar: Week 7-12 (width ≈ 258px) -->
+    <rect x="578" y="8" width="258" height="30" rx="5" fill="#10b981" filter="url(#shadow4)"/>
+    <text x="707" y="27" text-anchor="middle" class="bar-label">Fase 4 (Construcción &amp; Despliegue)</text>
+  </g>
+
+  <!-- Row 5: Fase 5 -->
+  <g transform="translate(30, 305)">
+    <text x="15" y="20" class="phase-name">5. Validación, Cierre &amp; Sustentación</text>
+    <text x="15" y="36" class="phase-dates">16 nov – 29 nov (Pruebas de Carga &amp; Informe)</text>
+    <!-- Bar: Week 13-14 (width ≈ 86px) -->
+    <rect x="836" y="8" width="86" height="30" rx="5" fill="#f59e0b" filter="url(#shadow4)"/>
+    <text x="879" y="27" text-anchor="middle" class="bar-label">Fase 5</text>
+  </g>
+</svg>

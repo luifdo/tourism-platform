@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 440" width="100%" height="100%">
+  <defs>
+    <style>
+      .chart-title { font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 16px; font-weight: bold; fill: #0f172a; }
+      .chart-subtitle { font-family: 'Segoe UI', sans-serif; font-size: 12px; fill: #64748b; }
+      .legend-title { font-family: 'Segoe UI', sans-serif; font-size: 13px; font-weight: bold; fill: #1e293b; }
+      .legend-amount { font-family: 'Segoe UI', sans-serif; font-size: 12px; font-weight: bold; fill: #047857; }
+      .legend-pct { font-family: 'Segoe UI', sans-serif; font-size: 11px; fill: #64748b; }
+      .donut-total { font-family: 'Segoe UI', sans-serif; font-size: 22px; font-weight: bold; fill: #0f172a; }
+      .donut-sub { font-family: 'Segoe UI', sans-serif; font-size: 11px; font-weight: 600; fill: #64748b; }
+    </style>
+    <filter id="shadow5" x="-2%" y="-3%" width="104%" height="108%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.07"/>
+    </filter>
+  </defs>
+
+  <rect width="880" height="440" fill="#f8fafc" rx="12"/>
+
+  <!-- Title -->
+  <text x="40" y="40" class="chart-title">Distribución Presupuestal — Escenario B (Despliegue Institucional a 12 Meses)</text>
+  <text x="40" y="60" class="chart-subtitle">Ejecución total del presupuesto: USD 20.000 para operación, ciberseguridad, cartografía e inclusión</text>
+
+  <!-- Donut Chart Graphics (Center at x: 220, y: 240, r: 120, inner r: 70) -->
+  <g transform="translate(220, 240)">
+    <!-- Segment 1: 36% (0 to 129.6 deg) - Color: #3b82f6 (Infraestructura) -->
+    <!-- Start: (0, -120), End: (120*sin(129.6), -120*cos(129.6)) = (92.46, 76.5) -->
+    <path d="M 0 -120 A 120 120 0 0 1 92.46 76.5 L 53.93 44.62 A 70 70 0 0 0 0 -70 Z" fill="#3b82f6"/>
+
+    <!-- Segment 2: 18% (129.6 to 194.4 deg) - Color: #10b981 (Cartografía) -->
+    <!-- End: (120*sin(194.4), -120*cos(194.4)) = (-29.85, 116.22) -->
+    <path d="M 92.46 76.5 A 120 120 0 0 1 -29.85 116.22 L -17.41 67.8 A 70 70 0 0 0 53.93 44.62 Z" fill="#10b981"/>
+
+    <!-- Segment 3: 16% (194.4 to 252 deg) - Color: #8b5cf6 (Ciberseguridad) -->
+    <!-- End: (120*sin(252), -120*cos(252)) = (-114.13, 37.08) -->
+    <path d="M -29.85 116.22 A 120 120 0 0 1 -114.13 37.08 L -66.57 21.63 A 70 70 0 0 0 -17.41 67.8 Z" fill="#8b5cf6"/>
+
+    <!-- Segment 4: 16% (252 to 309.6 deg) - Color: #f59e0b (Capacitación) -->
+    <!-- End: (120*sin(309.6), -120*cos(309.6)) = (-92.46, -76.5) -->
+    <path d="M -114.13 37.08 A 120 120 0 0 1 -92.46 -76.5 L -53.93 -44.62 A 70 70 0 0 0 -66.57 21.63 Z" fill="#f59e0b"/>
+
+    <!-- Segment 5: 14% (309.6 to 360 deg) - Color: #06b6d4 (Observabilidad & Contingencia) -->
+    <path d="M -92.46 -76.5 A 120 120 0 0 1 0 -120 L 0 -70 A 70 70 0 0 0 -53.93 -44.62 Z" fill="#06b6d4"/>
+
+    <!-- Center Label -->
+    <circle cx="0" cy="0" r="65" fill="#ffffff" filter="url(#shadow5)"/>
+    <text x="0" y="-3" text-anchor="middle" class="donut-total">$20.000</text>
+    <text x="0" y="16" text-anchor="middle" class="donut-sub">USD TOTAL</text>
+  </g>
+
+  <!-- Legend Cards on Right (x: 440 to 840) -->
+  <g transform="translate(440, 90)">
+    <!-- Item 1 -->
+    <g transform="translate(0, 0)">
+      <rect width="400" height="54" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2" filter="url(#shadow5)"/>
+      <rect x="12" y="14" width="14" height="26" rx="3" fill="#3b82f6"/>
+      <text x="36" y="27" class="legend-title">Infraestructura Cloud Multi-AZ (12 meses)</text>
+      <text x="36" y="44" class="legend-pct">Cómputo Kubernetes, PostgreSQL Multi-AZ, S3, CDN</text>
+      <text x="385" y="34" text-anchor="end" class="legend-amount">$7.200 (36%)</text>
+    </g>
+
+    <!-- Item 2 -->
+    <g transform="translate(0, 64)">
+      <rect width="400" height="54" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2" filter="url(#shadow5)"/>
+      <rect x="12" y="14" width="14" height="26" rx="3" fill="#10b981"/>
+      <text x="36" y="27" class="legend-title">Levantamiento de Datos &amp; Cartografía SIG</text>
+      <text x="36" y="44" class="legend-pct">Georreferenciación 100+ prestadores, fotos abiertas</text>
+      <text x="385" y="34" text-anchor="end" class="legend-amount">$3.600 (18%)</text>
+    </g>
+
+    <!-- Item 3 -->
+    <g transform="translate(0, 128)">
+      <rect width="400" height="54" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2" filter="url(#shadow5)"/>
+      <rect x="12" y="14" width="14" height="26" rx="3" fill="#8b5cf6"/>
+      <text x="36" y="27" class="legend-title">Auditoría Ciberseguridad &amp; Pentesting</text>
+      <text x="36" y="44" class="legend-pct">Pentesting OWASP Top 10, Habeas Data Ley 1581, SIC</text>
+      <text x="385" y="34" text-anchor="end" class="legend-amount">$3.200 (16%)</text>
+    </g>
+
+    <!-- Item 4 -->
+    <g transform="translate(0, 192)">
+      <rect width="400" height="54" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2" filter="url(#shadow5)"/>
+      <rect x="12" y="14" width="14" height="26" rx="3" fill="#f59e0b"/>
+      <text x="36" y="27" class="legend-title">Capacitación &amp; Adopción MiPyMEs</text>
+      <text x="36" y="44" class="legend-pct">4 talleres presenciales comunitarios y kits didácticos</text>
+      <text x="385" y="34" text-anchor="end" class="legend-amount">$3.200 (16%)</text>
+    </g>
+
+    <!-- Item 5 -->
+    <g transform="translate(0, 256)">
+      <rect width="400" height="54" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2" filter="url(#shadow5)"/>
+      <rect x="12" y="14" width="14" height="26" rx="3" fill="#06b6d4"/>
+      <text x="36" y="27" class="legend-title">Observabilidad, SSL EV &amp; Contingencia</text>
+      <text x="36" y="44" class="legend-pct">Monitoreo Prometheus/Grafana 24/7, reserva técnica (8%)</text>
+      <text x="385" y="34" text-anchor="end" class="legend-amount">$2.800 (14%)</text>
+    </g>
+  </g>
+</svg>

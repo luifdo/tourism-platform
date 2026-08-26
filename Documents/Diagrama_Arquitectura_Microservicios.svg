@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 820" width="100%" height="100%">
+  <defs>
+    <style>
+      .title { font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 16px; font-weight: bold; fill: #0f172a; }
+      .subtitle { font-family: 'Segoe UI', sans-serif; font-size: 12px; fill: #64748b; }
+      .node-title { font-family: 'Segoe UI', sans-serif; font-size: 13px; font-weight: bold; }
+      .node-desc { font-family: 'Segoe UI', sans-serif; font-size: 11px; font-style: italic; }
+      .group-title { font-family: 'Segoe UI', sans-serif; font-size: 14px; font-weight: bold; }
+      .wire { stroke: #64748b; stroke-width: 1.8; fill: none; }
+      .wire-event { stroke: #d97706; stroke-width: 1.8; stroke-dasharray: 4,3; fill: none; }
+      .wire-db { stroke: #047857; stroke-width: 1.5; fill: none; }
+    </style>
+    <filter id="shadow2" x="-2%" y="-3%" width="104%" height="108%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.07"/>
+    </filter>
+    <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <polygon points="0 0, 6 3, 0 6" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-event" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <polygon points="0 0, 6 3, 0 6" fill="#d97706"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1080" height="820" fill="#f8fafc" rx="12"/>
+
+  <!-- ==================== TIER 1: CLIENTS ==================== -->
+  <rect x="240" y="25" width="600" height="55" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.8" filter="url(#shadow2)"/>
+  <text x="540" y="47" text-anchor="middle" class="node-title" fill="#1e40af">Clientes Web Responsivos &amp; Móviles</text>
+  <text x="540" y="66" text-anchor="middle" class="node-desc" fill="#3b82f6">Turistas, Prestadores de Servicios, Entidades de Gestión del Destino, Administradores</text>
+
+  <!-- Connection: Clients to Gateway -->
+  <path d="M 540 80 L 540 115" class="wire" marker-end="url(#arrow)"/>
+  <text x="548" y="102" font-family="'Segoe UI', sans-serif" font-size="11px" font-weight="bold" fill="#475569">HTTPS / REST</text>
+
+  <!-- ==================== TIER 2: API GATEWAY ==================== -->
+  <rect x="180" y="120" width="720" height="60" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow2)"/>
+  <text x="540" y="145" text-anchor="middle" class="node-title" fill="#5b21b6">API Gateway &amp; Reverse Proxy (Nginx / Traefik)</text>
+  <text x="540" y="165" text-anchor="middle" class="node-desc" fill="#7c3aed">Terminación TLS/HTTPS • Validación Perimetral JWT • Rate Limiting • Balanceo &amp; CORS</text>
+
+  <!-- ==================== TIER 3: MICROSERVICES ==================== -->
+  <rect x="30" y="215" width="1020" height="235" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow2)"/>
+  <text x="50" y="240" class="group-title" fill="#334155">Ecosistema de Microservicios FOSS (Bounded Contexts)</text>
+
+  <!-- MS1: IAM & Seguridad -->
+  <g transform="translate(50, 255)">
+    <rect width="290" height="80" rx="7" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6" filter="url(#shadow2)"/>
+    <text x="15" y="28" class="node-title" fill="#14532d">Módulo 1: Seguridad &amp; IAM</text>
+    <text x="15" y="48" class="node-desc" fill="#15803d">Auth OAuth2/JWT • Roles RBAC</text>
+    <text x="15" y="65" class="node-desc" fill="#15803d">Auditoría Inmutable • Verificación RNT</text>
+  </g>
+
+  <!-- MS2: Catálogo & GIS -->
+  <g transform="translate(395, 255)">
+    <rect width="290" height="80" rx="7" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6" filter="url(#shadow2)"/>
+    <text x="15" y="28" class="node-title" fill="#14532d">Módulo 2: Catálogo &amp; GIS</text>
+    <text x="15" y="48" class="node-desc" fill="#15803d">Atractivos • Filtros Multicriterio</text>
+    <text x="15" y="65" class="node-desc" fill="#15803d">Capas OpenStreetMap • Fichas Operadores</text>
+  </g>
+
+  <!-- MS3: Reservas & Cupos -->
+  <g transform="translate(740, 255)">
+    <rect width="290" height="80" rx="7" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6" filter="url(#shadow2)"/>
+    <text x="15" y="28" class="node-title" fill="#14532d">Módulo 3: Reservas &amp; Cupos</text>
+    <text x="15" y="48" class="node-desc" fill="#15803d">Motor de Cupos en Tiempo Real</text>
+    <text x="15" y="65" class="node-desc" fill="#15803d">Solicitudes • Panel de Prestadores</text>
+  </g>
+
+  <!-- MS4: Reseñas & Moderación -->
+  <g transform="translate(50, 350)">
+    <rect width="290" height="80" rx="7" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6" filter="url(#shadow2)"/>
+    <text x="15" y="28" class="node-title" fill="#14532d">Módulo 4: Reseñas &amp; Moderación</text>
+    <text x="15" y="48" class="node-desc" fill="#15803d">Calificaciones &amp; Comentarios</text>
+    <text x="15" y="65" class="node-desc" fill="#15803d">Pre-moderación Heurística Embebida</text>
+  </g>
+
+  <!-- MS5: IA & Recomendación -->
+  <g transform="translate(395, 350)">
+    <rect width="290" height="80" rx="7" fill="#fdf4ff" stroke="#c026d3" stroke-width="1.6" filter="url(#shadow2)"/>
+    <text x="15" y="28" class="node-title" fill="#701a75">Módulo 5: IA &amp; Recomendación</text>
+    <text x="15" y="48" class="node-desc" fill="#a21caf">Worker Asíncrono • Filtrado Híbrido</text>
+    <text x="15" y="65" class="node-desc" fill="#a21caf">Explicabilidad Ética (RNF-08)</text>
+  </g>
+
+  <!-- MS6: Analítica & Destino -->
+  <g transform="translate(740, 350)">
+    <rect width="290" height="80" rx="7" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6" filter="url(#shadow2)"/>
+    <text x="15" y="28" class="node-title" fill="#14532d">Módulo 6: Analítica &amp; Destino</text>
+    <text x="15" y="48" class="node-desc" fill="#15803d">Capacidad de Carga • Reportes Entidad</text>
+    <text x="15" y="65" class="node-desc" fill="#15803d">Alertas Oficiales • Worker de Correos</text>
+  </g>
+
+  <!-- Connections from Gateway to Services -->
+  <path d="M 280 180 L 195 255" class="wire" marker-end="url(#arrow)"/>
+  <path d="M 540 180 L 540 255" class="wire" marker-end="url(#arrow)"/>
+  <path d="M 780 180 L 885 255" class="wire" marker-end="url(#arrow)"/>
+  <path d="M 220 180 C 120 220, 100 280, 100 350" class="wire" marker-end="url(#arrow)"/>
+  <path d="M 850 180 C 950 220, 970 280, 970 350" class="wire" marker-end="url(#arrow)"/>
+
+  <!-- ==================== TIER 4: MESSAGE BROKER ==================== -->
+  <rect x="180" y="475" width="720" height="60" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.8" filter="url(#shadow2)"/>
+  <text x="540" y="500" text-anchor="middle" class="node-title" fill="#78350f">Bus de Mensajería &amp; Eventos Asíncronos (RabbitMQ / Redis Streams)</text>
+  <text x="540" y="520" text-anchor="middle" class="node-desc" fill="#b45309">Patrón Pub/Sub • Desacople de IA • Notificaciones Transaccionales • Eventos de Auditoría</text>
+
+  <!-- Event Connections -->
+  <path d="M 885 335 L 885 475" class="wire-event" marker-end="url(#arrow-event)"/>
+  <path d="M 195 430 L 195 475" class="wire-event" marker-end="url(#arrow-event)"/>
+  <path d="M 450 475 L 450 430" class="wire-event" marker-end="url(#arrow-event)"/>
+  <path d="M 800 475 L 800 430" class="wire-event" marker-end="url(#arrow-event)"/>
+
+  <!-- ==================== TIER 5: POLYGLOT PERSISTENCE ==================== -->
+  <rect x="30" y="560" width="1020" height="230" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow2)"/>
+  <text x="50" y="585" class="group-title" fill="#334155">Persistencia Políglota FOSS (Database-per-Service)</text>
+
+  <!-- DB 1 -->
+  <g transform="translate(50, 600)">
+    <rect width="180" height="85" rx="6" fill="#f8fafc" stroke="#475569" stroke-width="1.5" filter="url(#shadow2)"/>
+    <text x="90" y="30" text-anchor="middle" class="node-title" fill="#0f172a">PostgreSQL</text>
+    <text x="90" y="50" text-anchor="middle" class="node-desc" fill="#475569">IAM, Usuarios,</text>
+    <text x="90" y="68" text-anchor="middle" class="node-desc" fill="#475569">Roles &amp; Auditoría</text>
+  </g>
+
+  <!-- DB 2 -->
+  <g transform="translate(250, 600)">
+    <rect width="180" height="85" rx="6" fill="#f8fafc" stroke="#475569" stroke-width="1.5" filter="url(#shadow2)"/>
+    <text x="90" y="30" text-anchor="middle" class="node-title" fill="#0f172a">PostGIS</text>
+    <text x="90" y="50" text-anchor="middle" class="node-desc" fill="#475569">Catálogo, Atractivos</text>
+    <text x="90" y="68" text-anchor="middle" class="node-desc" fill="#475569">&amp; Capas Espaciales</text>
+  </g>
+
+  <!-- DB 3 -->
+  <g transform="translate(450, 600)">
+    <rect width="180" height="85" rx="6" fill="#f8fafc" stroke="#475569" stroke-width="1.5" filter="url(#shadow2)"/>
+    <text x="90" y="30" text-anchor="middle" class="node-title" fill="#0f172a">PostgreSQL</text>
+    <text x="90" y="50" text-anchor="middle" class="node-desc" fill="#475569">Reservas Transaccionales</text>
+    <text x="90" y="68" text-anchor="middle" class="node-desc" fill="#475569">&amp; Calendario Cupos</text>
+  </g>
+
+  <!-- DB 4 -->
+  <g transform="translate(650, 600)">
+    <rect width="180" height="85" rx="6" fill="#f8fafc" stroke="#475569" stroke-width="1.5" filter="url(#shadow2)"/>
+    <text x="90" y="30" text-anchor="middle" class="node-title" fill="#0f172a">MongoDB Community</text>
+    <text x="90" y="50" text-anchor="middle" class="node-desc" fill="#475569">Reseñas, Comentarios</text>
+    <text x="90" y="68" text-anchor="middle" class="node-desc" fill="#475569">&amp; Estados Moderación</text>
+  </g>
+
+  <!-- DB 5: Redis Cache -->
+  <g transform="translate(850, 600)">
+    <rect width="180" height="85" rx="6" fill="#fff1f2" stroke="#e11d48" stroke-width="1.5" filter="url(#shadow2)"/>
+    <text x="90" y="30" text-anchor="middle" class="node-title" fill="#9f1239">Redis / Valkey</text>
+    <text x="90" y="50" text-anchor="middle" class="node-desc" fill="#be123c">Caché en Memoria,</text>
+    <text x="90" y="68" text-anchor="middle" class="node-desc" fill="#be123c">Sesiones &amp; Rate Limits</text>
+  </g>
+
+  <text x="540" y="725" text-anchor="middle" font-family="'Segoe UI', sans-serif" font-size="12px" fill="#64748b">Cada microservicio mantiene su esquema aislado sin acceso cruzado directo a datos de otro servicio</text>
+</svg>

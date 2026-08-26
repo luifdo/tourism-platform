@@ -1,8 +1,8 @@
-# Adendo al Documento de Requerimientos — v0.3 (propuesta de cierre)
+# Adendo al Documento de Requerimientos — v0.2 (propuesta de cierre)
 
 **Proyecto:** Plataforma Digital para la Gestión Integrada y Sostenible del Turismo en Santa Marta
 
-**Basado en:** Documento de Requerimientos Iniciales v0.1 + Adendo v0.2
+**Basado en:** Documento de Requerimientos Iniciales v0.1 
 
 **Propósito de este documento:** proponer respuestas realistas a las decisiones pendientes, para que el equipo las revise, ajuste y apruebe en la reunión de cierre.
 

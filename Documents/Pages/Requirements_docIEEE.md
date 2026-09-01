@@ -2,11 +2,18 @@
 ## Conforme al Estándar ISO/IEC/IEEE 29148:2018
 
 **Proyecto:** Plataforma Digital para la Gestión Integrada y Sostenible del Turismo en Santa Marta  
-**Curso:** Arquitectura de Software — Experiencia Final de Diseño  
+**Curso:** Arquitectura de Software   
 **Programa:** Ingeniería de Sistemas — Universidad del Magdalena  
 **Versión:** 1.0 (Estructura Estándar ISO/IEC/IEEE 29148:2018)  
 **Fecha:** Agosto 2026  
 
+
+> [!INTEGRANTES]
+> * **Luis Fernando Barraza Sanchez** 
+> * **Alvaro David Ospino Sanchez**
+> * **Valentina  Sarait Nieves Hernandez** 
+> * **Andres Felipe Gamero Sanchez**
+> * **Juan Francisco Gonzalez Pacheco**
 ---
 
 ## 1. Introducción
@@ -34,8 +41,8 @@ El sistema garantiza atributos de calidad esenciales como escalabilidad elástic
 > [!NOTE]
 > **Alcance Delimitado (Exclusiones Justificadas del Prototipo):**
 > * **Pasarela de Pagos en Línea (UC34 / UC35):** Fuera de alcance en esta iteración. El prototipo opera bajo un modelo de solicitud y confirmación de reserva; las transacciones monetarias se efectúan de manera directa e independiente entre el turista y el prestador de servicios.
-> * **Alertas de Aforo por Sensores Físicos IoT (UC39):** Fuera de alcance debido a la ausencia de infraestructura de telemetría física en territorio; se cubre a nivel analítico estimativo mediante algoritmos agregados en el módulo de analítica institucional (UC24).
 > * **Registro de Menores de Edad:** Restringido formalmente a mayores de 18 años para resguardar el marco normativo de Habeas Data infantil.
+> * **Repositorio documental en GitHub:** https://github.com/luifdo/tourism-platform/tree/Documents/Documents/Pages
 
 ---
 

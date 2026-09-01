@@ -8,7 +8,7 @@
 **Fecha:** Agosto 2026  
 
 
-> [!INTEGRANTES]
+> INTEGRANTES:
 > * **Luis Fernando Barraza Sanchez** 
 > * **Alvaro David Ospino Sanchez**
 > * **Valentina  Sarait Nieves Hernandez** 

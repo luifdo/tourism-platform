@@ -1,0 +1,17 @@
+# Cada carpeta requiere la revisión de su responsable (SRS, Apéndice D).
+# Los cambios de contratos los revisa el arquitecto líder además del dueño del servicio.
+
+*                               @JuanFranG
+
+/services/iam-service/          @JuanFranG
+/services/catalog-service/      @nievesita
+/services/booking-service/      @AFGamero
+/services/review-service/       @alvaroospino
+/services/recommendation-service/ @luifdo
+/services/analytics-service/    @luifdo
+
+/gateway/                       @JuanFranG
+/frontend/                      @alvaroospino
+/infra/                         @luifdo
+/contracts/                     @JuanFranG
+/templates/                     @JuanFranG

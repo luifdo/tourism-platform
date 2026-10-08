@@ -1,0 +1,30 @@
+name: Contratos e infraestructura
+
+on:
+  pull_request:
+    paths:
+      - "contracts/**"
+      - "infra/**"
+  push:
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - "infra/**"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar que los esquemas de eventos son JSON válido
+        run: |
+          for f in contracts/events/*.json; do
+            python3 -m json.tool "$f" > /dev/null && echo "OK $f"
+          done
+
+      - name: Validar docker-compose
+        working-directory: infra
+        run: |
+          cp .env.example .env
+          docker compose config -q

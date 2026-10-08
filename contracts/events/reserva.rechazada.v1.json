@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "reserva.rechazada.v1.json",
+  "title": "reserva.rechazada (payload v1)",
+  "description": "Publicado por booking-service cuando el prestador rechaza una reserva (UC20).",
+  "type": "object",
+  "required": ["reserva_id", "servicio_id", "turista_id", "prestador_id", "fecha_reserva", "numero_personas"],
+  "properties": {
+    "reserva_id": { "type": "string", "format": "uuid" },
+    "servicio_id": { "type": "string", "format": "uuid" },
+    "turista_id": { "type": "string", "format": "uuid" },
+    "prestador_id": { "type": "string", "format": "uuid" },
+    "fecha_reserva": { "type": "string", "format": "date" },
+    "numero_personas": { "type": "integer", "minimum": 1 },
+    "motivo": { "type": "string", "maxLength": 500 }
+  },
+  "additionalProperties": false
+}

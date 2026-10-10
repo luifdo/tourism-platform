@@ -68,7 +68,7 @@
   <g transform="translate(840, 45)">
     <rect width="160" height="90" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.8" filter="url(#shadow7)"/>
     <text x="80" y="38" text-anchor="middle" class="node-title" fill="#064e3b">Escenarios Calidad</text>
-    <text x="80" y="58" text-anchor="middle" class="node-sub" fill="#047857">ESC-01 a ESC-07</text>
+    <text x="80" y="58" text-anchor="middle" class="node-sub" fill="#047857">ESC-01 a ESC-08</text>
     <text x="80" y="73" text-anchor="middle" class="node-sub" fill="#047857">Pruebas Medibles</text>
   </g>
 </svg>

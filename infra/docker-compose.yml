@@ -1,0 +1,73 @@
+# Entorno local de la plataforma. Uso, desde la carpeta infra/:
+#   cp .env.example .env
+#   docker compose up -d
+#
+# Por ahora levanta solo la infraestructura compartida; cada servicio se agrega
+# en la sección "Microservicios" cuando tenga su Dockerfile.
+
+name: tourism-platform
+
+services:
+  # ---------- Persistencia ----------
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:8
+    ports: ["6379:6379"]
+
+  # review-service usa PostgreSQL con JSONB (base review_db), ver ADR-003.
+
+  # ---------- Mensajería ----------
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # consola web
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      retries: 5
+
+  # ---------- Observabilidad ----------
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+
+  # ---------- Microservicios ----------
+  # Plantilla para agregar un servicio:
+  # booking-service:
+  #   build: ../services/booking-service
+  #   env_file: ../services/booking-service/.env
+  #   depends_on:
+  #     postgres: { condition: service_healthy }
+  #     rabbitmq: { condition: service_healthy }
+
+  # ---------- API Gateway ----------
+  # Traefik (ADR-007); en el clúster k3s viene incluido como Ingress.
+
+volumes:
+  postgres-data:

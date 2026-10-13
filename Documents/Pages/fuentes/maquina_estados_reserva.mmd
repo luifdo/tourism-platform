@@ -1,0 +1,11 @@
+stateDiagram-v2
+    direction LR
+    [*] --> Solicitada: Turista solicita (UC11)<br>descuenta cupos
+    Solicitada --> Confirmada: Prestador confirma (UC20)
+    Solicitada --> Rechazada: Prestador rechaza (UC20)<br>o vence el plazo de 48 h<br>libera cupos
+    Solicitada --> Cancelada: Turista cancela (UC12)<br>libera cupos
+    Confirmada --> Cancelada: Turista o prestador cancela<br>según la política publicada<br>libera cupos
+    Confirmada --> Finalizada: Pasa la fecha de la reserva<br>(tarea programada)
+    Rechazada --> [*]
+    Cancelada --> [*]
+    Finalizada --> [*]

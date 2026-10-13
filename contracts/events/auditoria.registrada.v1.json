@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "auditoria.registrada.v1.json",
+  "title": "auditoria.registrada (payload v1)",
+  "description": "Publicado por catalog-service, booking-service y review-service ante un evento crítico (acceso denegado por rol, exportación, cambio de estado, moderación). iam-service lo consume y lo guarda en la bitácora inmutable (UC33, RNF-10); sus propios eventos los escribe directamente.",
+  "type": "object",
+  "required": [
+    "accion",
+    "resultado"
+  ],
+  "properties": {
+    "usuario_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid",
+      "description": "Nulo si la petición no estaba autenticada."
+    },
+    "accion": {
+      "type": "string",
+      "examples": [
+        "ACCESS_DENIED",
+        "EXPORT",
+        "RESERVA_CANCELADA",
+        "MODERACION"
+      ]
+    },
+    "resultado": {
+      "type": "string",
+      "enum": [
+        "EXITO",
+        "DENEGADO",
+        "ERROR"
+      ]
+    },
+    "ip_origen": {
+      "type": "string"
+    },
+    "detalles": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

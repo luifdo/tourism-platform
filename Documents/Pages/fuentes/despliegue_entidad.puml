@@ -1,0 +1,28 @@
+@startuml Diagrama_Despliegue_Entidad
+!include _estilo_despliegue.iuml
+left to right direction
+title Despliegue — Vista de la Entidad de Gestión del Destino
+
+actor "Entidad de Gestión" as Ent
+node "Equipo de la entidad\n(navegador de escritorio)" {
+  artifact "PWA\n(tableros y mapa)" as PWA
+}
+node "Clúster k3s" {
+  artifact "Traefik" as Tfk
+  artifact "catalog-service\n(analítica, aforos, alertas)" as Cat
+  artifact "booking-service" as Book
+  queue "RabbitMQ" as Rmq
+  database "PostgreSQL + PostGIS\n(catalog_db)" as Pg
+}
+cloud "Servicios externos" {
+  node "OpenStreetMap" as Osm
+}
+
+Ent --> PWA
+PWA --> Tfk : HTTPS
+Tfk --> Cat : indicadores, reportes, alertas
+Cat --> Pg
+Book --> Rmq : reserva.*
+Rmq --> Cat : demanda por eventos
+PWA --> Osm : mapa de calor
+@enduml

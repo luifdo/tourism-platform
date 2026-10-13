@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1196 536" width="100%" height="100%">
+<defs>
+  <style>
+    .title { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 17px; font-weight: bold; fill: #0f172a; }
+    .sub { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 12px; fill: #475569; }
+    .h { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 14px; font-weight: bold; fill: #0f172a; }
+    .b { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: bold; fill: #0f172a; }
+    .t { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 12px; fill: #334155; }
+    .s { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 11px; fill: #475569; }
+    .v { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: bold; fill: #065f46; }
+    .w { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 12px; font-weight: bold; fill: #ffffff; }
+    .big { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 22px; font-weight: bold; fill: #0f172a; }
+  </style>
+  <filter id="sh" x="-5%" y="-5%" width="110%" height="120%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-opacity="0.12"/></filter>
+  <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker>
+</defs>
+<rect width="1196" height="536" fill="#ffffff"/>
+<text x="30" y="36" class="title" text-anchor="start">Cronograma General de Ejecución (13 semanas · 6 sprints + sustentación)</text>
+<text x="30" y="56" class="sub" text-anchor="start">24 de agosto – 17 de noviembre de 2026 · Sustentación: 15, 16 y 17 de noviembre</text>
+<rect x="20" y="72" width="1156" height="40" rx="6" fill="#e2e8f0"/>
+<text x="36" y="97" class="b" text-anchor="start">FASE Y ENTREGABLE</text>
+<text x="391.0" y="89" class="b" text-anchor="middle">S1</text>
+<text x="391.0" y="105" class="s" text-anchor="middle">24 ago</text>
+<line x1="360" y1="118" x2="360" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="453.0" y="89" class="b" text-anchor="middle">S2</text>
+<text x="453.0" y="105" class="s" text-anchor="middle">31 ago</text>
+<line x1="422" y1="118" x2="422" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="515.0" y="89" class="b" text-anchor="middle">S3</text>
+<text x="515.0" y="105" class="s" text-anchor="middle">7 sep</text>
+<line x1="484" y1="118" x2="484" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="577.0" y="89" class="b" text-anchor="middle">S4</text>
+<text x="577.0" y="105" class="s" text-anchor="middle">14 sep</text>
+<line x1="546" y1="118" x2="546" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="639.0" y="89" class="b" text-anchor="middle">S5</text>
+<text x="639.0" y="105" class="s" text-anchor="middle">21 sep</text>
+<line x1="608" y1="118" x2="608" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="701.0" y="89" class="b" text-anchor="middle">S6</text>
+<text x="701.0" y="105" class="s" text-anchor="middle">28 sep</text>
+<line x1="670" y1="118" x2="670" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="763.0" y="89" class="b" text-anchor="middle">S7</text>
+<text x="763.0" y="105" class="s" text-anchor="middle">5 oct</text>
+<line x1="732" y1="118" x2="732" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="825.0" y="89" class="b" text-anchor="middle">S8</text>
+<text x="825.0" y="105" class="s" text-anchor="middle">12 oct</text>
+<line x1="794" y1="118" x2="794" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="887.0" y="89" class="b" text-anchor="middle">S9</text>
+<text x="887.0" y="105" class="s" text-anchor="middle">19 oct</text>
+<line x1="856" y1="118" x2="856" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="949.0" y="89" class="b" text-anchor="middle">S10</text>
+<text x="949.0" y="105" class="s" text-anchor="middle">26 oct</text>
+<line x1="918" y1="118" x2="918" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="1011.0" y="89" class="b" text-anchor="middle">S11</text>
+<text x="1011.0" y="105" class="s" text-anchor="middle">2 nov</text>
+<line x1="980" y1="118" x2="980" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="1073.0" y="89" class="b" text-anchor="middle">S12</text>
+<text x="1073.0" y="105" class="s" text-anchor="middle">9 nov</text>
+<line x1="1042" y1="118" x2="1042" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<text x="1135.0" y="89" class="b" text-anchor="middle">S13</text>
+<text x="1135.0" y="105" class="s" text-anchor="middle">16 nov</text>
+<line x1="1104" y1="118" x2="1104" y2="476" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+<rect x="363" y="480" width="118" height="20" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="422" y="494" class="s" text-anchor="middle">Sprint 1</text>
+<rect x="487" y="480" width="118" height="20" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="546" y="494" class="s" text-anchor="middle">Sprint 2</text>
+<rect x="611" y="480" width="118" height="20" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="670" y="494" class="s" text-anchor="middle">Sprint 3</text>
+<rect x="735" y="480" width="118" height="20" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="794" y="494" class="s" text-anchor="middle">Sprint 4</text>
+<rect x="859" y="480" width="118" height="20" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="918" y="494" class="s" text-anchor="middle">Sprint 5</text>
+<rect x="983" y="480" width="118" height="20" rx="4" fill="#f1f5f9" stroke="#cbd5e1"/>
+<text x="1042" y="494" class="s" text-anchor="middle">Sprint 6</text>
+<text x="36" y="142" class="b" text-anchor="start">1. Requerimientos y dominio</text>
+<text x="36" y="160" class="s" text-anchor="start">24 ago – 6 sep · SRS ISO/IEC/IEEE 29148</text>
+<rect x="363" y="130" width="118" height="32" rx="6" fill="#3b82f6" filter="url(#sh)"/>
+<text x="422.0" y="151" class="w" text-anchor="middle">Fase 1</text>
+<text x="36" y="200" class="b" text-anchor="start">2. Comparación arquitectónica</text>
+<text x="36" y="218" class="s" text-anchor="start">7 sep – 20 sep · Alternativas y selección</text>
+<rect x="487" y="188" width="118" height="32" rx="6" fill="#6366f1" filter="url(#sh)"/>
+<text x="546.0" y="209" class="w" text-anchor="middle">Fase 2</text>
+<text x="36" y="258" class="b" text-anchor="start">3. Diseño arquitectónico</text>
+<text x="36" y="276" class="s" text-anchor="start">21 sep – 4 oct · Interfaces, datos, ADR</text>
+<rect x="611" y="246" width="118" height="32" rx="6" fill="#8b5cf6" filter="url(#sh)"/>
+<text x="670.0" y="267" class="w" text-anchor="middle">Fase 3</text>
+<text x="36" y="316" class="b" text-anchor="start">4. Construcción del prototipo</text>
+<text x="36" y="334" class="s" text-anchor="start">5 oct – 1 nov · ≥ 60% de casos de uso Must</text>
+<rect x="735" y="304" width="242" height="32" rx="6" fill="#10b981" filter="url(#sh)"/>
+<text x="856.0" y="325" class="w" text-anchor="middle">Fase 4: Construcción y despliegue en k3s</text>
+<text x="36" y="374" class="b" text-anchor="start">5. Validación y cierre</text>
+<text x="36" y="392" class="s" text-anchor="start">2 nov – 14 nov · Pruebas de calidad e informe</text>
+<rect x="983" y="362" width="118" height="32" rx="6" fill="#f59e0b" filter="url(#sh)"/>
+<text x="1042.0" y="383" class="w" text-anchor="middle">Fase 5</text>
+<text x="36" y="432" class="b" text-anchor="start">6. Sustentación</text>
+<text x="36" y="450" class="s" text-anchor="start">15, 16 y 17 de noviembre</text>
+<rect x="1095.1" y="420" width="35.4" height="32" rx="6" fill="#dc2626" filter="url(#sh)"/>
+<text x="1087.142857142857" y="441" class="b" text-anchor="end" fill="#b91c1c">Sustentación 15–17 nov</text>
+</svg>

@@ -1,0 +1,38 @@
+@startuml Diagrama_Despliegue_Turista
+!include _estilo_despliegue.iuml
+left to right direction
+title Despliegue — Vista del Turista
+
+actor "Turista" as Tur
+node "Dispositivo del turista\n(navegador móvil o escritorio)" {
+  artifact "PWA\n(catálogo en caché sin conexión)" as PWA
+}
+node "Clúster k3s" {
+  artifact "Traefik" as Tfk
+  artifact "catalog-service" as Cat
+  artifact "booking-service" as Book
+  artifact "review-service" as Rev
+  artifact "recommendation-service" as Rec
+  database "PostgreSQL\n(catalog_db, booking_db,\nreview_db, recommendation_db)" as Pg
+  database "Valkey\n(caché y sesión del chat)" as Vk
+}
+cloud "Servicios externos" {
+  node "Google Gemini API" as Gem
+  node "OpenStreetMap" as Osm
+}
+
+Tur --> PWA
+PWA --> Tfk : HTTPS
+Tfk --> Cat : catálogo y mapa
+Tfk --> Book : reservas
+Tfk --> Rev : reseñas
+Tfk --> Rec : chatbot
+Cat --> Pg
+Book --> Pg
+Rev --> Pg
+Rec --> Pg
+Cat --> Vk
+Rec --> Vk
+Rec --> Gem : HTTPS
+PWA --> Osm : teselas del mapa
+@enduml

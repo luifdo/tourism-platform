@@ -1,0 +1,126 @@
+erDiagram
+    USUARIO ||--o{ DOCUMENTO_VERIFICACION : "adjunta"
+    USUARIO ||--o{ BITACORA_AUDITORIA : "origina eventos"
+    USUARIO ||--o| PRESTADOR_PERFIL : "tiene perfil comercial"
+    PRESTADOR_PERFIL ||--o{ ATRACTIVO_SERVICIO : "publica"
+    ATRACTIVO_SERVICIO |o--o{ ALERTA_OFICIAL : "recibe"
+    ATRACTIVO_SERVICIO ||--o{ DISPONIBILIDAD_CUPO : "habilita"
+    ATRACTIVO_SERVICIO ||--o{ SOLICITUD_RESERVA : "recibe"
+    USUARIO ||--o{ SOLICITUD_RESERVA : "solicita"
+    ATRACTIVO_SERVICIO ||--o{ RESENA_OPINION : "es evaluado en"
+    USUARIO ||--o{ RESENA_OPINION : "redacta"
+    RESENA_OPINION ||--o{ REPORTE_RESENA : "recibe"
+    USUARIO ||--o{ RECOMENDACION_LOG : "recibe"
+    ATRACTIVO_SERVICIO ||--o{ RECOMENDACION_LOG : "es sugerido en"
+
+    USUARIO {
+        uuid id PK "M1 iam_db"
+        string email UK "Correo de acceso"
+        string password_hash "Argon2id"
+        enum rol "Turista, Prestador, Entidad, Admin"
+        boolean email_verificado "Verificación de correo"
+        boolean habeas_data_aceptado "Ley 1581 (UC6)"
+        timestamp creado_en "Fecha de registro"
+    }
+
+    DOCUMENTO_VERIFICACION {
+        uuid id PK "M1 iam_db"
+        uuid usuario_id FK "Prestador que adjunta"
+        enum tipo_documento "RNT, RUT"
+        string objeto_s3 "Llave en SeaweedFS"
+        enum estado "Pendiente, Aprobado, Rechazado"
+        timestamp fecha_subida "Fecha de carga"
+    }
+
+    BITACORA_AUDITORIA {
+        uuid id PK "M1 iam_db, solo INSERT"
+        uuid usuario_id FK "Actor (nulo si anónimo)"
+        string accion "LOGIN_FAIL, ROLE_CHANGE, ACCESS_DENIED, EXPORT"
+        enum resultado "Exito, Denegado, Error"
+        string servicio_origen "Servicio que reporta"
+        string ip_origen "Dirección IP"
+        jsonb detalles "Metadatos contextuales"
+        timestamp fecha "Marca temporal"
+    }
+
+    PRESTADOR_PERFIL {
+        uuid id PK "M2 catalog_db"
+        uuid usuario_id "REF a USUARIO (iam_db)"
+        string razon_social "Nombre comercial"
+        string telefono "Contacto"
+        string direccion "Ubicación física"
+        string politica_cancelacion "Visible al turista"
+    }
+
+    ATRACTIVO_SERVICIO {
+        uuid id PK "M2 catalog_db"
+        uuid prestador_id FK "PRESTADOR_PERFIL"
+        string nombre "Título"
+        string descripcion "Detalle"
+        string categoria "Playa, Naturaleza, Cultura, Gastronomia"
+        point coordenadas_gis "PostGIS Point 4326"
+        decimal tarifa_base "COP"
+        int capacidad_aforo_diario "Capacidad de carga oficial"
+        string[] imagenes_urls "Galería"
+    }
+
+    ALERTA_OFICIAL {
+        uuid id PK "M2 catalog_db"
+        uuid atractivo_servicio_id FK "Nulo si es por zona"
+        uuid entidad_usuario_id "REF a USUARIO (iam_db)"
+        enum nivel "Informativa, Preventiva, Critica"
+        string mensaje "Texto oficial"
+        boolean activa "Vigente"
+        timestamp fecha_expiracion "Fin de vigencia"
+    }
+
+    DISPONIBILIDAD_CUPO {
+        uuid id PK "M3 booking_db"
+        uuid servicio_id "REF a ATRACTIVO_SERVICIO (catalog_db)"
+        date fecha "Día de operación"
+        int cupos_totales "Capacidad del día"
+        int cupos_disponibles "Cupos restantes"
+    }
+
+    SOLICITUD_RESERVA {
+        uuid id PK "M3 booking_db"
+        uuid turista_id "REF a USUARIO (iam_db)"
+        uuid servicio_id "REF a ATRACTIVO_SERVICIO (catalog_db)"
+        date fecha_reserva "Fecha solicitada"
+        int numero_personas "Asistentes"
+        enum estado "Solicitada, Confirmada, Rechazada, Cancelada, Finalizada"
+        timestamp expira_en "Plazo de respuesta (48 h)"
+        timestamp fecha_creacion "Fecha de solicitud"
+    }
+
+    RESENA_OPINION {
+        uuid id PK "M4 review_db"
+        uuid servicio_id "REF a ATRACTIVO_SERVICIO (catalog_db)"
+        uuid turista_id "REF a USUARIO (iam_db)"
+        uuid reserva_id "REF a SOLICITUD_RESERVA Finalizada"
+        int puntuacion "1 a 5"
+        jsonb calificaciones_detalle "Limpieza, guianza, precio"
+        string comentario "Opinión"
+        enum estado_moderacion "Publicado, En_Revision, Oculto"
+        jsonb respuesta_prestador "Réplica del operador"
+        timestamp creado_en "Fecha de publicación"
+    }
+
+    REPORTE_RESENA {
+        uuid id PK "M4 review_db"
+        uuid resena_id FK "RESENA_OPINION"
+        uuid reportado_por "REF a USUARIO (iam_db)"
+        string motivo "Motivo del reporte"
+        timestamp fecha "Fecha del reporte"
+    }
+
+    RECOMENDACION_LOG {
+        uuid id PK "M5 recommendation_db"
+        uuid conversacion_id "Sesión del chatbot"
+        uuid turista_id "REF a USUARIO (iam_db)"
+        uuid servicio_id "REF a ATRACTIVO_SERVICIO (catalog_db)"
+        string justificacion "Motivo mostrado al turista (RNF-08)"
+        jsonb herramientas_usadas "Herramientas consultadas"
+        string modelo "Versión de Gemini"
+        timestamp fecha_generacion "Marca temporal"
+    }

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "resena.publicada.v1.json",
+  "title": "resena.publicada (payload v1)",
+  "description": "Publicado por review-service cuando una reseña queda visible: al crearla (UC15) o cuando el Administrador la vuelve a publicar tras una revisión (UC29). Actualiza la calificación promedio y las métricas del prestador en catalog-service (UC22).",
+  "type": "object",
+  "required": [
+    "resena_id",
+    "servicio_id",
+    "turista_id",
+    "puntuacion"
+  ],
+  "properties": {
+    "resena_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "servicio_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "turista_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "puntuacion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    }
+  },
+  "additionalProperties": false
+}

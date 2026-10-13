@@ -1,0 +1,37 @@
+flowchart LR
+    classDef cardIAM fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a,font-size:12px;
+    classDef cardCat fill:#f0fdf4,stroke:#10b981,stroke-width:2px,color:#064e3b,font-size:12px;
+    classDef cardRes fill:#fefce8,stroke:#eab308,stroke-width:2px,color:#713f12,font-size:12px;
+    classDef cardRev fill:#fff1f2,stroke:#f43f5e,stroke-width:2px,color:#881337,font-size:12px;
+    classDef cardAI fill:#fdf4ff,stroke:#d946ef,stroke-width:2px,color:#701a75,font-size:12px;
+    classDef cardTr fill:#f8fafc,stroke:#64748b,stroke-width:2px,color:#0f172a,font-size:12px;
+
+    subgraph M1["Módulo 1: Seguridad & IAM"]
+        direction TB
+        C1["• Autenticación JWT (RS256)<br>• Control de acceso RBAC<br>• Verificación de prestadores (UC37, UC28)<br>• Bitácora de auditoría inmutable (RNF-10)<br>• Consumo de auditoria.registrada"]:::cardIAM
+    end
+
+    subgraph M2["Módulo 2: Catálogo, GIS & Destino"]
+        direction TB
+        C2["• Atractivos, eventos y perfiles de prestador<br>• Búsqueda espacial con PostGIS y OSM<br>• Demanda y capacidad de carga (por eventos)<br>• Tableros, reportes y alertas oficiales<br>• Correos transaccionales (UC36)<br>• Consultas para el chatbot"]:::cardCat
+    end
+
+    subgraph M3["Módulo 3: Reservas & Cupos"]
+        direction TB
+        C3["• Cupos con bloqueo transaccional<br>• Máquina de estados de la reserva<br>• Expiración de solicitudes sin respuesta<br>• Historial del turista y panel del prestador<br>• Consultas para el chatbot"]:::cardRes
+    end
+
+    subgraph M4["Módulo 4: Reseñas & Moderación"]
+        direction TB
+        C4["• Reseñas de reservas finalizadas<br>• Respuestas públicas de prestadores<br>• Reporte de contenido (UC39)<br>• Moderación manual del Administrador (UC29)<br>• Consultas para el chatbot"]:::cardRev
+    end
+
+    subgraph M5["Módulo 5: IA & Recomendación"]
+        direction TB
+        C5["• Chatbot en español e inglés<br>• Integración con Gemini (API externa)<br>• Herramientas de solo lectura<br>• Respuestas justificadas (RNF-08)<br>• Registro en RECOMENDACION_LOG"]:::cardAI
+    end
+
+    subgraph TR["Capa transversal"]
+        direction TB
+        C6["• PWA con caché sin conexión (RNF-13)<br>• Traefik: TLS, ForwardAuth, rate limiting<br>• RabbitMQ: eventos y auditoría<br>• Prometheus, Grafana y Loki<br>• Despliegue en k3s con HPA"]:::cardTr
+    end

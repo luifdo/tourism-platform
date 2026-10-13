@@ -1,0 +1,22 @@
+!include _estilo.iuml
+skinparam defaultFontSize 13
+skinparam node {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+}
+skinparam artifact {
+  BackgroundColor #F0FDF4
+  BorderColor #16A34A
+}
+skinparam database {
+  BackgroundColor #FFFFFF
+  BorderColor #475569
+}
+skinparam queue {
+  BackgroundColor #FFFBEB
+  BorderColor #D97706
+}
+skinparam cloud {
+  BackgroundColor #F1F5F9
+  BorderColor #64748B
+}

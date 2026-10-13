@@ -1,0 +1,47 @@
+@startuml Diagrama_Paquetes_Microservicio
+!include _estilo.iuml
+skinparam defaultFontSize 12
+skinparam packageStyle folder
+set separator none
+title Diagrama de paquetes — Estructura hexagonal de cada microservicio (Python + FastAPI)
+
+package "booking-service (estructura común a los 5 servicios)" {
+  package "src.domain" as Dom #F0FDF4 {
+    class "Entidades y objetos de valor\n(p. ej. Reserva, Cupo)" as E
+    class "Reglas y excepciones\nde negocio" as R
+  }
+  package "src.application" as App #EFF6FF {
+    class "Casos de uso\n(p. ej. SolicitarReserva)" as UC
+    package "ports" as Ports {
+      interface "Puertos de salida\n(RepositorioReservas,\nPublicadorEventos)" as PO
+    }
+  }
+  package "src.infrastructure" as Inf #FFFBEB {
+    package "http" {
+      class "Routers FastAPI\n(contrato OpenAPI)" as Http
+    }
+    package "persistence" {
+      class "Repositorios SQLAlchemy\n(base propia del servicio)" as Pers
+    }
+    package "messaging" {
+      class "Publicador / consumidor\nRabbitMQ (aio-pika)" as Msg
+    }
+  }
+  class "main.py\n(composición de dependencias)" as Main
+}
+
+Http ..> UC : invoca
+UC ..> E : usa
+UC ..> R : aplica
+UC ..> PO : depende de
+Pers ..|> PO : implementa
+Msg ..|> PO : implementa
+Main ..> Http
+Main ..> Pers
+Main ..> Msg
+
+note bottom of Dom
+  El dominio no importa FastAPI, SQLAlchemy
+  ni RabbitMQ: las dependencias apuntan hacia adentro.
+end note
+@enduml

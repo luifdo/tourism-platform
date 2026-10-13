@@ -1,0 +1,40 @@
+@startuml CasosDeUso_Administrador
+!include _estilo.iuml
+left to right direction
+title Casos de uso — Administrador de la Plataforma
+
+actor "Administrador de\nla Plataforma" as Admin
+
+rectangle "Plataforma Digital de Turismo — Santa Marta" {
+  package "Módulo 1: Seguridad & IAM" {
+    usecase "UC27 · Administrar usuarios y roles" as UC27
+    usecase "UC28 · Aprobar / rechazar\nprestadores" as UC28
+    usecase "UC37 · Cargar documentos\nRNT / RUT" as UC37 #DDDDDD
+    usecase "UC32 · Políticas de seguridad\ny rate limiting" as UC32
+    usecase "UC33 · Consultar bitácora\nde auditoría" as UC33
+  }
+  package "Módulo 4: Reseñas & Moderación" {
+    usecase "UC39 · Reportar reseña" as UC39 #DDDDDD
+    usecase "UC29 · Moderar reseñas\nreportadas" as UC29
+  }
+  package "Transversal: Gateway y Observabilidad" {
+    usecase "UC30 · Configurar integraciones\nde datos abiertos" as UC30
+    usecase "UC31 · Monitorear telemetría" as UC31
+  }
+}
+
+Admin --> UC27
+Admin --> UC28
+Admin --> UC32
+Admin --> UC33
+Admin --> UC29
+Admin --> UC30
+Admin --> UC31
+
+note "Precondición de UC28: el prestador\ncargó sus documentos (UC37)." as N1
+UC28 .. N1
+N1 .. UC37
+note "UC29 atiende las reseñas reportadas\npor turistas o prestadores (UC39)." as N2
+UC29 .. N2
+N2 .. UC39
+@enduml

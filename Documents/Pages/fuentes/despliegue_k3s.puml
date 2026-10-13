@@ -1,0 +1,36 @@
+@startuml Diagrama_Despliegue_Kubernetes
+!include _estilo_despliegue.iuml
+left to right direction
+title Despliegue — Vista de infraestructura del clúster k3s
+
+node "Clúster k3s · VM Linux\n(Escenario A: 1 nodo · Escenario B: 3 nodos)" as K3s {
+  node "kube-system" {
+    artifact "Traefik\n(Ingress / API Gateway)" as Tfk
+  }
+  node "turismo-app" as NsApp {
+    artifact "frontend (PWA)" as Front
+    artifact "iam-service" as Iam
+    artifact "catalog-service" as Cat
+    artifact "booking-service" as Book
+    artifact "review-service" as Rev
+    artifact "recommendation-service" as Rec
+  }
+  node "turismo-datos" as NsData {
+    database "PostgreSQL + PostGIS\n(5 bases lógicas)" as Pg
+    database "Valkey" as Vk
+    queue "RabbitMQ" as Rmq
+    database "SeaweedFS (S3)" as Sw
+  }
+  node "observabilidad" {
+    artifact "Prometheus · Grafana · Loki" as Obs
+  }
+}
+
+Tfk --> NsApp : HTTP interno
+NsApp --> Pg : SQL (cada servicio a su base)
+NsApp --> Vk
+NsApp --> Rmq : AMQP
+Iam --> Sw : documentos
+Pg --> Sw : respaldos
+Obs --> NsApp : /metrics y /health
+@enduml

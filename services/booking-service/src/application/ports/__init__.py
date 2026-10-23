@@ -66,7 +66,9 @@ class RepositorioDisponibilidad(Protocol):
     async def obtener_para_cambiar(self, servicio_id: UUID, fecha: date) -> DisponibilidadCupo | None:
         """Lee y bloquea la fila del día (SELECT ... FOR UPDATE): siempre precede a un cambio de cupos."""
 
-    async def guardar(self, dia: DisponibilidadCupo) -> None: ...
+    async def guardar(self, dia: DisponibilidadCupo) -> None:
+        """Crea o actualiza el día. Si otra petición acaba de crear el mismo día nuevo, lanza
+        `DiaExistente` en vez de pisarlo."""
 
     async def rango(self, servicio_id: UUID, desde: date, hasta: date) -> list[DisponibilidadCupo]:
         """Lectura sin bloqueo (consulta pública y calendario del prestador)."""

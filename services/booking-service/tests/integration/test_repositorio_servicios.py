@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import delete
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from domain.servicio import ServicioRef
 from infrastructure.persistence.postgres import RepositorioServiciosPostgres
@@ -60,10 +59,9 @@ async def test_una_version_igual_o_menor_no_toca_nada(repo, version):
     assert await repo.leer(actual.servicio_id) == actual
 
 
-async def test_eventos_en_paralelo_siempre_dejan_la_version_mayor(base_migrada):
+async def test_eventos_en_paralelo_siempre_dejan_la_version_mayor(motor):
     """Diez eventos del mismo servicio, cada uno en su propia transacción y en desorden, todos
     a la vez (como diez réplicas). Al final debe quedar la versión 10, sin importar quién llegue último."""
-    motor = create_async_engine(base_migrada)
     servicio_id = uuid4()
     versiones = list(range(1, 11))
     random.shuffle(versiones)
@@ -84,4 +82,3 @@ async def test_eventos_en_paralelo_siempre_dejan_la_version_mayor(base_migrada):
     finally:
         async with motor.begin() as con:
             await con.execute(delete(servicio_ref).where(servicio_ref.c.servicio_id == servicio_id))
-        await motor.dispose()

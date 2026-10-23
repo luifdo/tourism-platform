@@ -66,6 +66,15 @@ async def conexion(base_migrada):
 
 
 @pytest.fixture
+async def motor(base_migrada):
+    """Para pruebas con varias transacciones que se confirman de verdad (concurrencia).
+    Lo que confirmen queda en la base: cada prueba borra lo suyo al terminar."""
+    m = create_async_engine(base_migrada)
+    yield m
+    await m.dispose()
+
+
+@pytest.fixture
 def alembic_cfg(base_migrada) -> Config:
     return configuracion_alembic()
 

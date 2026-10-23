@@ -29,8 +29,9 @@ class AplicarServicioPublicado:
     async def __call__(self, payload: dict[str, Any]) -> bool:
         nuevo = servicio_desde_evento(payload)
         async with self.ctx.uow() as uow:
-            if not nuevo.reemplaza_a(await uow.servicios.leer(nuevo.servicio_id)):
-                return False
-            await uow.servicios.guardar(nuevo)
-            await uow.commit()
-        return True
+            # La comparación de versiones la hace el repositorio en el mismo paso que guarda:
+            # leer y luego guardar dejaba una ventana en la que dos eventos se pisaban.
+            aplicado = await uow.servicios.guardar_si_mas_nuevo(nuevo)
+            if aplicado:
+                await uow.commit()
+        return aplicado

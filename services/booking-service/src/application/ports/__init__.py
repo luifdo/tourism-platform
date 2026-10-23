@@ -28,7 +28,9 @@ class RepositorioServicios(Protocol):
     async def leer(self, servicio_id: UUID) -> ServicioRef | None:
         """Lectura sin bloqueo."""
 
-    async def guardar(self, servicio: ServicioRef) -> None: ...
+    async def guardar_si_mas_nuevo(self, servicio: ServicioRef) -> bool:
+        """Guarda el servicio solo si no existe o si su versión es mayor que la guardada, en un
+        solo paso atómico (sin leer antes). Devuelve si lo guardó."""
 
 
 class RepositorioReservas(Protocol):

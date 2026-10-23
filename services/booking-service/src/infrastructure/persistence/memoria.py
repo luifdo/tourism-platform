@@ -44,8 +44,12 @@ class RepositorioServiciosMemoria:
         s = self._c.servicios.get(servicio_id) or self._a.servicios.get(servicio_id)
         return copy.deepcopy(s)
 
-    async def guardar(self, servicio: ServicioRef) -> None:
+    async def guardar_si_mas_nuevo(self, servicio: ServicioRef) -> bool:
+        # Aquí leer y comparar es seguro: el candado global no deja correr otra transacción.
+        if not servicio.reemplaza_a(await self.leer(servicio.servicio_id)):
+            return False
         self._c.servicios[servicio.servicio_id] = copy.deepcopy(servicio)
+        return True
 
 
 class RepositorioDisponibilidadMemoria:

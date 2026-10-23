@@ -16,14 +16,14 @@ import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from config import Configuracion
 from domain.reglas import ZONA
 from infrastructure.http import demo
 from infrastructure.persistence.db import verificar_conexion
-from infrastructure.persistence.tablas import disponibilidad_cupo, servicio_ref, solicitud_reserva
+from infrastructure.persistence.tablas import disponibilidad_cupo, evento_outbox, servicio_ref, solicitud_reserva
 from infrastructure.reloj import RelojFijo
 from main import contenedor_postgres, crear_app
 
@@ -97,8 +97,21 @@ def config_db(base_migrada) -> Configuracion:
 
 async def _limpiar_demo(motor):
     async with motor.begin() as con:
+        await con.execute(delete(evento_outbox))  # base de pruebas: las pruebas de API no corren en paralelo
         for tabla in (solicitud_reserva, disponibilidad_cupo, servicio_ref):
             await con.execute(delete(tabla).where(tabla.c.servicio_id == demo.SERVICIO_DEMO))
+
+
+@pytest.fixture
+def outbox(motor):
+    """Lee los sobres pendientes de evento_outbox, en el orden en que se produjeron."""
+    async def leer() -> list[dict]:
+        async with motor.connect() as con:
+            filas = await con.execute(
+                select(evento_outbox.c.sobre).where(evento_outbox.c.publicado_en.is_(None)).order_by(evento_outbox.c.creado_en)
+            )
+            return [f[0] for f in filas]
+    return leer
 
 
 @pytest.fixture
@@ -109,7 +122,8 @@ async def cliente(base_migrada, motor):
     contenedor = contenedor_postgres(config, RelojFijo(AHORA))
     await _limpiar_demo(motor)  # por si una corrida anterior se interrumpió
     await demo.cargar_datos_demo(contenedor)
-    contenedor.publicador.publicados.clear()
+    async with motor.begin() as con:
+        await con.execute(delete(evento_outbox))  # solo cuentan los eventos de la prueba
     app = crear_app(config, contenedor)
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://booking") as c:

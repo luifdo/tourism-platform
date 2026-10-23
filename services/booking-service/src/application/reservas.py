@@ -1,7 +1,8 @@
 """Casos de uso del ciclo de vida de la reserva (UC11, UC12, UC20).
 
-Patrón común: abrir transacción, bloquear filas, aplicar la regla de dominio,
-COMMIT y, solo después, publicar los eventos (Guía §2 y §6).
+Patrón común: abrir transacción, bloquear filas, aplicar la regla de dominio, guardar
+los eventos en el outbox y COMMIT: el cambio y sus eventos quedan juntos o no queda
+ninguno (Guía §2 y §6). El relay los publica en RabbitMQ después.
 """
 
 from datetime import date
@@ -76,8 +77,8 @@ class SolicitarReserva:
             dia.descontar(numero_personas)
             await uow.disponibilidad.guardar(dia)
             await uow.reservas.guardar(reserva)
+            await uow.outbox.agregar(eventos_de(reserva, turista_id, [dia]), correlation_id)
             await uow.commit()
-        await self.ctx.publicador.publicar(eventos_de(reserva, turista_id, [dia]), correlation_id)
         return reserva
 
 
@@ -117,8 +118,8 @@ class ModificarReserva:
             for dia in dias.values():
                 await uow.disponibilidad.guardar(dia)
             await uow.reservas.guardar(reserva)
+            await uow.outbox.agregar(eventos_de(reserva, turista_id, dias.values()), correlation_id)
             await uow.commit()
-        await self.ctx.publicador.publicar(eventos_de(reserva, turista_id, dias.values()), correlation_id)
         return reserva
 
 
@@ -131,8 +132,8 @@ class ConfirmarReserva:
             reserva = await _reserva_de(uow, reserva_id, Actor.PRESTADOR, prestador_usuario_id)
             reserva.confirmar(self.ctx.reloj.ahora())
             await uow.reservas.guardar(reserva)
+            await uow.outbox.agregar(eventos_de(reserva, prestador_usuario_id), correlation_id)
             await uow.commit()
-        await self.ctx.publicador.publicar(eventos_de(reserva, prestador_usuario_id), correlation_id)
         return reserva
 
 
@@ -148,8 +149,8 @@ class RechazarReserva:
             reserva.rechazar(motivo, self.ctx.reloj.ahora())
             dia = await _liberar(uow, reserva)
             await uow.reservas.guardar(reserva)
+            await uow.outbox.agregar(eventos_de(reserva, prestador_usuario_id, [dia]), correlation_id)
             await uow.commit()
-        await self.ctx.publicador.publicar(eventos_de(reserva, prestador_usuario_id, [dia]), correlation_id)
         return reserva
 
 
@@ -170,6 +171,6 @@ class CancelarReserva:
             reserva.cancelar(actor, self.ctx.reloj.ahora(), motivo)
             dia = await _liberar(uow, reserva)
             await uow.reservas.guardar(reserva)
+            await uow.outbox.agregar(eventos_de(reserva, usuario_id, [dia]), correlation_id)
             await uow.commit()
-        await self.ctx.publicador.publicar(eventos_de(reserva, usuario_id, [dia]), correlation_id)
         return reserva

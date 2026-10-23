@@ -11,7 +11,7 @@ from uuid import UUID
 
 from fastapi import Depends, Header, Request
 
-from application.base import evento_auditoria
+from application.auditoria import RegistrarAccesoDenegado
 from application.errores import RolNoPermitido
 from infrastructure.http.errores import NoAutenticado, correlation_id
 
@@ -54,11 +54,9 @@ async def identidad(
 
 async def _denegar(request: Request, usuario_id: UUID, rol: str) -> None:
     """Todo acceso denegado por rol queda en la bitácora del Módulo 1 (ESC-04)."""
-    contenedor = request.app.state.contenedor
-    evento = evento_auditoria(
-        usuario_id, "ACCESS_DENIED", "DENEGADO", ruta=f"{request.method} {request.url.path}", rol=rol
+    await RegistrarAccesoDenegado(request.app.state.contenedor.ctx)(
+        usuario_id, f"{request.method} {request.url.path}", rol, correlation_id(request)
     )
-    await contenedor.ctx.publicador.publicar([evento], correlation_id(request))
 
 
 def requiere(*roles: Rol):

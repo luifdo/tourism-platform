@@ -48,7 +48,7 @@ class Escenario:
         self.almacen = AlmacenMemoria()
         self.publicador = PublicadorMemoria()
         self.reloj = RelojFijo(AHORA)
-        self.ctx = Contexto(fabrica_memoria(self.almacen), self.publicador, self.reloj)
+        self.ctx = Contexto(fabrica_memoria(self.almacen, self.publicador), self.reloj)
         self.servicio_id = uuid4()
         self.prestador_id = uuid4()  # perfil en el catálogo
         self.prestador_usuario_id = uuid4()  # usuario en iam

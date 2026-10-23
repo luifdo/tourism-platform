@@ -36,19 +36,17 @@ class Contenedor:
 def contenedor_memoria(config: Configuracion, reloj: Any = None) -> Contenedor:
     publicador = PublicadorMemoria()
     ctx = Contexto(
-        fabrica_memoria(AlmacenMemoria()), publicador, reloj or RelojSistema(), config.plazo_respuesta_horas
+        fabrica_memoria(AlmacenMemoria(), publicador), reloj or RelojSistema(), config.plazo_respuesta_horas
     )
     return Contenedor(ctx, AlmacenIdempotenciaMemoria(), publicador)
 
 
 def contenedor_postgres(config: Configuracion, reloj: Any = None) -> Contenedor:
-    """booking_db real. Los eventos y la idempotencia siguen en memoria hasta los pasos 5.3 y 5.4."""
+    """booking_db real. Los eventos quedan en evento_outbox hasta que el relay (paso 5.3b) los
+    publique en RabbitMQ; la idempotencia sigue en memoria hasta el paso 5.4."""
     motor = crear_motor(config)  # no se conecta todavía: la primera conexión llega con la primera consulta
-    publicador = PublicadorMemoria()
-    ctx = Contexto(
-        fabrica_postgres(fabrica_sesiones(motor)), publicador, reloj or RelojSistema(), config.plazo_respuesta_horas
-    )
-    return Contenedor(ctx, AlmacenIdempotenciaMemoria(), publicador, extras={"motor": motor})
+    ctx = Contexto(fabrica_postgres(fabrica_sesiones(motor)), reloj or RelojSistema(), config.plazo_respuesta_horas)
+    return Contenedor(ctx, AlmacenIdempotenciaMemoria(), None, extras={"motor": motor})
 
 
 def crear_app(config: Configuracion | None = None, contenedor: Contenedor | None = None) -> FastAPI:

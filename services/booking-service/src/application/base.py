@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from application.ports import FabricaUnidadDeTrabajo, PublicadorEventos, Reloj
+from application.ports import FabricaUnidadDeTrabajo, Reloj
 from domain.reglas import PLAZO_RESPUESTA_HORAS
 from domain.disponibilidad import DisponibilidadCupo
 from domain.eventos import EventoDominio
@@ -15,7 +15,6 @@ from domain.reserva import Reserva
 @dataclass
 class Contexto:
     uow: FabricaUnidadDeTrabajo
-    publicador: PublicadorEventos
     reloj: Reloj
     plazo_horas: int = PLAZO_RESPUESTA_HORAS
 

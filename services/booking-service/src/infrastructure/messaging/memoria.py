@@ -2,16 +2,13 @@
 
 from typing import Any
 
-from domain.eventos import EventoDominio
-from infrastructure.messaging.sobre import armar_sobre
-
 
 class PublicadorMemoria:
     def __init__(self) -> None:
         self.publicados: list[dict[str, Any]] = []
 
-    async def publicar(self, eventos: list[EventoDominio], correlation_id: str | None) -> None:
-        self.publicados.extend(armar_sobre(e, correlation_id) for e in eventos)
+    async def publicar(self, sobres: list[dict[str, Any]]) -> None:
+        self.publicados.extend(sobres)
 
     def tipos(self) -> list[str]:
         return [s["event_type"] for s in self.publicados]

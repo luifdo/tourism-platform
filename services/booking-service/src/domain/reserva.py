@@ -1,7 +1,7 @@
 """Reserva y su máquina de estados (Guía §4, SRS §3.6.1).
 
 Cada transición deja un `EventoDominio` en `reserva.eventos`; la capa de aplicación
-los publica después del COMMIT. Los cupos los mueve el caso de uso sobre
+los guarda en el outbox en la misma transacción. Los cupos los mueve el caso de uso sobre
 `DisponibilidadCupo`, porque viven en otra fila.
 """
 

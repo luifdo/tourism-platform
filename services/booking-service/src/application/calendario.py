@@ -99,8 +99,8 @@ class AbrirRangoCalendario:
                         await uow.disponibilidad.guardar(dia)
                         creados.append(dia)
                 fecha += timedelta(days=1)
+            await uow.outbox.agregar(eventos_de_dias(creados), None)
             await uow.commit()
-        await self.ctx.publicador.publicar(eventos_de_dias(creados), None)
         return [d.fecha for d in creados], omitidos
 
 
@@ -137,6 +137,6 @@ class GuardarDiaCalendario:
                     raise VersionDistinta("El día cambió en el servidor.", dia.version)
                 dia.ajustar(cupos_totales, tarifa_dia, aforo)
             await uow.disponibilidad.guardar(dia)
+            await uow.outbox.agregar(eventos_de_dias([dia]), None)
             await uow.commit()
-        await self.ctx.publicador.publicar(eventos_de_dias([dia]), None)
         return dia, creado

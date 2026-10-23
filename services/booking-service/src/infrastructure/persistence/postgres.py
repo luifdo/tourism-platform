@@ -18,10 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionm
 from application.errores import DiaExistente, ReservaDuplicada
 from application.ports import FiltroReservas
 from domain.disponibilidad import DisponibilidadCupo
+from domain.eventos import EventoDominio
 from domain.reglas import ZONA
 from domain.reserva import ESTADOS_ACTIVOS, Actor, EstadoReserva, Reserva
 from domain.servicio import ServicioRef
-from infrastructure.persistence.tablas import disponibilidad_cupo, servicio_ref, solicitud_reserva
+from infrastructure.messaging.sobre import armar_sobre
+from infrastructure.persistence.tablas import disponibilidad_cupo, evento_outbox, servicio_ref, solicitud_reserva
 
 Ejecutor = AsyncConnection | AsyncSession  # ambos tienen `execute`; las pruebas usan una conexión
 
@@ -278,6 +280,30 @@ class RepositorioReservasPostgres:
         )
 
 
+# ---------- evento_outbox ----------
+
+class OutboxPostgres:
+    def __init__(self, db: Ejecutor):
+        self._db = db
+
+    async def agregar(self, eventos: list[EventoDominio], correlation_id: str | None) -> None:
+        """Un INSERT por evento en evento_outbox, dentro de la transacción del caso de uso.
+
+        La fila guarda el sobre completo (envelope.v1.json) y su `id` es el `event_id`: si el
+        relay lo publica dos veces (se cayó tras publicar y antes de marcarlo), los
+        consumidores lo descartan por ese id. `publicado_en` nulo = pendiente.
+        `clock_timestamp()` (y no `now()`, que es fijo en toda la transacción) da a cada evento
+        su propio instante, así el relay los publica en el orden en que se produjeron.
+        """
+        if not eventos:
+            return
+        sobres = [armar_sobre(e, correlation_id) for e in eventos]
+        await self._db.execute(
+            insert(evento_outbox).values(creado_en=func.clock_timestamp()),
+            [{"id": UUID(s["event_id"]), "tipo": s["event_type"], "sobre": s} for s in sobres],
+        )
+
+
 # ---------- Unidad de trabajo ----------
 
 class UnidadDeTrabajoPostgres:
@@ -297,6 +323,7 @@ class UnidadDeTrabajoPostgres:
         self.servicios = RepositorioServiciosPostgres(self._sesion)
         self.reservas = RepositorioReservasPostgres(self._sesion)
         self.disponibilidad = RepositorioDisponibilidadPostgres(self._sesion)
+        self.outbox = OutboxPostgres(self._sesion)
         return self
 
     async def __aexit__(self, *exc: object) -> None:

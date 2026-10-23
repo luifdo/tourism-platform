@@ -29,9 +29,9 @@ class ExpirarSolicitudes:
                         dias.append(dia)
                     await uow.reservas.guardar(reserva)
                     eventos += eventos_de(reserva, None)
+                # Un solo evento por día, con su estado final, aunque el lote haya tocado el día varias veces.
+                await uow.outbox.agregar(eventos + eventos_de_dias(dias), None)
                 await uow.commit()
-            # Un solo evento por día, con su estado final, aunque el lote haya tocado el día varias veces.
-            await self.ctx.publicador.publicar(eventos + eventos_de_dias(dias), None)
             total += len(lote)
             if len(lote) < LOTE:
                 return total
@@ -52,8 +52,8 @@ class FinalizarReservas:
                     reserva.finalizar(ahora)
                     await uow.reservas.guardar(reserva)
                     eventos += eventos_de(reserva, None)
+                await uow.outbox.agregar(eventos, None)
                 await uow.commit()
-            await self.ctx.publicador.publicar(eventos, None)
             total += len(lote)
             if len(lote) < LOTE:
                 return total

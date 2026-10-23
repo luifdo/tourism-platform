@@ -96,7 +96,7 @@ async def test_sin_rutas_de_demo_en_modo_postgres(cliente):
     assert (await cliente.post("/dev/tareas/expirar")).status_code == 404
 
 
-async def test_ciclo_completo_queda_en_postgres(cliente, motor):
+async def test_ciclo_completo_queda_en_postgres(cliente, motor, outbox):
     r = await cliente.post(
         BASE, json={"servicio_id": SERVICIO, "fecha_reserva": "2026-11-10", "numero_personas": 3}, headers=TURISTA
     )
@@ -127,11 +127,11 @@ async def test_ciclo_completo_queda_en_postgres(cliente, motor):
             .where(disponibilidad_cupo.c.servicio_id == demo.SERVICIO_DEMO, disponibilidad_cupo.c.fecha == date(2026, 11, 10))
         )).scalar_one()
     assert estado == ["CANCELADA"] and cupos == 10
-    tipos = [s["event_type"] for s in cliente.contenedor.publicador.publicados]
+    tipos = [s["event_type"] for s in await outbox()]
     assert {"reserva.solicitada", "reserva.confirmada", "reserva.cancelada", "disponibilidad.actualizada"} <= set(tipos)
 
 
-async def test_un_error_de_negocio_no_deja_nada_a_medias(cliente, motor):
+async def test_un_error_de_negocio_no_deja_nada_a_medias(cliente, motor, outbox):
     r = await cliente.post(
         BASE, json={"servicio_id": SERVICIO, "fecha_reserva": "2026-11-10", "numero_personas": 11}, headers=TURISTA
     )
@@ -140,4 +140,4 @@ async def test_un_error_de_negocio_no_deja_nada_a_medias(cliente, motor):
         assert (await con.execute(
             select(solicitud_reserva.c.id).where(solicitud_reserva.c.servicio_id == demo.SERVICIO_DEMO)
         )).first() is None
-    assert cliente.contenedor.publicador.publicados == []  # sin commit no se publica nada
+    assert await outbox() == []  # sin commit no queda ningún evento

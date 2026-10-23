@@ -74,10 +74,20 @@ class RepositorioDisponibilidad(Protocol):
         """Lectura sin bloqueo (consulta pública y calendario del prestador)."""
 
 
+class Outbox(Protocol):
+    """Patrón outbox: los eventos se guardan en la misma transacción que el cambio que los
+    produjo. Si el COMMIT sale, los eventos también; si no, no queda ninguno. Así nunca hay
+    una reserva creada cuyo evento se perdió porque el pod se cayó justo después del COMMIT.
+    Otro proceso (el relay) los publica en RabbitMQ después."""
+
+    async def agregar(self, eventos: list[EventoDominio], correlation_id: str | None) -> None: ...
+
+
 class UnidadDeTrabajo(Protocol):
     servicios: RepositorioServicios
     reservas: RepositorioReservas
     disponibilidad: RepositorioDisponibilidad
+    outbox: Outbox
 
     async def __aenter__(self) -> Self: ...
 
@@ -89,10 +99,6 @@ class UnidadDeTrabajo(Protocol):
 
 class FabricaUnidadDeTrabajo(Protocol):
     def __call__(self) -> UnidadDeTrabajo: ...
-
-
-class PublicadorEventos(Protocol):
-    async def publicar(self, eventos: list[EventoDominio], correlation_id: str | None) -> None: ...
 
 
 class AlmacenIdempotencia(Protocol):

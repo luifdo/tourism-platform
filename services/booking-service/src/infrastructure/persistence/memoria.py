@@ -3,20 +3,24 @@
 Imita lo que garantiza Postgres en lo que importa a la aplicación:
 * una transacción a la vez (un candado global hace el papel de `FOR UPDATE`);
 * lo leído es una copia: si no hay `commit`, nada cambia (rollback);
-* las restricciones únicas de `solicitud_reserva` y `disponibilidad_cupo`.
+* las restricciones únicas de `solicitud_reserva` y `disponibilidad_cupo`;
+* el outbox: los eventos se entregan al publicador solo si hay COMMIT.
 """
 
 import asyncio
 import copy
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Self
+from typing import Any, Self
 from uuid import UUID
 
 from application.ports import FiltroReservas
 from domain.disponibilidad import DisponibilidadCupo
+from domain.eventos import EventoDominio
 from domain.reserva import ESTADOS_ACTIVOS, EstadoReserva, Reserva
 from domain.servicio import ServicioRef
+from infrastructure.messaging.memoria import PublicadorMemoria
+from infrastructure.messaging.sobre import armar_sobre
 
 
 @dataclass
@@ -34,6 +38,7 @@ class _Cambios:
         self.servicios: dict[UUID, ServicioRef] = {}
         self.reservas: dict[UUID, Reserva] = {}
         self.dias: dict[tuple[UUID, date], DisponibilidadCupo] = {}
+        self.sobres: list[dict[str, Any]] = []
 
 
 class RepositorioServiciosMemoria:
@@ -133,9 +138,18 @@ class RepositorioReservasMemoria:
         return copy.deepcopy(sorted(pasadas, key=lambda r: r.fecha_reserva)[:limite])
 
 
+class OutboxMemoria:
+    def __init__(self, cambios: _Cambios):
+        self._c = cambios
+
+    async def agregar(self, eventos: list[EventoDominio], correlation_id: str | None) -> None:
+        self._c.sobres.extend(armar_sobre(e, correlation_id) for e in eventos)
+
+
 class UnidadDeTrabajoMemoria:
-    def __init__(self, almacen: AlmacenMemoria):
+    def __init__(self, almacen: AlmacenMemoria, publicador: PublicadorMemoria):
         self._almacen = almacen
+        self._publicador = publicador
 
     async def __aenter__(self) -> Self:
         await self._almacen.candado.acquire()
@@ -143,6 +157,7 @@ class UnidadDeTrabajoMemoria:
         self.servicios = RepositorioServiciosMemoria(self._almacen, self._cambios)
         self.reservas = RepositorioReservasMemoria(self._almacen, self._cambios)
         self.disponibilidad = RepositorioDisponibilidadMemoria(self._almacen, self._cambios)
+        self.outbox = OutboxMemoria(self._cambios)
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -153,10 +168,12 @@ class UnidadDeTrabajoMemoria:
         self._almacen.servicios.update(self._cambios.servicios)
         self._almacen.dias.update(self._cambios.dias)
         self._almacen.reservas.update(self._cambios.reservas)
+        # Sin relay en memoria: lo que en Postgres queda en evento_outbox se entrega aquí mismo.
+        await self._publicador.publicar(self._cambios.sobres)
         self._cambios = _Cambios()
         # Los repositorios siguen leyendo del almacén ya actualizado.
-        self.servicios._c = self.reservas._c = self.disponibilidad._c = self._cambios
+        self.servicios._c = self.reservas._c = self.disponibilidad._c = self.outbox._c = self._cambios
 
 
-def fabrica_memoria(almacen: AlmacenMemoria):
-    return lambda: UnidadDeTrabajoMemoria(almacen)
+def fabrica_memoria(almacen: AlmacenMemoria, publicador: PublicadorMemoria):
+    return lambda: UnidadDeTrabajoMemoria(almacen, publicador)

@@ -48,14 +48,14 @@ async def estado_en_la_base(motor) -> tuple[int, int, int]:
     return disponibles, activas, personas
 
 
-async def test_50_turistas_por_10_cupos_no_hay_sobreventa(cliente, motor):
+async def test_50_turistas_por_10_cupos_no_hay_sobreventa(cliente, motor, outbox):
     respuestas = await asyncio.gather(*(solicitar(cliente, turista()) for _ in range(50)))
 
     codigos = Counter(r.status_code for r in respuestas)
     assert codigos == {201: CUPOS, 409: 50 - CUPOS}  # ni un 500 ni un timeout del pool
     assert {r.json()["error"] for r in respuestas if r.status_code == 409} == {"CUPOS_INSUFICIENTES"}
     assert await estado_en_la_base(motor) == (0, CUPOS, CUPOS)
-    solicitadas = [s for s in cliente.contenedor.publicador.publicados if s["event_type"] == "reserva.solicitada"]
+    solicitadas = [s for s in await outbox() if s["event_type"] == "reserva.solicitada"]
     assert len(solicitadas) == CUPOS  # un evento por reserva que de verdad se creó
 
 

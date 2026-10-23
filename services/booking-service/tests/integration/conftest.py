@@ -9,6 +9,7 @@ y cada prueba corre dentro de una transacción que se deshace al final.
 
 import asyncio
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -81,6 +82,32 @@ async def motor(base_migrada):
     m = create_async_engine(base_migrada)
     yield m
     await m.dispose()
+
+
+RABBITMQ_URL = os.environ.get("TEST_RABBITMQ_URL", "amqp://booking:booking@127.0.0.1:5673/")
+
+
+@pytest.fixture
+async def rabbitmq():
+    """Conexión a un RabbitMQ real (python scripts/rabbitmq_pruebas.py subir); si no responde, se salta.
+    Cada prueba usa su propio exchange (`pruebas.<uuid>`) para no mezclarse, y lo borra al final."""
+    import aio_pika
+
+    from infrastructure.messaging.rabbitmq import conectar
+
+    try:
+        conexion = await asyncio.wait_for(conectar(RABBITMQ_URL), 10)
+    except Exception:
+        pytest.skip(f"RabbitMQ no responde en {RABBITMQ_URL}. Levántelo con: python scripts/rabbitmq_pruebas.py subir")
+    conexion.exchange_prueba = f"pruebas.{uuid.uuid4()}"
+    yield conexion
+    await conexion.close()  # una prueba puede haberla cerrado a propósito: se limpia con otra
+    limpieza = await conectar(RABBITMQ_URL)
+    try:
+        await (await limpieza.channel()).exchange_delete(conexion.exchange_prueba)
+    except aio_pika.exceptions.ChannelClosed:
+        pass
+    await limpieza.close()
 
 
 @pytest.fixture

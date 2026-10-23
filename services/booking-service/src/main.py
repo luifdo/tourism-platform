@@ -17,6 +17,7 @@ from application.base import Contexto
 from config import Configuracion
 from infrastructure.http import demo, operacion, rutas
 from infrastructure.http.errores import registrar_manejadores
+from infrastructure.messaging.arranque import Mensajeria
 from infrastructure.messaging.memoria import PublicadorMemoria
 from infrastructure.persistence.db import crear_motor, fabrica_sesiones
 from infrastructure.persistence.idempotencia_memoria import AlmacenIdempotenciaMemoria
@@ -60,8 +61,14 @@ def crear_app(config: Configuracion | None = None, contenedor: Contenedor | None
     async def ciclo_de_vida(app: FastAPI):
         if con_demo:
             await demo.cargar_datos_demo(contenedor)
+        motor = contenedor.extras.get("motor")
+        mensajeria = Mensajeria(config, motor) if motor is not None else None
+        if mensajeria:
+            mensajeria.iniciar()
         yield
-        if motor := contenedor.extras.get("motor"):
+        if mensajeria:
+            await mensajeria.detener()
+        if motor is not None:
             await motor.dispose()  # cierra las conexiones del pool al apagar el pod
 
     app = FastAPI(

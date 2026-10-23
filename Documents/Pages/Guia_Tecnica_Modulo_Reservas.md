@@ -152,13 +152,14 @@ Si no devuelve filas, el servicio consulta el estado actual y responde 404 (no e
 
 * Procesan en lotes de 100 con `FOR UPDATE SKIP LOCKED`, de modo que no chocan con las peticiones de los usuarios.
 * `concurrencyPolicy: Forbid` evita dos ejecuciones simultáneas del mismo CronJob.
-* Los eventos de cada lote se publican después del `COMMIT` del lote.
+* Los eventos de cada lote se guardan en el outbox dentro de la transacción del lote (§6.5).
 
 ### 6.5 Publicación de eventos
 
 * **`disponibilidad.actualizada`** (acordado con @luifdo el 23 de octubre): cada vez que cambia una fila de disponibilidad se publica el **estado completo del día** (`servicio_id`, `fecha`, `cupos_totales`, `cupos_disponibles` y `version` = `secuencia`), no la diferencia. Sale al solicitar, modificar, rechazar, cancelar o expirar, y cuando el prestador abre o edita su calendario. Un día cerrado sale con `cupos_totales = 0`. Si una operación toca un día varias veces (un lote del CronJob), sale un solo evento con el estado final. Confirmar y finalizar no mueven cupos, así que no lo publican. Catalog lo usa solo para filtrar la búsqueda y el mapa por fecha: el cupo lo sigue garantizando el bloqueo al reservar.
-* Se publica con *publisher confirms* y mensajes persistentes; si RabbitMQ no confirma, se reintenta 3 veces y se deja un registro de error con el `reserva_id` (Plan §4.3).
-* **Riesgo aceptado (ADR-008):** si el proceso se cae entre el `COMMIT` y la publicación, el evento se pierde. Para este módulo el impacto es alto, porque `reserva.finalizada` habilita la reseña y `reserva.confirmada` dispara el correo. Por eso es el primer candidato a adoptar el patrón *outbox* que el ADR-008 deja como evolución; la decisión se toma con los resultados de las pruebas de la §10.
+* **Patrón outbox (adoptado en el Sprint 5):** los eventos se guardan en la tabla `evento_outbox` **en la misma transacción** que el cambio que los produjo, así no puede quedar una reserva creada cuyo evento se perdió porque el proceso se cayó justo después del `COMMIT` (el riesgo que el ADR-008 dejaba aceptado; aquí el impacto era alto, porque `reserva.finalizada` habilita la reseña y `reserva.confirmada` dispara el correo).
+* **Relay:** una tarea de fondo en cada réplica toma los pendientes en orden, de a 100, con `FOR UPDATE SKIP LOCKED` (dos réplicas nunca toman el mismo), los publica con *publisher confirms* y mensajes persistentes, y marca `publicado_en`. Si RabbitMQ no confirma, suma un intento, guarda el error, corta el lote para no desordenar y reintenta en la siguiente vuelta; desde el tercer intento fallido deja un registro de nivel error (Plan §4.3). Si RabbitMQ está caído, booking sigue atendiendo y los eventos esperan en el outbox.
+* **Al menos una vez:** si el relay se cae después de publicar y antes de marcar, el evento sale de nuevo. Cada mensaje lleva `message_id` = `event_id` para que los consumidores lo descarten.
 
 ## 7. Endpoints
 

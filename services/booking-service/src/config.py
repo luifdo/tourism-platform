@@ -27,6 +27,14 @@ class Configuracion(BaseSettings):
     # Segundos que una petición espera una conexión libre antes de fallar.
     db_pool_espera_s: float = 5.0
 
+    # ---------- RabbitMQ (solo en modo postgres) ----------
+    # Local: el contenedor de pruebas (scripts/rabbitmq_pruebas.py) en el puerto 5673.
+    rabbitmq_url: str = "amqp://booking:booking@127.0.0.1:5673/"
+    events_exchange: str = "turismo.eventos"
+    # Relay del outbox: cuántos eventos publica por transacción y cuánto espera si no hay pendientes.
+    relay_lote: int = 100
+    relay_espera_s: float = 1.0
+
     @field_validator("database_url")
     @classmethod
     def _driver_asincrono(cls, url: str) -> str:

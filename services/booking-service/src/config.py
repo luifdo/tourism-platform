@@ -19,7 +19,7 @@ class Configuracion(BaseSettings):
     # ---------- Postgres (booking_db) ----------
     # Driver asíncrono asyncpg: con uno síncrono, cada consulta bloquearía todo el servidor.
     # El puerto 5433 local evita chocar con un Postgres instalado en el PC (5432).
-    database_url: str = "postgresql+asyncpg://booking:booking@localhost:5433/booking_db"
+    database_url: str = "postgresql+asyncpg://booking:booking@127.0.0.1:5433/booking_db"
     # Conexiones abiertas que se reutilizan entre peticiones (por réplica).
     db_pool_tamano: int = 10
     # Conexiones extra que se abren en un pico y se cierran después.

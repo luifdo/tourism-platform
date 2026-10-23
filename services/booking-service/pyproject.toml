@@ -27,3 +27,6 @@ dev = [
 pythonpath = ["src"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integracion: necesita Postgres real (python scripts/postgres_pruebas.py subir)",
+]

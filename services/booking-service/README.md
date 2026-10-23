@@ -68,3 +68,24 @@ uvicorn main:app --app-dir src --port 8003 --reload
 ```
 
 Swagger queda en <http://localhost:8003/docs>. En modo memoria se carga un servicio de ejemplo con 30 días abiertos y aparecen las rutas `/dev` (simular `servicio.publicado`, ejecutar los CronJobs, adelantar el reloj y ver los eventos publicados). Los ids de ejemplo están en la portada de Swagger. Como no hay Traefik, `X-Usuario-Id` y `X-Usuario-Rol` se escriben a mano.
+
+### Postgres local y migraciones
+
+Las pruebas de integración (`tests/integration/`) usan un Postgres real en Docker, en el **puerto 5433** para no chocar con un Postgres instalado en el PC ni con el `docker-compose` del equipo. Si no está corriendo, esas pruebas se saltan con un aviso.
+
+```bash
+python scripts/postgres_pruebas.py subir     # crea o arranca el contenedor (postgres:16-alpine) y espera a que responda
+pytest                                       # unitarias + integración
+python scripts/postgres_pruebas.py bajar     # lo borra (es desechable)
+```
+
+El esquema de `booking_db` se crea con **Alembic** (`migrations/`). La URL sale de `DATABASE_URL`; nunca se escribe en `alembic.ini`.
+
+```bash
+alembic upgrade head          # aplica las migraciones pendientes
+alembic downgrade -1          # deshace la última
+alembic current               # versión actual de la base
+alembic upgrade head --sql    # muestra el SQL sin ejecutarlo
+```
+
+Para cambiar el esquema: editar `src/infrastructure/persistence/tablas.py`, generar la migración con `alembic revision --autogenerate -m "..."` y **revisarla a mano** antes de subirla. La prueba `test_la_base_migrada_coincide_con_tablas_py` falla si `tablas.py` y las migraciones no coinciden.

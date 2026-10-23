@@ -1,18 +1,19 @@
 """Repositorios de booking_db en Postgres (SQLAlchemy Core + asyncpg).
 
 Cada repositorio recibe la conexión (o sesión) de la transacción en curso: la abre y la cierra
-la unidad de trabajo (paso 5.2e), así todo lo que hace un caso de uso se confirma o se deshace junto.
+`UnidadDeTrabajoPostgres` (al final del archivo), así todo lo que hace un caso de uso se confirma o se deshace junto.
 Los repositorios solo traducen filas <-> objetos del dominio; las reglas viven en el dominio.
 """
 
 from datetime import date, datetime
+from typing import Self
 from uuid import UUID
 
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
 from application.errores import DiaExistente, ReservaDuplicada
 from application.ports import FiltroReservas
@@ -275,3 +276,39 @@ class RepositorioReservasPostgres:
             .limit(limite)
             .with_for_update(skip_locked=True)
         )
+
+
+# ---------- Unidad de trabajo ----------
+
+class UnidadDeTrabajoPostgres:
+    """Una transacción de booking_db por caso de uso.
+
+    Al entrar toma una conexión del pool y abre la transacción; los tres repositorios
+    trabajan sobre esa misma sesión. `commit()` confirma. Al salir, lo no confirmado se
+    deshace (ROLLBACK, también si hubo una excepción) y la conexión vuelve al pool.
+    """
+
+    def __init__(self, sesiones: async_sessionmaker[AsyncSession]):
+        self._sesiones = sesiones
+
+    async def __aenter__(self) -> Self:
+        self._sesion = self._sesiones()
+        await self._sesion.begin()
+        self.servicios = RepositorioServiciosPostgres(self._sesion)
+        self.reservas = RepositorioReservasPostgres(self._sesion)
+        self.disponibilidad = RepositorioDisponibilidadPostgres(self._sesion)
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        try:
+            if self._sesion.in_transaction():
+                await self._sesion.rollback()
+        finally:
+            await self._sesion.close()
+
+    async def commit(self) -> None:
+        await self._sesion.commit()
+
+
+def fabrica_postgres(sesiones: async_sessionmaker[AsyncSession]):
+    return lambda: UnidadDeTrabajoPostgres(sesiones)

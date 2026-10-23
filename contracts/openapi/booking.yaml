@@ -390,6 +390,8 @@ paths:
       responses:
         '200':
           description: El servicio y su base de datos responden.
+        '503':
+          description: La base de datos no responde; Kubernetes deja de enviarle tráfico a esta réplica.
 
   /metrics:
     get:

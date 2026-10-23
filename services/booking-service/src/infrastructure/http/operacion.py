@@ -3,7 +3,10 @@
 import time
 
 from fastapi import APIRouter, FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
+
+from infrastructure.persistence.db import verificar_conexion
 
 router = APIRouter(tags=["Operación"])
 
@@ -17,7 +20,12 @@ LATENCIA = Histogram(
 
 
 @router.get("/health", summary="Estado del servicio (sondas de Kubernetes)")
-async def health():
+async def health(request: Request):
+    """200 si el servicio y su base responden; 503 si la base no responde, para que Kubernetes
+    deje de enviarle tráfico a esta réplica hasta que vuelva. En modo memoria no hay base."""
+    motor = request.app.state.contenedor.extras.get("motor")
+    if motor is not None and not await verificar_conexion(motor):
+        return JSONResponse({"estado": "sin_base_de_datos"}, status_code=503)
     return {"estado": "ok"}
 
 

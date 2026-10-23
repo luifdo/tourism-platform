@@ -25,6 +25,8 @@ class AlmacenMemoria:
     reservas: dict[UUID, Reserva] = field(default_factory=dict)
     dias: dict[tuple[UUID, date], DisponibilidadCupo] = field(default_factory=dict)
     candado: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Qué filas se pidieron "para cambiar" (en Postgres serían FOR UPDATE). Lo revisan las pruebas.
+    bloqueos: list[tuple[str, object]] = field(default_factory=list)
 
 
 class _Cambios:
@@ -38,12 +40,9 @@ class RepositorioServiciosMemoria:
     def __init__(self, almacen: AlmacenMemoria, cambios: _Cambios):
         self._a, self._c = almacen, cambios
 
-    async def obtener(self, servicio_id: UUID) -> ServicioRef | None:
+    async def leer(self, servicio_id: UUID) -> ServicioRef | None:
         s = self._c.servicios.get(servicio_id) or self._a.servicios.get(servicio_id)
         return copy.deepcopy(s)
-
-    async def varios(self, servicio_ids: list[UUID]) -> dict[UUID, ServicioRef]:
-        return {sid: s for sid in servicio_ids if (s := await self.obtener(sid))}
 
     async def guardar(self, servicio: ServicioRef) -> None:
         self._c.servicios[servicio.servicio_id] = copy.deepcopy(servicio)
@@ -56,7 +55,8 @@ class RepositorioDisponibilidadMemoria:
     def _todos(self) -> dict[tuple[UUID, date], DisponibilidadCupo]:
         return {**self._a.dias, **self._c.dias}
 
-    async def obtener(self, servicio_id: UUID, fecha: date) -> DisponibilidadCupo | None:
+    async def obtener_para_cambiar(self, servicio_id: UUID, fecha: date) -> DisponibilidadCupo | None:
+        self._a.bloqueos.append(("dia", (servicio_id, fecha)))
         return copy.deepcopy(self._todos().get((servicio_id, fecha)))
 
     async def guardar(self, dia: DisponibilidadCupo) -> None:
@@ -76,7 +76,11 @@ class RepositorioReservasMemoria:
     def _todas(self) -> list[Reserva]:
         return list({**self._a.reservas, **self._c.reservas}.values())
 
-    async def obtener(self, reserva_id: UUID) -> Reserva | None:
+    async def obtener_para_cambiar(self, reserva_id: UUID) -> Reserva | None:
+        self._a.bloqueos.append(("reserva", reserva_id))
+        return await self.leer(reserva_id)
+
+    async def leer(self, reserva_id: UUID) -> Reserva | None:
         r = self._c.reservas.get(reserva_id) or self._a.reservas.get(reserva_id)
         return copy.deepcopy(r)
 

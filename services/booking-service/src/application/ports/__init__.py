@@ -25,16 +25,23 @@ class FiltroReservas:
 class RepositorioServicios(Protocol):
     """Proyección `servicio_ref`, alimentada por `servicio.publicado.v1`."""
 
-    async def obtener(self, servicio_id: UUID) -> ServicioRef | None: ...
-
-    async def varios(self, servicio_ids: list[UUID]) -> dict[UUID, ServicioRef]: ...
+    async def leer(self, servicio_id: UUID) -> ServicioRef | None:
+        """Lectura sin bloqueo."""
 
     async def guardar(self, servicio: ServicioRef) -> None: ...
 
 
 class RepositorioReservas(Protocol):
-    async def obtener(self, reserva_id: UUID) -> Reserva | None:
-        """Lee y bloquea la reserva hasta el fin de la transacción."""
+    """Dos formas de leer una reserva, según para qué:
+
+    * `obtener_para_cambiar`: antes de cambiar su estado. Bloquea la fila hasta el fin de la
+      transacción (SELECT ... FOR UPDATE), así dos cambios a la vez no se pisan.
+    * `leer`: solo para mostrarla (un GET). No bloquea: no hace esperar a quien la está cambiando.
+    """
+
+    async def obtener_para_cambiar(self, reserva_id: UUID) -> Reserva | None: ...
+
+    async def leer(self, reserva_id: UUID) -> Reserva | None: ...
 
     async def guardar(self, reserva: Reserva) -> None: ...
 
@@ -54,12 +61,13 @@ class RepositorioReservas(Protocol):
 
 
 class RepositorioDisponibilidad(Protocol):
-    async def obtener(self, servicio_id: UUID, fecha: date) -> DisponibilidadCupo | None:
-        """Lee y bloquea la fila del día (SELECT ... FOR UPDATE)."""
+    async def obtener_para_cambiar(self, servicio_id: UUID, fecha: date) -> DisponibilidadCupo | None:
+        """Lee y bloquea la fila del día (SELECT ... FOR UPDATE): siempre precede a un cambio de cupos."""
 
     async def guardar(self, dia: DisponibilidadCupo) -> None: ...
 
-    async def rango(self, servicio_id: UUID, desde: date, hasta: date) -> list[DisponibilidadCupo]: ...
+    async def rango(self, servicio_id: UUID, desde: date, hasta: date) -> list[DisponibilidadCupo]:
+        """Lectura sin bloqueo (consulta pública y calendario del prestador)."""
 
 
 class UnidadDeTrabajo(Protocol):

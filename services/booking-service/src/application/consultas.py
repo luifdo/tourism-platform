@@ -23,7 +23,7 @@ class ObtenerReserva:
 
     async def __call__(self, usuario_id: UUID, reserva_id: UUID) -> Reserva:
         async with self.ctx.uow() as uow:
-            reserva = await uow.reservas.obtener(reserva_id)
+            reserva = await uow.reservas.leer(reserva_id)  # GET: sin bloqueo
         if reserva is None or usuario_id not in (reserva.turista_id, reserva.prestador_usuario_id):
             raise NoEncontrado("La reserva no existe.")
         return reserva

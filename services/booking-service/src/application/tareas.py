@@ -22,7 +22,7 @@ class ExpirarSolicitudes:
                 lote = await uow.reservas.solicitudes_vencidas(ahora, LOTE)
                 for reserva in lote:
                     reserva.expirar(ahora)
-                    dia = await uow.disponibilidad.obtener(reserva.servicio_id, reserva.fecha_reserva)
+                    dia = await uow.disponibilidad.obtener_para_cambiar(reserva.servicio_id, reserva.fecha_reserva)
                     if dia is not None:
                         dia.liberar(reserva.numero_personas)
                         await uow.disponibilidad.guardar(dia)

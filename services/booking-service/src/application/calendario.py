@@ -27,7 +27,7 @@ async def _servicio_del_prestador(
     uow: UnidadDeTrabajo, servicio_id: UUID, prestador_usuario_id: UUID, para_escribir: bool
 ) -> ServicioRef:
     """El dueño sale de `servicio_ref`. Para no revelar servicios ajenos, todo es 404."""
-    servicio = await uow.servicios.obtener(servicio_id)
+    servicio = await uow.servicios.leer(servicio_id)
     if servicio is None or not servicio.es_de(prestador_usuario_id):
         raise NoEncontrado("El servicio no existe o no le pertenece.")
     if para_escribir:
@@ -44,7 +44,7 @@ class ConsultarDisponibilidad:
     async def __call__(self, servicio_id: UUID, desde: date, hasta: date) -> list[DisponibilidadCupo]:
         validar_rango(desde, hasta, MAX_DIAS_CONSULTA)
         async with self.ctx.uow() as uow:
-            servicio = await uow.servicios.obtener(servicio_id)
+            servicio = await uow.servicios.leer(servicio_id)
             if servicio is None or not servicio.activo:
                 return []
             return await uow.disponibilidad.rango(servicio_id, desde, hasta)
@@ -89,7 +89,7 @@ class AbrirRangoCalendario:
             fecha = desde
             while fecha <= hasta:
                 if not dias_semana or fecha.isoweekday() in dias_semana:
-                    if await uow.disponibilidad.obtener(servicio_id, fecha):
+                    if await uow.disponibilidad.obtener_para_cambiar(servicio_id, fecha):
                         omitidos.append(fecha)
                     else:
                         dia = DisponibilidadCupo.abrir(
@@ -124,7 +124,7 @@ class GuardarDiaCalendario:
         async with self.ctx.uow() as uow:
             servicio = await _servicio_del_prestador(uow, servicio_id, prestador_usuario_id, para_escribir=True)
             aforo = servicio.capacidad_aforo_diario
-            dia = await uow.disponibilidad.obtener(servicio_id, fecha)
+            dia = await uow.disponibilidad.obtener_para_cambiar(servicio_id, fecha)
             creado = dia is None
             if dia is None:
                 if version_esperada is not None:

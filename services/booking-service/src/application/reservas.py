@@ -17,7 +17,7 @@ from domain.servicio import ServicioRef
 
 
 async def _servicio_activo(uow: UnidadDeTrabajo, servicio_id: UUID) -> ServicioRef:
-    servicio = await uow.servicios.obtener(servicio_id)
+    servicio = await uow.servicios.leer(servicio_id)
     if servicio is None:
         raise NoEncontrado("El servicio no existe.")
     servicio.exigir_activo()
@@ -25,7 +25,7 @@ async def _servicio_activo(uow: UnidadDeTrabajo, servicio_id: UUID) -> ServicioR
 
 
 async def _dia(uow: UnidadDeTrabajo, servicio_id: UUID, fecha: date) -> DisponibilidadCupo:
-    dia = await uow.disponibilidad.obtener(servicio_id, fecha)
+    dia = await uow.disponibilidad.obtener_para_cambiar(servicio_id, fecha)
     if dia is None:
         raise NoDisponible(f"El servicio no tiene cupos habilitados el {fecha.isoformat()}.")
     return dia
@@ -33,7 +33,7 @@ async def _dia(uow: UnidadDeTrabajo, servicio_id: UUID, fecha: date) -> Disponib
 
 async def _reserva_de(uow: UnidadDeTrabajo, reserva_id: UUID, actor: Actor, usuario_id: UUID) -> Reserva:
     """La reserva solo existe para su turista o para el prestador dueño (404 en otro caso)."""
-    reserva = await uow.reservas.obtener(reserva_id)
+    reserva = await uow.reservas.obtener_para_cambiar(reserva_id)
     if reserva is None:
         raise NoEncontrado("La reserva no existe.")
     duenio = reserva.turista_id if actor is Actor.TURISTA else reserva.prestador_usuario_id
@@ -43,7 +43,7 @@ async def _reserva_de(uow: UnidadDeTrabajo, reserva_id: UUID, actor: Actor, usua
 
 
 async def _liberar(uow: UnidadDeTrabajo, reserva: Reserva) -> DisponibilidadCupo | None:
-    dia = await uow.disponibilidad.obtener(reserva.servicio_id, reserva.fecha_reserva)
+    dia = await uow.disponibilidad.obtener_para_cambiar(reserva.servicio_id, reserva.fecha_reserva)
     if dia is not None:
         dia.liberar(reserva.numero_personas)
         await uow.disponibilidad.guardar(dia)

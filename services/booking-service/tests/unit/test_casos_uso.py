@@ -356,6 +356,47 @@ class TestDisponibilidadActualizada:
         assert 0 <= dia["cupos_disponibles"] <= dia["cupos_totales"] and dia["version"] >= 1
 
 
+# ---------- Lecturas con y sin bloqueo (paso 5.2a) ----------
+
+class TestBloqueos:
+    async def test_ver_una_reserva_no_la_bloquea(self, esc):
+        r = await esc.solicitar()
+        esc.almacen.bloqueos.clear()
+        await ObtenerReserva(esc.ctx)(esc.turista_id, r.id)
+        assert esc.almacen.bloqueos == []
+
+    async def test_confirmar_bloquea_la_reserva(self, esc):
+        r = await esc.solicitar()
+        esc.almacen.bloqueos.clear()
+        await ConfirmarReserva(esc.ctx)(esc.prestador_usuario_id, r.id)
+        assert esc.almacen.bloqueos == [("reserva", r.id)]
+
+    async def test_cancelar_bloquea_la_reserva_y_su_dia(self, esc):
+        r = await esc.solicitar()
+        esc.almacen.bloqueos.clear()
+        await CancelarReserva(esc.ctx)(Actor.TURISTA, esc.turista_id, r.id)
+        assert esc.almacen.bloqueos == [("reserva", r.id), ("dia", (esc.servicio_id, DIA_1))]
+
+    async def test_solicitar_bloquea_el_dia(self, esc):
+        esc.almacen.bloqueos.clear()
+        await esc.solicitar()
+        assert esc.almacen.bloqueos == [("dia", (esc.servicio_id, DIA_1))]
+
+    async def test_consultar_disponibilidad_y_listar_no_bloquean(self, esc):
+        await esc.solicitar()
+        esc.almacen.bloqueos.clear()
+        await ConsultarDisponibilidad(esc.ctx)(esc.servicio_id, DIA_1, DIA_2)
+        await ListarReservas(esc.ctx)(FiltroReservas(turista_id=esc.turista_id), 1, 20)
+        assert esc.almacen.bloqueos == []
+
+    async def test_modificar_bloquea_los_dias_en_orden_de_fecha(self, esc):
+        r = await esc.solicitar(fecha=DIA_2)
+        esc.almacen.bloqueos.clear()
+        await ModificarReserva(esc.ctx)(esc.turista_id, r.id, r.version, fecha_reserva=DIA_1)
+        dias = [clave[1] for tipo, clave in esc.almacen.bloqueos if tipo == "dia"]
+        assert dias == [DIA_1, DIA_2]  # ascendente, aunque la reserva pase del 11 al 10
+
+
 # ---------- Consultas ----------
 
 class TestConsultas:

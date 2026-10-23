@@ -29,7 +29,7 @@ class AplicarServicioPublicado:
     async def __call__(self, payload: dict[str, Any]) -> bool:
         nuevo = servicio_desde_evento(payload)
         async with self.ctx.uow() as uow:
-            if not nuevo.reemplaza_a(await uow.servicios.obtener(nuevo.servicio_id)):
+            if not nuevo.reemplaza_a(await uow.servicios.leer(nuevo.servicio_id)):
                 return False
             await uow.servicios.guardar(nuevo)
             await uow.commit()

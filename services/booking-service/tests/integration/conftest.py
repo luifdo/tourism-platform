@@ -9,17 +9,26 @@ y cada prueba corre dentro de una transacción que se deshace al final.
 
 import asyncio
 import os
+from datetime import datetime
 from pathlib import Path
 
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from config import Configuracion
+from domain.reglas import ZONA
+from infrastructure.http import demo
 from infrastructure.persistence.db import verificar_conexion
+from infrastructure.persistence.tablas import disponibilidad_cupo, servicio_ref, solicitud_reserva
+from infrastructure.reloj import RelojFijo
+from main import contenedor_postgres, crear_app
 
 RAIZ = Path(__file__).resolve().parents[2]
+AHORA = datetime(2026, 11, 1, 10, 0, tzinfo=ZONA)  # reloj fijo de las pruebas de API
 URL = os.environ.get("TEST_DATABASE_URL", "postgresql+asyncpg://booking:booking@127.0.0.1:5433/booking_db")
 
 
@@ -82,3 +91,30 @@ def alembic_cfg(base_migrada) -> Config:
 @pytest.fixture
 def config_db(base_migrada) -> Configuracion:
     return Configuracion(database_url=base_migrada)
+
+
+# ---------- API completa sobre Postgres ----------
+
+async def _limpiar_demo(motor):
+    async with motor.begin() as con:
+        for tabla in (solicitud_reserva, disponibilidad_cupo, servicio_ref):
+            await con.execute(delete(tabla).where(tabla.c.servicio_id == demo.SERVICIO_DEMO))
+
+
+@pytest.fixture
+async def cliente(base_migrada, motor):
+    """Cliente HTTP de la app en modo postgres, con el servicio de la demo y 30 días de 10 cupos
+    (desde el 2 de noviembre) cargados por los propios casos de uso. Borra todo al terminar."""
+    config = Configuracion(modo_persistencia="postgres", database_url=base_migrada, datos_demo=False)
+    contenedor = contenedor_postgres(config, RelojFijo(AHORA))
+    await _limpiar_demo(motor)  # por si una corrida anterior se interrumpió
+    await demo.cargar_datos_demo(contenedor)
+    contenedor.publicador.publicados.clear()
+    app = crear_app(config, contenedor)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://booking") as c:
+            c.contenedor = contenedor
+            yield c
+    finally:
+        await contenedor.extras["motor"].dispose()
+        await _limpiar_demo(motor)

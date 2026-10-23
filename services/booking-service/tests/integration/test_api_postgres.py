@@ -1,6 +1,6 @@
 """Paso 5.2e: la unidad de trabajo en Postgres y la API completa con MODO_PERSISTENCIA=postgres."""
 
-from datetime import datetime
+from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
@@ -9,16 +9,13 @@ import pytest
 from sqlalchemy import delete, select
 
 from config import Configuracion
-from domain.reglas import ZONA
 from domain.servicio import ServicioRef
 from infrastructure.http import demo
 from infrastructure.persistence.db import fabrica_sesiones
 from infrastructure.persistence.postgres import UnidadDeTrabajoPostgres
 from infrastructure.persistence.tablas import disponibilidad_cupo, servicio_ref, solicitud_reserva
-from infrastructure.reloj import RelojFijo
-from main import contenedor_postgres, crear_app
+from main import crear_app
 
-AHORA = datetime(2026, 11, 1, 10, 0, tzinfo=ZONA)
 SERVICIO = str(demo.SERVICIO_DEMO)
 TURISTA = {"X-Usuario-Id": str(demo.USUARIO_TURISTA_DEMO), "X-Usuario-Rol": "Turista"}
 PRESTADOR = {"X-Usuario-Id": str(demo.USUARIO_PRESTADOR_DEMO), "X-Usuario-Rol": "Prestador"}
@@ -78,30 +75,7 @@ async def test_la_conexion_vuelve_al_pool(uow, motor):
     assert motor.pool.checkedout() == 0
 
 
-# ---------- API completa contra Postgres ----------
-
-async def _limpiar_demo(motor):
-    async with motor.begin() as con:
-        for tabla in (solicitud_reserva, disponibilidad_cupo, servicio_ref):
-            await con.execute(delete(tabla).where(tabla.c.servicio_id == demo.SERVICIO_DEMO))
-
-
-@pytest.fixture
-async def cliente(base_migrada, motor):
-    config = Configuracion(modo_persistencia="postgres", database_url=base_migrada, datos_demo=False)
-    contenedor = contenedor_postgres(config, RelojFijo(AHORA))
-    await _limpiar_demo(motor)  # por si una corrida anterior se interrumpió
-    await demo.cargar_datos_demo(contenedor)  # servicio y 30 días de 10 cupos, por los casos de uso
-    contenedor.publicador.publicados.clear()
-    app = crear_app(config, contenedor)
-    try:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://booking") as c:
-            c.contenedor = contenedor
-            yield c
-    finally:
-        await contenedor.extras["motor"].dispose()
-        await _limpiar_demo(motor)
-
+# ---------- API completa contra Postgres (fixture `cliente` en conftest.py) ----------
 
 async def test_health_con_la_base_arriba(cliente):
     assert (await cliente.get("/health")).json() == {"estado": "ok"}
@@ -150,7 +124,7 @@ async def test_ciclo_completo_queda_en_postgres(cliente, motor):
         )).scalars().all()
         cupos = (await con.execute(
             select(disponibilidad_cupo.c.cupos_disponibles)
-            .where(disponibilidad_cupo.c.servicio_id == demo.SERVICIO_DEMO, disponibilidad_cupo.c.fecha == datetime(2026, 11, 10).date())
+            .where(disponibilidad_cupo.c.servicio_id == demo.SERVICIO_DEMO, disponibilidad_cupo.c.fecha == date(2026, 11, 10))
         )).scalar_one()
     assert estado == ["CANCELADA"] and cupos == 10
     tipos = [s["event_type"] for s in cliente.contenedor.publicador.publicados]

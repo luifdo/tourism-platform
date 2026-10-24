@@ -14,6 +14,12 @@ REGISTRO = CollectorRegistry()
 PETICIONES = Counter(
     "booking_http_peticiones_total", "Peticiones HTTP atendidas", ["metodo", "ruta", "estado"], registry=REGISTRO
 )
+EVENTOS_CONSUMIDOS = Counter(
+    "booking_eventos_consumidos_total",
+    "Mensajes consumidos de RabbitMQ por resultado (aplicado, descartado, reintento, dlq)",
+    ["cola", "event_type", "resultado"],
+    registry=REGISTRO,
+)
 LATENCIA = Histogram(
     "booking_http_latencia_segundos", "Latencia de las peticiones HTTP", ["metodo", "ruta"], registry=REGISTRO
 )

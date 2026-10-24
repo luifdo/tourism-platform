@@ -88,6 +88,11 @@ RABBITMQ_URL = os.environ.get("TEST_RABBITMQ_URL", "amqp://booking:booking@127.0
 
 
 @pytest.fixture
+def rabbitmq_url() -> str:
+    return RABBITMQ_URL
+
+
+@pytest.fixture
 async def rabbitmq():
     """Conexión a un RabbitMQ real (python scripts/rabbitmq_pruebas.py subir); si no responde, se salta.
     Cada prueba usa su propio exchange (`pruebas.<uuid>`) para no mezclarse, y lo borra al final."""

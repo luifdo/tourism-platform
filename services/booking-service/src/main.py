@@ -62,7 +62,7 @@ def crear_app(config: Configuracion | None = None, contenedor: Contenedor | None
         if con_demo:
             await demo.cargar_datos_demo(contenedor)
         motor = contenedor.extras.get("motor")
-        mensajeria = Mensajeria(config, motor) if motor is not None else None
+        mensajeria = Mensajeria(config, motor, contenedor.ctx) if motor is not None else None
         if mensajeria:
             mensajeria.iniciar()
         yield

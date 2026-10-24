@@ -91,6 +91,7 @@ Todas las horas se calculan en la zona horaria `America/Bogota`. La unidad de re
 * **Persistencia:** base lógica `booking_db` en el clúster CloudNativePG, con usuario propio.
 * **Valkey:** solo para las claves de idempotencia de las peticiones (`idem:booking:{key}`, TTL de 48 h).
 * **RabbitMQ al arrancar:** booking declara su cola durable `booking.servicios` y la enlaza a la clave `servicio.publicado` del exchange `turismo.eventos`. Tiene que existir antes de que catalog publique, porque RabbitMQ descarta los mensajes que no tienen una cola enlazada.
+* **Consumo de `servicio.publicado.v1`:** se valida el sobre y el payload contra el contrato. Un mensaje inservible (JSON roto, otro tipo o versión, payload fuera de contrato) va directo a la DLQ; un fallo pasajero se reintenta a los 1, 5 y 25 s (colas `booking.servicios.reintento.<espera>`, cabecera `x-intentos`) y, si sigue fallando, va a `turismo.dead-letter` con la cola, los intentos y el error. Es la misma convención y la misma DLX (`turismo.dlx`, tipo topic) que declara catalog. No hace falta deduplicar por `event_id` en Valkey: el evento trae el estado completo con su `version` y solo se aplica si es mayor (§8).
 * **Endpoints:** resumen en la §7; detalle en [`booking.yaml`](../../contracts/openapi/booking.yaml).
 * **Configuración:** `DB_URL`, `VALKEY_URL`, `RABBITMQ_URL`, `EVENTS_EXCHANGE`, `TZ=America/Bogota`, `PLAZO_RESPUESTA_HORAS=48`.
 

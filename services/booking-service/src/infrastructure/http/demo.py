@@ -5,17 +5,16 @@ catálogo, los CronJobs de Kubernetes y la consola de RabbitMQ.
 """
 
 from datetime import timedelta
-from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
-from pydantic import BaseModel, Field
 
 from application.calendario import AbrirRangoCalendario
 from application.servicios import AplicarServicioPublicado
 from application.tareas import ExpirarSolicitudes, FinalizarReservas
 from domain.reglas import hoy_local
+from infrastructure.messaging import esquemas
 
 SERVICIO_DEMO = UUID("0b6f1a52-3c1e-4c8e-9f0a-7d2a91c4e5b3")
 PERFIL_PRESTADOR_DEMO = UUID("9a1c3e5f-2b4d-4c6e-8f0a-1b3d5f7a9c2e")
@@ -40,16 +39,10 @@ Las rutas **Demo** simulan el evento del catálogo, los CronJobs y el paso del t
 router = APIRouter(prefix="/dev", tags=["Demo (solo modo memoria)"])
 
 
-class ServicioPublicado(BaseModel):
-    """Payload de `servicio.publicado.v1` (contracts/events)."""
+class ServicioPublicado(esquemas.ServicioPublicado):
+    """El mismo payload que valida el consumidor; en la demo `activo` es opcional."""
 
-    servicio_id: UUID
-    prestador_id: UUID = Field(description="Perfil del prestador en el catálogo.")
-    prestador_usuario_id: UUID = Field(description="Usuario del prestador en iam (su X-Usuario-Id).")
-    capacidad_aforo_diario: int = Field(ge=1)
-    tarifa_base: Decimal = Field(ge=0)
     activo: bool = True
-    version: int = Field(ge=1)
 
 
 def _contenedor(request: Request):

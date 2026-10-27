@@ -390,13 +390,23 @@ paths:
       responses:
         '200':
           description: El servicio y su base de datos responden.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Salud' }
         '503':
           description: La base de datos no responde; Kubernetes deja de enviarle tráfico a esta réplica.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Salud' }
 
   /metrics:
     get:
       tags: [Operación]
       summary: Métricas para Prometheus
+      description: |
+        Las genera prometheus-fastapi-instrumentator, como en los demás servicios:
+        `http_requests_total` y `http_request_duration_seconds` (etiquetas `handler`, `method`,
+        `status`). Además, `booking_eventos_consumidos_total` del consumidor de RabbitMQ.
       operationId: metrics
       security: []
       servers:
@@ -506,6 +516,17 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    Salud:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        checks:
+          type: object
+          description: '`postgres` en el clúster; `almacen_memoria` en el modo de demostración.'
+          additionalProperties: { type: string, enum: [up, down] }
+          example: { postgres: up }
+
     Error:
       type: object
       required: [error, message, correlation_id]

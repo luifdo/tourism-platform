@@ -19,6 +19,8 @@ from infrastructure.http import demo, operacion, rutas
 from infrastructure.http.errores import registrar_manejadores
 from infrastructure.messaging.arranque import Mensajeria
 from infrastructure.messaging.memoria import PublicadorMemoria
+from infrastructure.observabilidad.correlacion import CorrelacionMiddleware
+from infrastructure.observabilidad.logs import configurar_logs
 from infrastructure.persistence.db import crear_motor, fabrica_sesiones
 from infrastructure.persistence.idempotencia_memoria import AlmacenIdempotenciaMemoria
 from infrastructure.persistence.memoria import AlmacenMemoria, fabrica_memoria
@@ -52,6 +54,7 @@ def contenedor_postgres(config: Configuracion, reloj: Any = None) -> Contenedor:
 
 def crear_app(config: Configuracion | None = None, contenedor: Contenedor | None = None) -> FastAPI:
     config = config or Configuracion()
+    configurar_logs(config.service_name, config.log_level)
     if contenedor is None:
         crear = contenedor_postgres if config.modo_persistencia == "postgres" else contenedor_memoria
         contenedor = crear(config)
@@ -78,6 +81,7 @@ def crear_app(config: Configuracion | None = None, contenedor: Contenedor | None
         lifespan=ciclo_de_vida,
     )
     app.state.contenedor = contenedor
+    app.add_middleware(CorrelacionMiddleware)
     registrar_manejadores(app)
     operacion.registrar_metricas(app)
     app.include_router(rutas.router)

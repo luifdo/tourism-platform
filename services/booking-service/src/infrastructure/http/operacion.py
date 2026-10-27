@@ -1,52 +1,56 @@
-"""Sondas de Kubernetes y métricas de Prometheus (RNF-01)."""
+"""Sondas de Kubernetes y métricas de Prometheus (RNF-01).
 
-import time
+`/metrics` lo genera prometheus-fastapi-instrumentator, igual que en catalog, iam y
+recommendation: las mismas series (`http_requests_total`, `http_request_duration_seconds`,
+etiquetadas por `handler`) sirven para un solo tablero de Grafana. Las métricas propias de
+booking (eventos consumidos) se agregan al mismo registro para que salgan en el mismo `/metrics`.
+"""
 
-from fastapi import APIRouter, FastAPI, Request, Response
-from fastapi.responses import JSONResponse
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
+from typing import Literal
+
+from fastapi import APIRouter, FastAPI, Request, Response, status
+from prometheus_client import CollectorRegistry, Counter
+from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic import BaseModel
 
 from infrastructure.persistence.db import verificar_conexion
 
 router = APIRouter(tags=["Operación"])
 
-REGISTRO = CollectorRegistry()
-PETICIONES = Counter(
-    "booking_http_peticiones_total", "Peticiones HTTP atendidas", ["metodo", "ruta", "estado"], registry=REGISTRO
-)
 EVENTOS_CONSUMIDOS = Counter(
     "booking_eventos_consumidos_total",
     "Mensajes consumidos de RabbitMQ por resultado (aplicado, descartado, reintento, dlq)",
     ["cola", "event_type", "resultado"],
-    registry=REGISTRO,
-)
-LATENCIA = Histogram(
-    "booking_http_latencia_segundos", "Latencia de las peticiones HTTP", ["metodo", "ruta"], registry=REGISTRO
+    registry=None,  # se agrega al registro de cada app en registrar_metricas
 )
 
 
-@router.get("/health", summary="Estado del servicio (sondas de Kubernetes)")
-async def health(request: Request):
-    """200 si el servicio y su base responden; 503 si la base no responde, para que Kubernetes
-    deje de enviarle tráfico a esta réplica hasta que vuelva. En modo memoria no hay base."""
+class Salud(BaseModel):
+    status: Literal["ok", "degraded"]
+    checks: dict[str, Literal["up", "down"]]
+
+
+@router.get(
+    "/health",
+    response_model=Salud,
+    summary="Estado del servicio (sondas de Kubernetes)",
+    responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"model": Salud}},
+)
+async def health(request: Request, response: Response) -> Salud:
+    """503 si la base no responde, para que Kubernetes deje de enviarle tráfico a esta réplica
+    hasta que vuelva. RabbitMQ no cuenta: sin él las peticiones siguen y los eventos esperan en
+    el outbox. En modo memoria no hay base."""
     motor = request.app.state.contenedor.extras.get("motor")
-    if motor is not None and not await verificar_conexion(motor):
-        return JSONResponse({"estado": "sin_base_de_datos"}, status_code=503)
-    return {"estado": "ok"}
-
-
-@router.get("/metrics", summary="Métricas para Prometheus")
-async def metrics():
-    return Response(generate_latest(REGISTRO), media_type=CONTENT_TYPE_LATEST)
+    checks = {"postgres": await verificar_conexion(motor)} if motor is not None else {"almacen_memoria": True}
+    sano = all(checks.values())
+    if not sano:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return Salud(status="ok" if sano else "degraded", checks={k: "up" if v else "down" for k, v in checks.items()})
 
 
 def registrar_metricas(app: FastAPI) -> None:
-    @app.middleware("http")
-    async def _medir(request: Request, siguiente):
-        inicio = time.perf_counter()
-        respuesta = await siguiente(request)
-        # La plantilla de la ruta (p. ej. /api/bookings/{reserva_id}) evita una serie por cada id.
-        ruta = getattr(request.scope.get("route"), "path", "desconocida")
-        LATENCIA.labels(request.method, ruta).observe(time.perf_counter() - inicio)
-        PETICIONES.labels(request.method, ruta, str(respuesta.status_code)).inc()
-        return respuesta
+    # Un registro por app: si en el mismo proceso se crea otra (las pruebas lo hacen), la segunda
+    # no queda sin métricas por encontrar ya registradas las de la primera. En el pod hay una sola.
+    registro = CollectorRegistry()
+    registro.register(EVENTOS_CONSUMIDOS)
+    Instrumentator(registry=registro).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)

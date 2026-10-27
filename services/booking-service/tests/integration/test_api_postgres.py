@@ -78,7 +78,7 @@ async def test_la_conexion_vuelve_al_pool(uow, motor):
 # ---------- API completa contra Postgres (fixture `cliente` en conftest.py) ----------
 
 async def test_health_con_la_base_arriba(cliente):
-    assert (await cliente.get("/health")).json() == {"estado": "ok"}
+    assert (await cliente.get("/health")).json() == {"status": "ok", "checks": {"postgres": "up"}}
 
 
 async def test_health_503_si_la_base_no_responde():
@@ -89,7 +89,7 @@ async def test_health_503_si_la_base_no_responde():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://booking") as c:
         r = await c.get("/health")
     await app.state.contenedor.extras["motor"].dispose()
-    assert r.status_code == 503 and r.json() == {"estado": "sin_base_de_datos"}
+    assert r.status_code == 503 and r.json() == {"status": "degraded", "checks": {"postgres": "down"}}
 
 
 async def test_sin_rutas_de_demo_en_modo_postgres(cliente):

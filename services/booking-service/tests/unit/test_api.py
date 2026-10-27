@@ -39,9 +39,30 @@ async def solicitar(cliente, personas=2, fecha="2026-11-10", **headers):
 
 
 async def test_health_y_metricas(cliente):
-    assert (await cliente.get("/health")).json() == {"estado": "ok"}
+    r = await cliente.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok", "checks": {"almacen_memoria": "up"}}
+    await solicitar(cliente)
     metricas = (await cliente.get("/metrics")).text
-    assert "booking_http_peticiones_total" in metricas
+    # Mismas series que catalog, iam y recommendation (prometheus-fastapi-instrumentator).
+    assert 'handler="/api/bookings"' in metricas and "http_requests_total" in metricas
+    assert "http_request_duration_seconds" in metricas
+    assert "booking_eventos_consumidos_total" in metricas
+
+
+async def test_correlation_id_se_respeta_y_viaja_al_error_y_al_evento(cliente):
+    r = await solicitar(cliente, **{"X-Correlation-ID": "corr-prueba-1"})
+    assert r.headers["X-Correlation-ID"] == "corr-prueba-1"
+    assert cliente.contenedor.publicador.publicados[-1]["correlation_id"] == "corr-prueba-1"
+
+    r = await cliente.get(f"{BASE}/{uuid4()}", headers={**TURISTA, "X-Correlation-ID": "corr-prueba-2"})
+    assert r.status_code == 404 and r.json()["correlation_id"] == "corr-prueba-2"
+
+
+async def test_correlation_id_se_genera_si_falta_o_no_es_valido(cliente):
+    r = await cliente.get("/health", headers={"X-Correlation-ID": "valor con espacios"})
+    generado = r.headers["X-Correlation-ID"]
+    assert generado.startswith("corr-") and generado != "valor con espacios"
 
 
 async def test_ciclo_completo_solicitar_confirmar(cliente):

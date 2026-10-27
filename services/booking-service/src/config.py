@@ -9,7 +9,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Configuracion(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    service_name: str = "booking-service"
     service_port: int = 8003
+    log_level: str = "INFO"
     # "memoria": sin Postgres ni RabbitMQ (pruebas y demo). "postgres": booking_db real.
     modo_persistencia: Literal["memoria", "postgres"] = "memoria"
     plazo_respuesta_horas: int = 48

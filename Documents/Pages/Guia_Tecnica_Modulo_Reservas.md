@@ -164,7 +164,7 @@ Si no devuelve filas, el servicio consulta el estado actual y responde 404 (no e
 
 ## 7. Endpoints
 
-Prefijo en Traefik: `/api/bookings`. Errores con el formato común `{ "error", "message", "correlation_id" }`.
+Prefijo en Traefik: `/api/bookings`. Errores con el formato común `{ "error", "message", "correlation_id" }`. El `X-Correlation-ID` que agrega Traefik (o uno generado si falta) se devuelve en la respuesta, viaja en los eventos y aparece en cada línea de log, que sale en JSON por stdout para Loki.
 
 | Método y ruta | Rol | Caso de uso | Notas |
 |---|---|---|---|
@@ -180,7 +180,7 @@ Prefijo en Traefik: `/api/bookings`. Errores con el formato común `{ "error", "
 | `GET /prestador/calendario/{servicio_id}?desde&hasta` | Prestador dueño | UC19 | Días con totales, disponibles, reservados, tarifa y versión. |
 | `POST /prestador/calendario/{servicio_id}/rango` | Prestador dueño | UC19 | Abre varios días. `Idempotency-Key`. Omite los días que ya existen. |
 | `PUT /prestador/calendario/{servicio_id}/{fecha}` | Prestador dueño | UC19 | Crea o edita un día. `If-Match` para editar. |
-| `GET /health`, `GET /metrics` | Interno | — | Sondas de Kubernetes y Prometheus. |
+| `GET /health`, `GET /metrics` | Interno | — | Sondas de Kubernetes (`{status, checks}`, 503 si Postgres no responde) y Prometheus (`http_requests_total`, `http_request_duration_seconds`, las mismas series que los demás servicios). |
 
 ## 8. Datos
 

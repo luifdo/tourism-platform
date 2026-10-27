@@ -1,5 +1,6 @@
 """Traducción de errores a HTTP con el formato común { error, message, correlation_id }."""
 
+import logging
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -8,6 +9,9 @@ from fastapi.responses import JSONResponse
 
 from application import errores as app
 from domain import errores as dom
+from infrastructure.observabilidad.correlacion import correlation_id_actual
+
+logger = logging.getLogger(__name__)
 
 ESTADOS: dict[type[dom.ErrorDominio], int] = {
     dom.Validacion: 400,
@@ -37,7 +41,8 @@ ESTADOS[NoAutenticado] = 401
 
 
 def correlation_id(request: Request) -> str:
-    return request.headers.get("X-Correlation-ID") or f"corr-{uuid4()}"
+    """El que fijó CorrelacionMiddleware; el encabezado queda como respaldo si no corrió."""
+    return correlation_id_actual() or request.headers.get("X-Correlation-ID") or f"corr-{uuid4()}"
 
 
 def respuesta_error(request: Request, estado: int, codigo: str, mensaje: str, **headers: str) -> JSONResponse:
@@ -63,3 +68,8 @@ def registrar_manejadores(app_fastapi: FastAPI) -> None:
             f"{'.'.join(str(p) for p in e['loc'] if p != 'body')}: {e['msg']}" for e in exc.errors()
         )
         return respuesta_error(request, 400, "VALIDACION", detalles or "Datos inválidos.")
+
+    @app_fastapi.exception_handler(Exception)
+    async def _inesperado(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Error no controlado en %s %s", request.method, request.url.path)
+        return respuesta_error(request, 500, "ERROR_INTERNO", "Ocurrió un error inesperado; reporte el correlation_id.")

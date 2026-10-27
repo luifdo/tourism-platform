@@ -17,6 +17,8 @@ Disponibilidad de cupos en tiempo real con bloqueo transaccional, máquina de es
 | Réplicas en k3s | 2 (HPA hasta 6) |
 | Contrato REST | [`contracts/openapi/booking.yaml`](../../contracts/openapi/) |
 
+**¿Vas a integrar tu módulo con booking?** Empieza por [`INTEGRACION.md`](./INTEGRACION.md): qué le toca a cada módulo, códigos de error para la PWA y despliegue.
+
 ## Eventos
 
 **Publica:**

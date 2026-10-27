@@ -18,8 +18,8 @@ from application.calendario import (
     GuardarDiaCalendario,
 )
 from application.consultas import ListarReservas, ObtenerReserva
-from application.errores import FaltaIfMatch
-from application.ports import FiltroReservas
+from application.errores import FaltaIfMatch, PeticionEnProceso
+from application.ports import FiltroReservas, RespuestaGuardada
 from application.reservas import (
     CancelarReserva,
     ConfirmarReserva,
@@ -74,18 +74,27 @@ def _reserva(r: Reserva, estado: int = 200) -> JSONResponse:
 async def _idempotente(
     request: Request, quien: Identidad, clave: str | None, accion: Callable[[], Awaitable[Response]]
 ) -> Response:
-    """Si la clave ya se usó con éxito, devuelve la misma respuesta sin ejecutar de nuevo."""
+    """Guía §6.3: la primera petición con una clave la reserva y se ejecuta; un reintento recibe
+    la misma respuesta sin repetir la operación, o 409 si la primera todavía no terminó."""
     if not clave:
         return await accion()
     almacen = request.app.state.contenedor.idempotencia
     llave = f"idem:booking:{quien.usuario_id}:{request.method}:{request.url.path}:{clave}"
-    if guardada := await almacen.obtener(llave):
-        estado, cuerpo, headers = guardada
-        return Response(cuerpo, status_code=estado, headers=headers, media_type="application/json")
-    respuesta = await accion()
+    if not await almacen.reservar(llave):
+        if guardada := await almacen.obtener(llave):
+            return Response(guardada.cuerpo, status_code=guardada.estado, headers=guardada.headers,
+                            media_type="application/json")
+        raise PeticionEnProceso("Ya se está procesando una petición con esta Idempotency-Key; reintente en unos segundos.")
+    try:
+        respuesta = await accion()
+    except BaseException:
+        await almacen.liberar(llave)  # un error de negocio o inesperado no deja la clave tomada
+        raise
     if 200 <= respuesta.status_code < 300:
         headers = {k: v for k, v in respuesta.headers.items() if k.lower() == "etag"}
-        await almacen.guardar(llave, (respuesta.status_code, bytes(respuesta.body), headers))
+        await almacen.guardar(llave, RespuestaGuardada(respuesta.status_code, bytes(respuesta.body), headers))
+    else:
+        await almacen.liberar(llave)
     return respuesta
 
 

@@ -75,6 +75,8 @@ Las pruebas de integración (`tests/integration/`) usan un Postgres real en Dock
 
 ```bash
 python scripts/postgres_pruebas.py subir     # crea o arranca el contenedor (postgres:16-alpine) y espera a que responda
+python scripts/rabbitmq_pruebas.py subir     # RabbitMQ en el puerto 5673 (outbox, relay y consumidor)
+python scripts/valkey_pruebas.py subir       # Valkey en el puerto 6380 (idempotencia compartida entre réplicas)
 pytest                                       # unitarias + integración
 python scripts/postgres_pruebas.py bajar     # lo borra (es desechable)
 ```

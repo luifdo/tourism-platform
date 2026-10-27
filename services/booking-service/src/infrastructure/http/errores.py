@@ -28,6 +28,8 @@ ESTADOS: dict[type[dom.ErrorDominio], int] = {
     app.VersionDistinta: 409,
     dom.SuperaAforo: 422,
     app.FaltaIfMatch: 428,
+    app.PeticionEnProceso: 409,
+    app.IdempotenciaNoDisponible: 503,
 }
 
 

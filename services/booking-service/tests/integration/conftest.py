@@ -85,6 +85,28 @@ async def motor(base_migrada):
 
 
 RABBITMQ_URL = os.environ.get("TEST_RABBITMQ_URL", "amqp://booking:booking@127.0.0.1:5673/")
+VALKEY_URL = os.environ.get("TEST_VALKEY_URL", "redis://127.0.0.1:6380/0")
+
+
+@pytest.fixture
+async def valkey():
+    """Cliente de un Valkey real (python scripts/valkey_pruebas.py subir); si no responde, se salta.
+    Cada prueba usa claves con su propio prefijo y las borra al final."""
+    from redis.exceptions import RedisError
+
+    from infrastructure.persistence.idempotencia_valkey import crear_cliente
+
+    cliente = crear_cliente(VALKEY_URL)
+    try:
+        await cliente.ping()
+    except RedisError:
+        await cliente.aclose()
+        pytest.skip(f"Valkey no responde en {VALKEY_URL}. Levántelo con: python scripts/valkey_pruebas.py subir")
+    cliente.prefijo = f"pruebas:{uuid.uuid4()}:"
+    yield cliente
+    async for clave in cliente.scan_iter(f"{cliente.prefijo}*"):
+        await cliente.delete(clave)
+    await cliente.aclose()
 
 
 @pytest.fixture
@@ -150,7 +172,9 @@ def outbox(motor):
 async def cliente(base_migrada, motor):
     """Cliente HTTP de la app en modo postgres, con el servicio de la demo y 30 días de 10 cupos
     (desde el 2 de noviembre) cargados por los propios casos de uso. Borra todo al terminar."""
-    config = Configuracion(modo_persistencia="postgres", database_url=base_migrada, datos_demo=False)
+    config = Configuracion(
+        modo_persistencia="postgres", database_url=base_migrada, valkey_url=VALKEY_URL, datos_demo=False
+    )
     contenedor = contenedor_postgres(config, RelojFijo(AHORA))
     await _limpiar_demo(motor)  # por si una corrida anterior se interrumpió
     await demo.cargar_datos_demo(contenedor)
@@ -163,4 +187,5 @@ async def cliente(base_migrada, motor):
             yield c
     finally:
         await contenedor.extras["motor"].dispose()
+        await contenedor.extras["valkey"].aclose()
         await _limpiar_demo(motor)

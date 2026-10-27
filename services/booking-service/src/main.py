@@ -23,6 +23,7 @@ from infrastructure.observabilidad.correlacion import CorrelacionMiddleware
 from infrastructure.observabilidad.logs import configurar_logs
 from infrastructure.persistence.db import crear_motor, fabrica_sesiones
 from infrastructure.persistence.idempotencia_memoria import AlmacenIdempotenciaMemoria
+from infrastructure.persistence.idempotencia_valkey import AlmacenIdempotenciaValkey, crear_cliente
 from infrastructure.persistence.memoria import AlmacenMemoria, fabrica_memoria
 from infrastructure.persistence.postgres import fabrica_postgres
 from infrastructure.reloj import RelojSistema
@@ -45,11 +46,12 @@ def contenedor_memoria(config: Configuracion, reloj: Any = None) -> Contenedor:
 
 
 def contenedor_postgres(config: Configuracion, reloj: Any = None) -> Contenedor:
-    """booking_db real. Los eventos quedan en evento_outbox hasta que el relay (paso 5.3b) los
-    publique en RabbitMQ; la idempotencia sigue en memoria hasta el paso 5.4."""
+    """booking_db real. Los eventos quedan en evento_outbox hasta que el relay los publique en
+    RabbitMQ; la idempotencia va en Valkey para que la compartan todas las réplicas."""
     motor = crear_motor(config)  # no se conecta todavía: la primera conexión llega con la primera consulta
+    valkey = crear_cliente(config.valkey_url)  # tampoco: se conecta con el primer comando
     ctx = Contexto(fabrica_postgres(fabrica_sesiones(motor)), reloj or RelojSistema(), config.plazo_respuesta_horas)
-    return Contenedor(ctx, AlmacenIdempotenciaMemoria(), None, extras={"motor": motor})
+    return Contenedor(ctx, AlmacenIdempotenciaValkey(valkey), None, extras={"motor": motor, "valkey": valkey})
 
 
 def crear_app(config: Configuracion | None = None, contenedor: Contenedor | None = None) -> FastAPI:
@@ -73,6 +75,8 @@ def crear_app(config: Configuracion | None = None, contenedor: Contenedor | None
             await mensajeria.detener()
         if motor is not None:
             await motor.dispose()  # cierra las conexiones del pool al apagar el pod
+        if (valkey := contenedor.extras.get("valkey")) is not None:
+            await valkey.aclose()
 
     app = FastAPI(
         title="booking-service — Reservas & Cupos (Módulo 3)",

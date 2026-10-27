@@ -126,6 +126,24 @@ async def test_idempotency_key_no_crea_dos_reservas(cliente):
     assert (await cliente.get(f"{BASE}/mis-reservas", headers=TURISTA)).json()["total"] == 1
 
 
+async def test_reintento_mientras_la_primera_sigue_en_proceso_responde_409(cliente):
+    clave = str(uuid4())
+    # La primera petición tomó la clave y aún no termina (p. ej. otra réplica esperando el bloqueo).
+    await cliente.contenedor.idempotencia.reservar(f"idem:booking:{demo.USUARIO_TURISTA_DEMO}:POST:{BASE}:{clave}")
+    r = await solicitar(cliente, **{"Idempotency-Key": clave})
+    assert r.status_code == 409 and r.json()["error"] == "PETICION_EN_PROCESO"
+    assert (await cliente.get(f"{BASE}/mis-reservas", headers=TURISTA)).json()["total"] == 0
+
+
+async def test_si_la_operacion_falla_la_clave_queda_libre(cliente):
+    clave = {"Idempotency-Key": str(uuid4())}
+    r = await solicitar(cliente, fecha="2027-03-01", **clave)  # día no abierto en el calendario
+    assert r.status_code == 409 and r.json()["error"] == "DIA_NO_DISPONIBLE"
+    # El reintento se ejecuta de nuevo (no se guardan los errores ni queda "en proceso").
+    r = await solicitar(cliente, fecha="2027-03-01", **clave)
+    assert r.json()["error"] == "DIA_NO_DISPONIBLE"
+
+
 async def test_modificar_exige_if_match_y_controla_version(cliente):
     reserva = (await solicitar(cliente)).json()
     url = f"{BASE}/{reserva['id']}"

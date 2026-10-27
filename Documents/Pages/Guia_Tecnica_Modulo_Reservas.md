@@ -89,7 +89,7 @@ Todas las horas se calculan en la zona horaria `America/Bogota`. La unidad de re
 * **Despliegue:** Deployment en k3s con 2 réplicas mínimas y HPA hasta 6 (Plan §7.3). El bloqueo por fila permite escalar sin perder consistencia, porque la exclusión la garantiza PostgreSQL y no la memoria de una réplica.
 * **Tareas programadas:** dos `CronJob` de Kubernetes que usan la misma imagen del servicio con otro comando (§6.4).
 * **Persistencia:** base lógica `booking_db` en el clúster CloudNativePG, con usuario propio.
-* **Valkey:** solo para las claves de idempotencia de las peticiones (`idem:booking:{key}`, TTL de 48 h).
+* **Valkey:** solo para las claves de idempotencia de las peticiones (§6.3), compartidas por todas las réplicas.
 * **RabbitMQ al arrancar:** booking declara su cola durable `booking.servicios` y la enlaza a la clave `servicio.publicado` del exchange `turismo.eventos`. Tiene que existir antes de que catalog publique, porque RabbitMQ descarta los mensajes que no tienen una cola enlazada.
 * **Consumo de `servicio.publicado.v1`:** se valida el sobre y el payload contra el contrato. Un mensaje inservible (JSON roto, otro tipo o versión, payload fuera de contrato) va directo a la DLQ; un fallo pasajero se reintenta a los 1, 5 y 25 s (colas `booking.servicios.reintento.<espera>`, cabecera `x-intentos`) y, si sigue fallando, va a `turismo.dead-letter` con la cola, los intentos y el error. Es la misma convención y la misma DLX (`turismo.dlx`, tipo topic) que declara catalog. No hace falta deduplicar por `event_id` en Valkey: el evento trae el estado completo con su `version` y solo se aplica si es mayor (§8).
 * **Endpoints:** resumen en la §7; detalle en [`booking.yaml`](../../contracts/openapi/booking.yaml).
@@ -141,7 +141,12 @@ Si no devuelve filas, el servicio consulta el estado actual y responde 404 (no e
 ### 6.3 Idempotencia de peticiones
 
 * `POST /api/bookings` y los formularios del calendario aceptan `Idempotency-Key`.
-* La primera respuesta se guarda en Valkey (`idem:booking:{usuario_id}:{key}`, 48 h); un reintento con la misma clave devuelve la misma respuesta sin repetir la operación.
+* La clave en Valkey es `idem:booking:{usuario_id}:{método}:{ruta}:{Idempotency-Key}`, así que un usuario no choca con otro ni una ruta con otra.
+* La primera petición la reserva con `SET NX` (valor `EN_PROCESO`, 60 s). De dos peticiones simultáneas solo una lo consigue, aunque lleguen a réplicas distintas; si el pod muere a medias, la marca vence sola.
+* Al terminar con éxito (2xx) se guarda la respuesta 48 h; un reintento recibe esa misma respuesta (cuerpo y `ETag`) sin repetir la operación. Si la operación falla (4xx, 5xx o excepción), la clave se libera y el reintento se ejecuta de nuevo.
+* Un reintento que llega mientras la primera sigue en proceso recibe 409 `PETICION_EN_PROCESO`; la PWA reintenta con la misma clave unos segundos después.
+* Si Valkey no responde, las peticiones **con** `Idempotency-Key` reciben 503 `IDEMPOTENCIA_NO_DISPONIBLE` (es preferible no ejecutar que arriesgar un duplicado) y las demás siguen normalmente. Valkey no entra en `/health`, para que su caída no saque de servicio todas las réplicas.
+* En modo memoria (demo y pruebas) se usa un almacén local con las mismas reglas, válido solo con una réplica.
 * Las transiciones (`confirmar`, `rechazar`, `cancelar`) ya son idempotentes por la §6.2: repetirlas devuelve 409 con el estado actual, sin efectos.
 
 ### 6.4 Tareas programadas

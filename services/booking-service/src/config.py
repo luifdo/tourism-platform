@@ -29,6 +29,10 @@ class Configuracion(BaseSettings):
     # Segundos que una petición espera una conexión libre antes de fallar.
     db_pool_espera_s: float = 5.0
 
+    # ---------- Valkey (solo en modo postgres): idempotencia compartida entre réplicas ----------
+    # Local: el contenedor de pruebas (scripts/valkey_pruebas.py) en el puerto 6380.
+    valkey_url: str = "redis://127.0.0.1:6380/0"
+
     # ---------- RabbitMQ (solo en modo postgres) ----------
     # Local: el contenedor de pruebas (scripts/rabbitmq_pruebas.py) en el puerto 5673.
     rabbitmq_url: str = "amqp://booking:booking@127.0.0.1:5673/"

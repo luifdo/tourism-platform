@@ -474,7 +474,11 @@ components:
       name: Idempotency-Key
       in: header
       required: false
-      description: Clave única por intento de envío; un reintento con la misma clave devuelve la misma respuesta sin repetir la operación (48 h).
+      description: |
+        Clave única por intento de envío; un reintento con la misma clave devuelve la misma respuesta
+        sin repetir la operación (48 h). Si la primera petición aún no termina, responde 409
+        `PETICION_EN_PROCESO` (reintentar en unos segundos con la misma clave). Si el almacén de
+        claves no responde, 503 `IDEMPOTENCIA_NO_DISPONIBLE` (no se ejecutó nada).
       schema: { type: string, format: uuid }
     IfMatch:
       name: If-Match

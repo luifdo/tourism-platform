@@ -101,10 +101,32 @@ class FabricaUnidadDeTrabajo(Protocol):
     def __call__(self) -> UnidadDeTrabajo: ...
 
 
-class AlmacenIdempotencia(Protocol):
-    async def obtener(self, clave: str) -> Any | None: ...
+@dataclass(frozen=True)
+class RespuestaGuardada:
+    """La primera respuesta exitosa a una `Idempotency-Key`; un reintento la recibe tal cual."""
 
-    async def guardar(self, clave: str, respuesta: Any) -> None: ...
+    estado: int
+    cuerpo: bytes
+    headers: dict[str, str]
+
+
+class AlmacenIdempotencia(Protocol):
+    """Guía §6.3. La clave pasa por dos estados: *en proceso* (reservada por la primera
+    petición mientras corre) y *respondida* (con la respuesta guardada durante 48 h)."""
+
+    async def reservar(self, clave: str) -> bool:
+        """Marca la clave en proceso solo si no existía (atómico). False: otra petición ya la tiene."""
+        ...
+
+    async def obtener(self, clave: str) -> RespuestaGuardada | None:
+        """La respuesta guardada; None si la clave no existe o sigue en proceso."""
+        ...
+
+    async def guardar(self, clave: str, respuesta: RespuestaGuardada) -> None: ...
+
+    async def liberar(self, clave: str) -> None:
+        """Borra la marca si la operación falló, para que un reintento la ejecute de nuevo."""
+        ...
 
 
 class Reloj(Protocol):

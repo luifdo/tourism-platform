@@ -29,3 +29,15 @@ class VersionDistinta(ErrorDominio):
 
 class FaltaIfMatch(ErrorDominio):
     codigo = "FALTA_IF_MATCH"
+
+
+class PeticionEnProceso(ErrorDominio):
+    """Llegó un reintento con la misma Idempotency-Key mientras la primera petición sigue corriendo."""
+
+    codigo = "PETICION_EN_PROCESO"
+
+
+class IdempotenciaNoDisponible(ErrorDominio):
+    """El almacén de idempotencia (Valkey) no responde: es mejor no ejecutar que arriesgar un duplicado."""
+
+    codigo = "IDEMPOTENCIA_NO_DISPONIBLE"

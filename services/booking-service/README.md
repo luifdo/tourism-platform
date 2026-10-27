@@ -51,6 +51,12 @@ tests/
 └── integration/
 ```
 
+### Regla de capas
+
+* `domain/` y `application/` son **Python puro**: solo importan la librería estándar (y `application/` importa `domain/`). Ahí vive toda la lógica de negocio.
+* Los frameworks y drivers (FastAPI, SQLAlchemy, asyncpg, aio-pika, redis) y `config.py` **solo** se usan en `infrastructure/`, `main.py` y `cron.py`. El núcleo habla con ellos a través de los puertos de `application/ports/`.
+* `tests/unit/test_arquitectura.py` hace cumplir la regla: falla si el núcleo importa una librería externa, `infrastructure` o `config`.
+
 ## Ejecución
 
 Servicio en Python 3.12 + FastAPI. En el clúster corre como contenedor en Kubernetes (k3s) según el [Plan de Implementación](../../Documents/Pages/Plan_de_Implementacion.md) §7 (ver [Docker Compose](#docker-compose) y [Kubernetes](#kubernetes-k8s) más abajo).

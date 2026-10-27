@@ -1,0 +1,29 @@
+# Kubernetes de Docker Desktop. La infraestructura es la de infra/docker-compose.yml, a la que
+# los pods llegan por host.docker.internal. Guía paso a paso: services/catalog-service/README.md
+#   cp secretos.env.example secretos.env
+#   docker build -t service-template:local ../../..
+#   kubectl apply -k .
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# El Secret generado aquí debe quedar en el mismo namespace que la base; si no, Kustomize no
+# pone su nombre con hash en el Deployment.
+namespace: turismo-app
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+images:
+  - name: ghcr.io/turismo-santa-marta/service-template # nombre que deja la base
+    newName: service-template
+    newTag: local # la imagen construida en tu Docker; con una etiqueta fija no se descarga
+
+patches:
+  - path: configmap-local.yaml
+
+# secretos.env no se sube al repositorio (está en .gitignore); el ejemplo sí.
+secretGenerator:
+  - name: service-template-secretos
+    envs:
+      - secretos.env

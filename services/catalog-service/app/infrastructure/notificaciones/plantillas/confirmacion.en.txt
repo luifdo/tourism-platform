@@ -1,0 +1,17 @@
+Hello {{ nombre }},
+
+Your booking is confirmed!
+
+Service: {{ servicio }}
+Date: {{ fecha }}
+People: {{ personas }}
+{% if aviso_pagos %}
+{{ aviso_pagos }}
+{% endif %}
+Provider contact: {{ prestador }}
+{% if telefono %}Phone: {{ telefono }}
+{% endif %}{% if direccion %}Address: {{ direccion }}
+{% endif %}{% if politica %}
+Provider's cancellation policy: {{ politica }}
+{% endif %}
+{{ regla_base }}

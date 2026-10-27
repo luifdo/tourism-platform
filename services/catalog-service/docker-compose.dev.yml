@@ -1,0 +1,97 @@
+# Infraestructura de desarrollo de catalog-service
+# Uso: docker compose -f docker-compose.dev.yml up -d
+# Puertos distintos a los de iam-service (5433, 6379, 5672) para poder levantar ambos a la vez.
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: catalog-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-catalog_db}
+      POSTGRES_USER: ${POSTGRES_USER:-catalog_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-catalog_password}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-catalog_user} -d ${POSTGRES_DB:-catalog_db}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:8
+    container_name: catalog-valkey
+    ports:
+      - "6380:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: [ "CMD", "valkey-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: catalog-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # Imágenes del catálogo (API S3). Credenciales solo de desarrollo, en dev/seaweedfs-s3.json;
+  # la identidad "anonymous" permite leer las imágenes públicas sin firma.
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.80
+    container_name: catalog-seaweedfs
+    command: server -ip.bind=0.0.0.0 -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -volume.max=5
+    ports:
+      - "8333:8333"
+    volumes:
+      - seaweedfs_data:/data
+      - ./dev/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q -O /dev/null http://localhost:9333/cluster/status || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Crea el bucket una vez SeaweedFS está listo (si ya existe, no hace nada).
+  seaweedfs-init:
+    image: chrislusf/seaweedfs:3.80
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    entrypoint: [ "/bin/sh", "-c", "echo 's3.bucket.create -name catalogo-imagenes' | weed shell -master=seaweedfs:9333" ]
+    restart: "no"
+
+  # Correos de desarrollo: Mailpit los recibe por SMTP y los muestra en http://localhost:8026
+  # sin enviarlos de verdad. Puertos distintos a los de iam (1025, 8025).
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: catalog-mailpit
+    ports:
+      - "1026:1025"
+      - "8026:8025"
+    healthcheck:
+      test: [ "CMD", "/mailpit", "readyz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  valkey_data:
+  rabbitmq_data:
+  seaweedfs_data:

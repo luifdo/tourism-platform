@@ -1,0 +1,64 @@
+name: Frontend · GitHub Pages
+
+# Publica la PWA (frontend/) en https://<usuario>.github.io/<repo>/ al integrar en develop.
+# Requiere: Settings → Pages → Build and deployment → Source: GitHub Actions.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Pruebas (dominio, casos de uso, adaptadores y regla de dependencias)
+        run: npm test
+
+      - name: Compilar con la ruta del repositorio
+        run: npm run build
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+          # Sin Gateway publicado: las reservas usan el servicio simulado del navegador
+          VITE_API_MOCK: "true"
+
+      # GitHub Pages no reescribe rutas: 404.html permite abrir /servicios/... o /mis-reservas directamente
+      - run: cp dist/index.html dist/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,10 @@
+Hello {{ nombre }},
+
+We're sorry, your request was not accepted.
+
+Service: {{ servicio }}
+Date: {{ fecha }}
+People: {{ personas }}
+{% if motivo %}Reason: {{ motivo }}
+{% endif %}
+You can look for other options on the platform.

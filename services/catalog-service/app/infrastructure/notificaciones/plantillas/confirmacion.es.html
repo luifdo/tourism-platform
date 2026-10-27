@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block contenido %}
+  <p>Hola, {{ nombre }}:</p>
+  <p>¡Tu reserva está <strong>confirmada</strong>!</p>
+  <table role="presentation" cellpadding="6" cellspacing="0" style="margin:16px 0;border-collapse:collapse;">
+    <tr><td style="color:#6b7478;">Servicio</td><td><strong>{{ servicio }}</strong></td></tr>
+    <tr><td style="color:#6b7478;">Fecha</td><td>{{ fecha }}</td></tr>
+    <tr><td style="color:#6b7478;">Personas</td><td>{{ personas }}</td></tr>
+  </table>
+  {% if aviso_pagos %}
+  <p style="padding:12px 14px;border-radius:6px;{% if aviso_importante %}background:#fff3cd;border:1px solid #e0b100;{% else %}background:#eef6f7;{% endif %}">{{ aviso_pagos }}</p>
+  {% endif %}
+  <p style="margin-top:20px;"><strong>Contacto del prestador</strong><br>
+    {{ prestador }}{% if telefono %}<br>Teléfono: {{ telefono }}{% endif %}{% if direccion %}<br>Dirección: {{ direccion }}{% endif %}
+  </p>
+  {% if politica %}<p><strong>Política de cancelación del prestador:</strong> {{ politica }}</p>{% endif %}
+  <p style="font-size:13px;color:#4a5458;">{{ regla_base }}</p>
+{% endblock %}

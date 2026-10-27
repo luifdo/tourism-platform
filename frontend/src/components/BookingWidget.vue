@@ -5,6 +5,7 @@ import { bookingUseCases, isMockBackend as isMock } from '../composition'
 import { BookingError } from '../domain/booking/errors'
 import { maxPersonas, tarifaDia } from '../domain/booking/rules'
 import { queue } from '../lib/offlineQueue'
+import { useSession } from '../ui/useSession'
 import { fmtDate } from '../ui/format'
 import BookingCalendar from './BookingCalendar.vue'
 import Countdown from './Countdown.vue'
@@ -18,6 +19,7 @@ import Countdown from './Countdown.vue'
  */
 const props = defineProps({ service: { type: Object, required: true } })
 const { t, n, locale, te, tm, rt } = useI18n()
+const { sesion, expirar } = useSession()
 const stepName = computed(() => rt(tm('booking.steps')[step.value - 1]))
 
 const step = ref(1)
@@ -71,7 +73,8 @@ async function send() {
     })
     result.value = reserva
   } catch (e) {
-    error.value = e instanceof BookingError && e.code === 'NO_AUTENTICADO' ? t('booking.needLogin') : t(errKey(e))
+    if (e instanceof BookingError && e.code === 'NO_AUTENTICADO') { expirar(); error.value = t('booking.needLogin') }
+    else error.value = t(errKey(e))
     if (e instanceof BookingError && ['CUPOS_INSUFICIENTES', 'DIA_NO_DISPONIBLE'].includes(e.code)) { await load(); step.value = 1; date.value = '' }
   } finally { sending.value = false }
 }
@@ -154,6 +157,14 @@ function again() {
           <p class="text-sm font-semibold text-ink">{{ fmtDate(date, locale) }} · {{ t('my.people', { n: people }, people) }}</p>
           <p class="mt-2 text-[13px] leading-snug text-muted">{{ t('booking.payDirect') }}</p>
           <p v-if="isMock" class="mt-2 font-mono text-[11px] text-muted/80">{{ t('my.demo') }}</p>
+          <!-- Solicitar exige sesión (JWT de iam-service): sin ella se invita a ingresar y se vuelve aquí -->
+          <div v-if="!sesion.autenticado" class="mt-3 rounded-card border border-sand/40 bg-sand/10 p-3 text-sm">
+            <p class="text-ink-control">{{ t('auth.loginToBook') }}</p>
+            <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-semibold">
+              <RouterLink :to="{ name: 'login', query: { redirect: $route.fullPath } }" class="text-navy hover:text-teal">{{ t('auth.menu.login') }}</RouterLink>
+              <RouterLink :to="{ name: 'register', query: { redirect: $route.fullPath } }" class="text-navy hover:text-teal">{{ t('auth.menu.register') }}</RouterLink>
+            </div>
+          </div>
         </div>
       </fieldset>
 
@@ -162,7 +173,7 @@ function again() {
       <div class="mt-5 flex gap-2">
         <button v-if="step > 1" type="button" class="rounded-full border border-border-input px-5 py-3 text-sm font-medium text-ink-control hover:border-teal" :disabled="sending" @click="step--; error = ''">{{ t('booking.back') }}</button>
         <button v-if="step < 4" type="button" class="flex-1 rounded-full bg-navy px-5 py-3 text-sm font-semibold text-white shadow-cta transition hover:bg-blue disabled:opacity-40 disabled:shadow-none" :disabled="!canNext || !queue.online" @click="step++">{{ t('booking.next') }}</button>
-        <button v-else type="button" class="flex-1 rounded-full bg-navy px-5 py-3 text-sm font-semibold text-white shadow-cta transition hover:bg-blue disabled:opacity-40" :disabled="sending || !queue.online" @click="send">{{ sending ? t('booking.sending') : t('booking.send') }}</button>
+        <button v-else type="button" class="flex-1 rounded-full bg-navy px-5 py-3 text-sm font-semibold text-white shadow-cta transition hover:bg-blue disabled:opacity-40" :disabled="sending || !queue.online || !sesion.autenticado" @click="send">{{ sending ? t('booking.sending') : t('booking.send') }}</button>
       </div>
     </template>
   </section>

@@ -68,7 +68,9 @@ export async function retry(id) {
   await refresh()
   flush()
 }
-/** Al cerrar sesión se borran los datos guardados en el dispositivo. */
+/** Al cerrar sesión se borran los formularios pendientes y las copias personales; el catálogo público se conserva. */
+export async function clearPersonalData() { await db.clear('pending'); await db.del('kv', 'misReservas'); await refresh() }
+/** Borra todo lo guardado en el dispositivo (incluido el catálogo). */
 export async function clearLocalData() { await db.clear('pending'); await db.clear('kv'); await refresh() }
 
 export function initOffline() {

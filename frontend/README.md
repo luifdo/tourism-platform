@@ -64,6 +64,32 @@ UI ──► application ──► domain          infrastructure ──► (imp
 * Para conectar el backend real basta `VITE_API_MOCK=false`: cambia el adaptador en `composition.js`, sin tocar casos de uso ni pantallas.
 * El adaptador simulado reutiliza las reglas del dominio y responde con los códigos del contrato (`CUPOS_INSUFICIENTES`, `VERSION_DISTINTA`, `FUERA_DE_PLAZO`…).
 
+## Autenticación (UC1, UC2, UC3, UC6) e integración con iam-service
+
+Pantallas: `/ingresar`, `/registro` (18+ y aceptación de datos, Ley 1581), `/recuperar` y `/restablecer-contrasena`. `/mis-reservas` exige sesión y solicitar una reserva también. Misma estructura de puertos y adaptadores:
+
+* `domain/auth`: reglas puras (política de contraseña 8–128 con letra y número, correo normalizado, nombre 2–150, redirección segura, vigencia de la sesión).
+* `application/auth`: casos de uso `iniciarSesion`, `registrar` (registra e inicia sesión), `cerrarSesion`, recuperación; puertos `AuthGateway`, `SessionStore`, `LocalData`, `Clock`.
+* `infrastructure/auth`: `httpAuthGateway` (iam-service), `mockAuthGateway` (simulado), `sessionStore` y `tokenSession` (JWT que usan reservas y la cola sin conexión).
+* Al cerrar sesión se borran los formularios pendientes y la copia de reservas del dispositivo (SRS §3.6.6); el catálogo público se conserva.
+
+**Contrato que se consume** (`services/iam-service`, rama `feature/iam-core`):
+
+| Operación | Ruta | Éxito | Errores (`{ detail, code, errores? }`) |
+|---|---|---|---|
+| Registro | `POST /api/iam/register` | 201 usuario público | 409 `EMAIL_EN_USO` · 422 `VALIDACION` (con `errores[]`), `HABEAS_DATA_REQUERIDO`, `MAYORIA_DE_EDAD_REQUERIDA`, `PASSWORD_INVALIDA`, `NOMBRE_INVALIDO`, `ROL_NO_PERMITIDO` |
+| Login | `POST /api/iam/login` | 200 `{ access_token, token_type, expires_in, usuario }` | 401 `CREDENCIALES_INVALIDAS` · 403 `CUENTA_INACTIVA` |
+| Logout | `POST /api/iam/logout` (Bearer) | 204 | 401 `TOKEN_INVALIDO` · 503 `SERVICIO_NO_DISPONIBLE` |
+
+**Diferencias con la documentación, por resolver entre el equipo** (el cliente sigue lo implementado; las rutas están en `RUTAS` de `httpAuthGateway.js`):
+
+1. El Plan §4.1 y `gateway/README` nombran `/api/iam/auth/{login,registro,recuperar,verificar,refresh}`; el servicio expone `/api/iam/{register,login,logout}`.
+2. **No hay refresh token**: el token de acceso dura 15 min (`jwt_access_token_ttl_minutes`). Al vencer se pide volver a ingresar (el Plan prevé refresh de 7 días).
+3. **La recuperación de contraseña no existe en el servicio** (UC3) ni tiene contrato. Se implementó el cliente con rutas propuestas (`POST /api/iam/auth/recuperar { email }` y `POST /api/iam/auth/restablecer { token, password }`); mientras el servicio responda 404 la interfaz informa que aún no está disponible.
+4. Falta `contracts/openapi/iam.yaml` (lo cita el README del servicio) y el ForwardAuth `GET /api/iam/auth/verificar`; el servicio ya publica las llaves en `GET /api/iam/.well-known/jwks.json`.
+
+En modo simulado (`VITE_API_MOCK=true`) hay una cuenta de ejemplo (`maria.perez@example.com`, la del README del servicio) y, como no se envía correo, la pantalla de recuperación muestra el enlace.
+
 ### Pruebas
 
 ```bash

@@ -180,3 +180,48 @@ describe('misReservas', () => {
     expect(today(ahora)).toBe('2026-10-26')
   })
 })
+
+describe('con sesión (el turista sale del usuario ingresado)', () => {
+  let usuario
+  const crear = () => createMockBookingGateway({ servicios, storage, clock: { now: () => ahora }, delayMs: 0, turistaId: () => usuario })
+
+  it('sin sesión, las operaciones del usuario responden 401 NO_AUTENTICADO', async () => {
+    usuario = null
+    const g = crear()
+    for (const op of [() => g.misReservas(), () => g.solicitarReserva({ servicio_id: 'a', fecha_reserva: '2026-11-10', numero_personas: 1 }, 'k'), () => g.cancelarReserva('x')])
+      expect(await falla(op())).toMatchObject({ code: 'NO_AUTENTICADO', status: 401 })
+  })
+
+  it('la disponibilidad es pública: se consulta sin sesión', async () => {
+    usuario = null
+    const r = await crear().consultarDisponibilidad('a', '2026-10-27', '2026-10-29')
+    expect(r.dias).toHaveLength(3)
+  })
+
+  it('cada usuario recibe sus propias reservas de ejemplo la primera vez, y no ve las de otro', async () => {
+    usuario = 'ana'
+    const g = crear()
+    expect((await g.misReservas()).total).toBe(4)
+    await g.solicitarReserva({ servicio_id: 'a', fecha_reserva: '2026-11-10', numero_personas: 2 }, 'ka')
+    usuario = 'beto'
+    expect((await g.misReservas()).total).toBe(4) // las suyas de ejemplo; no ve la de Ana
+    usuario = 'ana'
+    expect((await g.misReservas()).total).toBe(5)
+  })
+
+  it('los cupos son compartidos: lo que reserva uno lo ve descontado el otro', async () => {
+    usuario = 'ana'
+    const g = crear()
+    await g.solicitarReserva({ servicio_id: 'a', fecha_reserva: '2026-11-10', numero_personas: 4 }, 'ka')
+    usuario = 'beto'
+    expect(await cuposDe('a', '2026-11-10')).toBe(6)
+  })
+
+  it('un usuario no puede tocar la reserva de otro (NO_ENCONTRADO)', async () => {
+    usuario = 'ana'
+    const g = crear()
+    const r = (await g.solicitarReserva({ servicio_id: 'a', fecha_reserva: '2026-11-10', numero_personas: 1 }, 'ka')).data
+    usuario = 'beto'
+    expect((await falla(g.cancelarReserva(r.id))).code).toBe('NO_ENCONTRADO')
+  })
+})

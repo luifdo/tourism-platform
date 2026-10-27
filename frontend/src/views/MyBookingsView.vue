@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { bookingUseCases, isMockBackend as isMock } from '../composition'
 import { BookingError } from '../domain/booking/errors'
 import { addDays } from '../domain/booking/dates'
 import { ACTIVOS, ESTADOS as estados, decisionCancelar, decisionModificar, lineaDeTiempo } from '../domain/booking/rules'
 import { queue } from '../lib/offlineQueue'
+import { useSession } from '../ui/useSession'
 import { findService } from '../data/mock'
 import { fmtDate } from '../ui/format'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -16,6 +18,17 @@ import Countdown from '../components/Countdown.vue'
  * Capa UI: presenta y llama a los casos de uso; las reglas viven en domain/booking.
  */
 const { t, te, locale, d } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const { expirar } = useSession()
+
+/** El backend respondió 401: se vence la sesión local y se pide ingresar de nuevo, volviendo a esta pantalla */
+function sesionVencida(e) {
+  if (!(e instanceof BookingError) || e.code !== 'NO_AUTENTICADO') return false
+  expirar()
+  router.replace({ name: 'login', query: { redirect: route.fullPath, expirada: '1' } })
+  return true
+}
 
 const filter = ref('')
 const items = ref([])
@@ -46,7 +59,7 @@ async function load(reset = true) {
     items.value = reset ? res.items : [...items.value, ...res.items]
     total.value = res.total
     cachedAt.value = res.copiaDe // sin conexión el caso de uso devuelve la última copia guardada
-  } catch (e) { loadError.value = errText(e) }
+  } catch (e) { if (!sesionVencida(e)) loadError.value = errText(e) }
   finally { loading.value = false }
 }
 onMounted(load)
@@ -64,6 +77,7 @@ async function run(r, fn, okMsg) {
   busy.value = r.id; rowError.value = { ...rowError.value, [r.id]: '' }; notice.value = ''
   try { replace((await fn()).reserva); notice.value = okMsg; editing.value = cancelling.value = null }
   catch (e) {
+    if (sesionVencida(e)) return
     rowError.value = { ...rowError.value, [r.id]: e.code === 'VERSION_DISTINTA' ? t('my.changed') : errText(e) }
     if (e.code === 'VERSION_DISTINTA' || e.code === 'TRANSICION_INVALIDA') load()
   } finally { busy.value = '' }

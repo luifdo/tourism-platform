@@ -72,10 +72,10 @@ Requiere [uv](https://docs.astral.sh/uv/) y Python 3.12 (`uv python install 3.12
 docker compose -f docker-compose.dev.yml up -d   # PostGIS, Valkey, RabbitMQ y SeaweedFS
 uv sync                                          # instala dependencias (incluye dev)
 cp .env.example .env
-uv run uvicorn app.main:app --reload --port 8002
-uv run python -m app.worker                      # worker: publica el outbox en RabbitMQ (métricas en :9102)
-# Correos de desarrollo: Mailpit (docker-compose.dev.yml) en http://localhost:8026
 uv run alembic upgrade head                      # aplicar migraciones (incluye las zonas iniciales)
+uv run uvicorn app.main:app --reload --port 8002
+uv run python -m app.worker                      # worker: relay del outbox, 5 consumidores, correos y limpieza diaria (métricas en :9102)
+# Correos de desarrollo: Mailpit (docker-compose.dev.yml) en http://localhost:8026
 uv run pytest                                    # unitarias + integración (PostGIS en testcontainers)
 uv run pytest -m "not integration"               # solo unitarias, sin Docker
 uv run ruff check . && uv run ruff format --check .
@@ -270,7 +270,7 @@ Las capas salen en GeoJSON (RFC 7946, `application/geo+json`), siempre en `[lon,
 * **Identidad:** `X-Usuario-Id` y `X-Usuario-Rol`, que pone Traefik tras validar el JWT. Sin ellas, `401 NO_AUTENTICADO`; otro rol, `403 ROL_NO_PERMITIDO`. El perfil existe cuando iam aprueba al prestador (`prestador.aprobado`); antes, o si está suspendido, `403 PERFIL_INACTIVO`. Un suspendido puede leer su perfil y sus servicios, pero no escribir.
 * **Concurrencia:** cada respuesta trae `ETag: "n"` y cada edición exige `If-Match` (sin él, `428`; con una versión vieja, `409` con el `ETag` actual).
 * **Formularios sin conexión:** con `Idempotency-Key` un reenvío devuelve la misma respuesta (`Idempotent-Replayed: true`) sin repetir la operación, durante 48 h. La clave vale por usuario y operación (`idem:catalog:{usuario}:{método}:{ruta}:{clave}` en Valkey).
-* **Eventos:** el cambio y `servicio.publicado` se guardan en la misma transacción (tabla `outbox`); el worker los publica en RabbitMQ (ver Mensajería). Tras confirmar se invalida la caché de búsqueda y mapa.
+* **Eventos:** el cambio y `servicio.publicado` se guardan en la misma transacción (tabla `outbox`); el worker los publica en RabbitMQ (ver *Worker y mensajería*). Tras confirmar se invalida la caché de búsqueda y mapa.
 * **Bloqueos:** toda escritura bloquea primero el perfil y luego el servicio (`SELECT ... FOR UPDATE`), siempre en ese orden. El panel lee sin bloquear.
 * **Imágenes:** la PWA sube directo a SeaweedFS con una URL firmada que incluye el tipo y el tamaño; cada imagen queda en `{prestador_id}/{uuid}.{ext}` y un servicio solo acepta imágenes de la carpeta de su prestador. `docker-compose.dev.yml` levanta SeaweedFS en el puerto 8333 y crea el bucket.
 
@@ -304,35 +304,188 @@ Textos en `{"es", "en"}`, horas `"HH:MM"` e idiomas en ISO 639-1.
 * **Filtros de `/buscar` y `/mapa/servicios`** (los mismos, para que la lista y el mapa de la PWA muestren lo mismo; `GET /servicios` no los tiene porque para filtrar está `/buscar`): `tipo` (uno o varios), `unidad_tarifa`, `idioma_atencion`, `accesible`, `mascotas`, `apto_ninos`, `opcion_dietaria`, `nivel_fisico`, `acepta_pago_digital` y `ofrece_credito`. Los de atributos se combinan en una sola contención `atributos @> {...}` sobre el índice GIN. Un sí/no filtra por lo informado: `accesible=false` trae los que dijeron que no, no los que no lo informaron. Todos forman parte de la clave de la caché.
 * **Disponibilidad (`fecha`, `personas`):** catalog no llama a booking (Plan §4.1: solo el Módulo 5 llama a otros servicios). Filtra con la proyección que alimenta `disponibilidad.actualizada`: excluye los servicios sin cupo para `personas` ese día o con el día cerrado; los que aún no tienen dato de ese día se muestran con `disponibilidad_confirmada=false` ("disponibilidad sin confirmar") para no esconderlos mientras booking no publique su calendario. Cada resultado trae `cupos_disponibles`. Las búsquedas y mapas con `fecha` no se cachean. Al reservar, booking vuelve a comprobar los cupos con bloqueo: este dato es para buscar, no garantiza el cupo.
 
-## Mensajería (RabbitMQ)
+## Worker y mensajería (RabbitMQ)
 
-La API no publica en RabbitMQ: guarda cada evento en la tabla `outbox` en la misma transacción que el cambio, y un **worker** aparte lo publica (ADR-008, actualizado en este módulo).
+La API no publica en RabbitMQ ni consume eventos: todo el trabajo en segundo plano lo hace el **worker** ([`app/worker.py`](app/worker.py)), un proceso aparte que usa la misma imagen con otro comando (`python -m app.worker`) y tiene su propio Deployment.
 
-* **Worker:** misma imagen, otro comando (`python -m app.worker`) y otro Deployment. También corre el mantenimiento diario (borrar la disponibilidad de días pasados; las reservas no se borran, son la analítica). Así la publicación y los consumidores no compiten con las peticiones de los turistas, y los reinicios o el escalado de la API no los interrumpen. Expone sus métricas en `WORKER_METRICS_PORT` (9102). Si RabbitMQ no está al arrancar, reintenta la conexión con espera creciente.
-* **Topología** (declarada al conectar; declararla otra vez no cambia nada): exchange `turismo.eventos` (*topic*, clave = `event_type`), exchange `turismo.dlx` y cola `turismo.dead-letter`. Las colas de los consumidores las declaran ellos.
-* **Relay:** cada segundo toma hasta 100 eventos pendientes en orden de creación con `FOR UPDATE SKIP LOCKED` (dos workers nunca toman el mismo), los publica persistentes con *publisher confirms* (`message_id` = `event_id`, `type`, `correlation_id`) y solo entonces marca `publicado_en`. Si RabbitMQ falla, el evento queda pendiente y la espera se duplica hasta 30 s; nada se descarta. Una vez al día borra los publicados con más de 7 días.
-* **Entrega "al menos una vez":** si el worker cae entre la confirmación y la marca, el evento sale otra vez; los consumidores descartan duplicados por `event_id` (tabla `evento_procesado`).
-* **Sin cola enlazada, el broker descarta el mensaje:** cada consumidor (iam, booking...) debe declarar su cola durable antes de necesitar los eventos.
-* **Auditoría (ESC-04):** cada `403 ROL_NO_PERMITIDO` guarda un `auditoria.registrada` con acción `ACCESS_DENIED`, el usuario, su rol, los roles permitidos, el método, la ruta y la IP de origen (`X-Forwarded-For`). Si no se puede guardar, queda en el log y el 403 sale igual. `PERFIL_INACTIVO` no se audita: es una regla del negocio, no un acceso indebido. Crear, editar y desactivar zonas también se auditan.
-* **Métricas del worker:** `catalog_outbox_pendientes`, `catalog_outbox_antiguedad_segundos` (alertar si crece), `catalog_eventos_publicados_total{event_type}`, `catalog_eventos_fallos_publicacion_total` y `catalog_eventos_consumidos_total{cola,event_type,resultado}` (`aplicado`, `duplicado`, `ignorado`, `reintento`, `dlq`).
+**Por qué un proceso aparte:** publicar eventos, consumirlos y enviar correos no compite por CPU ni por conexiones con las peticiones de los turistas. Los reinicios o el escalado de la API (HPA 2–6) no cortan un consumo a medias, y el worker se escala por su lado (ver *Operación del worker*).
 
-### Consumidores
+El worker corre a la vez, en un mismo bucle asyncio (`asyncio.gather`), estos componentes:
 
-Base común (`ConsumidorRabbitMQ`), la misma para todas las colas de catalog:
-
-* **Cola principal** durable `catalog.<propósito>`, enlazada a sus claves en `turismo.eventos`.
-* **Reintentos 1 s, 5 s y 25 s:** colas `<cola>.reintento.<espera>` con TTL que, al vencer, devuelven el mensaje a la cola principal; el intento viaja en la cabecera `x-intentos`. Tras el 3.er reintento fallido, el mensaje va a `turismo.dead-letter` con `x-cola`, `x-intentos` y `x-error`.
-* **Error permanente** (sobre o payload que no cumplen el contrato, versión distinta de 1): directo a la DLQ, sin reintentos.
-* **Idempotencia:** el caso de uso registra el `event_id` en `evento_procesado` en la misma transacción del efecto; un duplicado se reconoce y se descarta.
-* **Correlación:** se toma el `correlation_id` del sobre para los logs y para los eventos que se generen (p. ej. el `servicio.publicado` que provoca una suspensión lleva la correlación de iam).
-
-| Cola | Claves | Qué hace |
+| Componente | Objetivo | Código |
 |---|---|---|
-| `catalog.prestadores` | `prestador.aprobado`, `prestador.suspendido` | **Aprobado:** crea el perfil (habilita UC17) o lo reactiva y actualiza la razón social; al reactivar vuelven solo los servicios apagados por la suspensión. **Suspendido:** apaga el perfil y sus servicios activos (marcados como apagados por suspensión). Cada servicio que cambia publica `servicio.publicado` y se invalida la caché. Si la suspensión de un prestador nuevo llega antes que su aprobación (reintento), se guarda un perfil mínimo ya suspendido: la aprobación vieja se ignora y no queda activo; una aprobación más nueva sí lo activa. **Orden:** `prestador_perfil.estado_iam_en` (migración 0005) guarda el `occurred_at` del último evento de iam aplicado; uno más viejo (p. ej. un reintento que llega tarde) se ignora y no reactiva a un suspendido. |
-| `catalog.demanda` | `reserva.solicitada`, `.modificada`, `.confirmada`, `.rechazada`, `.cancelada`, `.finalizada` | Guarda en `reserva_proyeccion` el **estado actual de cada reserva** (servicio, fecha, personas, estado), no contadores: un evento solo se aplica si ocurrió después del último aplicado, así los repetidos o desordenados no descuadran nada. La demanda de un día = personas de las reservas activas (Solicitada y Confirmada) de esa fecha. `modificada` mueve fecha y personas. No invalida la caché (la demanda no sale en búsqueda ni mapa). catalog nunca consulta `booking_db`. |
-| `catalog.calificaciones` | `resena.publicada`, `resena.ocultada` | Una fila por reseña en `calificacion_resena` con su puntuación y si está `visible`; el promedio (búsqueda, mapa, ficha) cuenta solo las visibles. Ocultar (moderación, UC29) la saca del promedio; volver a publicarla la devuelve, sin contar doble. Un evento más viejo que el último aplicado (`ultimo_evento_en`, migración 0006) se ignora. **No invalida la caché:** el promedio nuevo se ve cuando expira (300 s), para que una ola de reseñas en temporada alta no borre la caché del catálogo (ESC-02). |
-| `catalog.notificaciones` | `reserva.solicitada`, `.modificada`, `.confirmada`, `.rechazada`, `.cancelada` | **Correos (UC36 y avisos)** en el idioma del destinatario (es/en), HTML y texto: solicitud y modificación → prestador; confirmación (con contacto del prestador, su política, la regla base de cancelación y el aviso de pagos) y rechazo (con `motivo`) → turista; cancelación (con `motivo`) → la otra parte, según `cancelada_por`. El contacto se pide a iam al momento (`GET /internal/usuarios/{id}/contacto`, `contracts/openapi/iam-interno.yaml`) y no se guarda. Se envía y después se registra el `event_id`: si el worker cae entre ambos, el correo sale dos veces (se prefiere a perderlo). `reserva.finalizada` no envía correo. |
-| `catalog.disponibilidad` | `disponibilidad.actualizada` | Guarda en `disponibilidad_proyeccion` (migración 0008) los cupos de cada servicio por día, con la `version` de la fila de booking: una versión menor o igual se ignora. Un día cerrado llega con `cupos_totales = 0`. |
+| Relay del outbox | Llevar a RabbitMQ los eventos que la API y los consumidores guardan en la tabla `outbox` | `RelayOutbox`, `PublicarEventosPendientes`, `SqlOutboxPendiente`, `PublicadorRabbitMQ` |
+| `catalog.prestadores` | Habilitar o suspender prestadores según iam | `ManejadorPrestadores`, `AplicarPrestadorAprobado`, `AplicarPrestadorSuspendido` |
+| `catalog.demanda` | Proyección de reservas para la capacidad de carga y la analítica | `ManejadorDemanda`, `AplicarEventoReserva` |
+| `catalog.calificaciones` | Promedio de calificación de cada servicio | `ManejadorCalificaciones`, `AplicarEventoResena` |
+| `catalog.disponibilidad` | Cupos por día para filtrar por fecha y personas | `ManejadorDisponibilidad`, `AplicarDisponibilidad` |
+| `catalog.notificaciones` | Correos de reservas al turista y al prestador | `ManejadorNotificaciones`, `NotificarReserva` |
+| Limpieza diaria | Borrar la disponibilidad de días pasados | `TareaPeriodica`, `LimpiarDisponibilidadPasada` |
+| Métricas | `/metrics` para Prometheus y sonda de vida en k8s | `start_http_server(WORKER_METRICS_PORT)` |
+
+### Topología común
+
+[`topologia_rabbitmq.py`](app/infrastructure/messaging/topologia_rabbitmq.py) la declara al conectar, tanto el publicador como cada consumidor. Declararla otra vez con los mismos argumentos no cambia nada, así que no importa quién arranque primero (Plan §4.2–4.3).
+
+* Exchange `turismo.eventos` (*topic*, durable): la clave de enrutamiento es el `event_type` (`servicio.publicado`, `reserva.confirmada`...).
+* Exchange `turismo.dlx` (*topic*) y cola `turismo.dead-letter` enlazada con `#`: la DLQ común de la plataforma.
+* Las colas de cada consumidor (`catalog.*`) las declara su propio consumidor.
+
+### Relay del outbox (publicación de eventos)
+
+**Objetivo:** que cada evento que catalog produce llegue a RabbitMQ sin perderse, aunque el broker esté caído en ese momento. Los eventos son `servicio.publicado` (para booking: al crear, editar, activar o apagar un servicio, y al suspender o reactivar a un prestador) y `auditoria.registrada` (para iam: `ACCESS_DENIED` de cada `403 ROL_NO_PERMITIDO`, `ZONA_CREADA`/`EDITADA`/`DESACTIVADA`, `ALERTA_PUBLICADA`/`EDITADA`/`RETIRADA` y `EXPORT` del CSV).
+
+**Por qué un outbox (ADR-008):** si la API publicara directo, un fallo entre guardar en PostgreSQL y publicar dejaría un cambio sin evento, o un evento de un cambio que no se guardó. Con el outbox, el cambio y su evento se guardan en la misma transacción, y el worker los publica después.
+
+**Qué hace:**
+
+* **Toma un lote:** cada `OUTBOX_INTERVALO_SEGUNDOS` (1 s) toma hasta `OUTBOX_LOTE` (100) eventos pendientes (`publicado_en IS NULL`), en orden de creación, con `FOR UPDATE SKIP LOCKED` sobre el índice parcial `ix_outbox_pendientes` (migración 0001). Así dos workers nunca toman el mismo evento. Si el lote salió lleno, sigue de inmediato sin esperar.
+* **Publica uno a uno, con confirmación:** los mensajes son persistentes y se envían con *publisher confirms*. La clave es el `event_type` y el cuerpo, el sobre `envelope.v1`. Además, `message_id` (= `event_id`), `type`, `correlation_id`, `app_id` y `timestamp` van como propiedades AMQP, para filtrar en la consola sin abrir el cuerpo. Solo cuando el broker confirma se marca `publicado_en`; cada intento suma 1 a `intentos`.
+* **Si falla un evento:** el lote se corta ahí, para que los siguientes no se adelanten y se conserve el orden. La espera se duplica con cada fallo, hasta `OUTBOX_ESPERA_MAXIMA_SEGUNDOS` (30 s), y vuelve a 1 s con el primer lote bueno. Nada se descarta: el evento sigue pendiente.
+* **Conexión:** se abre con el primer envío y se reconecta sola (`connect_robust`). Si RabbitMQ no está al arrancar, el envío falla y el relay reintenta con la espera creciente.
+* **Métricas:** después de cada lote actualiza `catalog_outbox_pendientes` y `catalog_outbox_antiguedad_segundos`, la edad del pendiente más viejo, que es la alerta de que el relay no avanza.
+* **Retención:** una vez al día (la primera, al arrancar) borra los eventos publicados hace más de `OUTBOX_RETENCION_DIAS` (7). Así la tabla no crece sin fin y queda una semana para revisar qué salió.
+
+**Garantías y límites:**
+
+* **Entrega "al menos una vez":** si el worker cae entre la confirmación del broker y la marca `publicado_en`, el evento sale otra vez. Los consumidores descartan los duplicados por `event_id` (tabla `evento_procesado`).
+* **Sin cola enlazada, el broker descarta el mensaje** (`mandatory=False`): cada consumidor de otro módulo (iam, booking...) debe declarar su cola durable antes de necesitar los eventos.
+* **Auditoría (ESC-04):** el `ACCESS_DENIED` guarda el usuario, su rol, los roles permitidos, el método, la ruta y la IP de origen (`X-Forwarded-For`). Si no se puede guardar, queda en el log y el 403 sale igual. `PERFIL_INACTIVO` no se audita: es una regla del negocio, no un acceso indebido.
+
+### Consumidores: base común
+
+**Objetivo:** que catalog tenga su propia copia de lo que necesita de iam, booking y review, y responda sin llamarlos en cada petición. Plan §4.1: solo el Módulo 5 llama a otros servicios; la única excepción en catalog es el contacto de iam para los correos.
+
+Todas las colas usan la misma base, `ConsumidorRabbitMQ` ([`consumidor_rabbitmq.py`](app/infrastructure/messaging/consumidor_rabbitmq.py)):
+
+* **Cola principal** durable `catalog.<propósito>`, enlazada a sus claves en `turismo.eventos`, con `x-dead-letter-exchange: turismo.dlx`.
+* **Prefetch:** cada consumidor procesa a la vez hasta `CONSUMIDOR_PREFETCH` (10) mensajes. Así una cola lenta (p. ej. correos esperando a SMTP) no acapara al worker.
+* **Validación:** el sobre se valida con `SobreEvento` y el payload con el esquema Pydantic de cada evento (`messaging/esquemas/`). Solo se acepta la `version` 1. El `correlation_id` del sobre se fija para los logs y para los eventos que se generen (p. ej. el `servicio.publicado` que provoca una suspensión lleva la correlación de iam).
+* **Reintentos a 1 s, 5 s y 25 s:** ante un error transitorio (base de datos, iam o SMTP caídos), el mensaje se copia a `<cola>.reintento.<espera>`, una cola con TTL que, al vencer, lo devuelve a la cola principal. El intento viaja en la cabecera `x-intentos`, y el último error, en `x-ultimo-error`.
+* **DLQ:** si falla el 3.er reintento (unos 31 s en total), el mensaje se copia a `turismo.dead-letter` con `x-cola`, `x-intentos` y `x-error`. Un **error permanente** va directo, sin reintentos: un sobre o payload que no cumple el contrato, una versión distinta de 1, una clave que la cola no maneja (`EventoInvalido`) o un dato que el dominio rechaza (`DatoInvalido`). Reintentarlo no lo arregla.
+* **No se pierde nada:** el original se reconoce (`ack`) solo después de copiarlo al reintento o a la DLQ. Si la copia al reintento falla, el mensaje vuelve a la cola (`nack` con `requeue`). Si falla la copia a la DLQ, se rechaza y el broker lo lleva igual a la DLQ (por el `x-dead-letter-exchange` de la cola), solo que sin el texto del error.
+* **Idempotencia:** el caso de uso registra el `event_id` en `evento_procesado` (con el nombre del consumidor) en la misma transacción del efecto; un duplicado se reconoce y se descarta. La excepción son los correos (ver `catalog.notificaciones`).
+* **Orden:** los eventos pueden llegar repetidos o desordenados (reintentos, varias réplicas). Cada proyección guarda la marca del último evento aplicado y descarta uno más viejo, que cuenta como `ignorado`.
+* **Resultado** en la métrica `catalog_eventos_consumidos_total{cola,event_type,resultado}`: `aplicado`, `duplicado`, `ignorado`, `reintento` o `dlq`.
+
+Cada cola tiene un **manejador** (`messaging/manejador_*.py`) que traduce el evento a un DTO de la capa de aplicación y llama a su caso de uso. Así la lógica no depende de RabbitMQ y se prueba sin broker.
+
+### `catalog.prestadores` (iam → perfil del prestador)
+
+**Claves:** `prestador.aprobado`, `prestador.suspendido`.
+
+**Objetivo:** que solo un prestador aprobado por iam pueda publicar servicios (UC17, UC28), y que una suspensión saque del catálogo sus servicios (UC27).
+
+**Qué hace:**
+
+* **Aprobado:** crea el perfil (habilita UC17) o lo reactiva, y actualiza la razón social. Al reactivar vuelven solo los servicios apagados por la suspensión; los que apagó el propio prestador siguen apagados.
+* **Suspendido:** apaga el perfil y sus servicios activos, marcados como apagados por suspensión para saber cuáles restaurar.
+* Cada servicio que cambia guarda un `servicio.publicado` en el outbox, para que booking deje de aceptar reservas o vuelva a aceptarlas. Si cambió algún servicio, se invalida la caché de búsqueda y mapa.
+* Siempre bloquea primero el perfil y después los servicios, el mismo orden que en toda escritura, para no crear interbloqueos con la API.
+
+**Por qué así:**
+
+* **Orden:** `prestador_perfil.estado_iam_en` (migración 0005) guarda el `occurred_at` del último evento de iam aplicado. Uno más viejo (p. ej. un reintento que llega tarde) se ignora y no reactiva a un suspendido.
+* **Suspensión antes de la aprobación:** si llega primero (por un reintento de la aprobación), se guarda un perfil mínimo ya suspendido. La aprobación vieja se ignora y no queda activo un prestador que iam suspendió; una aprobación más nueva sí lo activa.
+
+### `catalog.demanda` (booking → proyección de reservas)
+
+**Claves:** `reserva.solicitada`, `.modificada`, `.confirmada`, `.rechazada`, `.cancelada`, `.finalizada`.
+
+**Objetivo:** tener la demanda por servicio y día para la capacidad de carga (UC24), el mapa de calor (RF-07), la analítica (UC22–UC25) y el CSV (UC38), sin consultar nunca `booking_db`.
+
+**Qué hace:** guarda en `reserva_proyeccion` el estado actual de cada reserva: servicio, prestador, turista, fecha, personas y estado. `modificada` mueve la fecha y las personas. La demanda de un día es la suma de las personas de las reservas activas (Solicitada y Confirmada) de esa fecha. Si llega, por ejemplo, la confirmación antes que la solicitud, crea la fila igual.
+
+**Por qué el estado y no contadores:** un evento solo se aplica si ocurrió después del último aplicado, así los repetidos o desordenados no descuadran nada; con contadores, un duplicado sumaría dos veces. No invalida la caché, porque la demanda no sale en búsqueda ni mapa. Estas filas no se borran: son la historia de la analítica.
+
+### `catalog.calificaciones` (review → promedio)
+
+**Claves:** `resena.publicada`, `resena.ocultada`.
+
+**Objetivo:** mostrar el promedio de calificación de cada servicio en búsqueda, mapa y ficha (UC22).
+
+**Qué hace:** guarda una fila por reseña en `calificacion_resena`, con su puntuación y si está `visible`. El promedio se calcula al leer y cuenta solo las visibles. Ocultar una reseña (moderación, UC29) la saca del promedio; volver a publicarla la devuelve, sin contar doble. Un evento más viejo que el último aplicado (`ultimo_evento_en`, migración 0006) se ignora, y una ocultación que llega antes que la publicación crea la fila ya oculta.
+
+**Por qué no invalida la caché:** el promedio nuevo se ve cuando la caché expira (300 s). Así una ola de reseñas en temporada alta no borra la caché del catálogo justo cuando más se necesita (ESC-02).
+
+### `catalog.disponibilidad` (booking → cupos por día)
+
+**Clave:** `disponibilidad.actualizada`.
+
+**Objetivo:** que `/buscar` y `/mapa/servicios` filtren por `fecha` y `personas` (ver *Disponibilidad* arriba).
+
+**Qué hace:** guarda en `disponibilidad_proyeccion` (migración 0008) los cupos de cada servicio por día, con la `version` de la fila de booking. Una versión menor o igual se ignora. Un día cerrado llega con `cupos_totales = 0`.
+
+**Por qué un evento y no una llamada a booking:** por Plan §4.1, catalog no llama a otros servicios. Booking publica el estado completo del día cada vez que cambia, así basta el último evento, sin sumar ni restar. No invalida la caché, porque las búsquedas y mapas con `fecha` no se cachean.
+
+### `catalog.notificaciones` (booking → correos)
+
+**Claves:** `reserva.solicitada`, `.modificada`, `.confirmada`, `.rechazada`, `.cancelada`. `reserva.finalizada` no envía correo.
+
+**Objetivo:** avisar por correo a quien le toca actuar o enterarse (UC36).
+
+**Qué hace:**
+
+* **Destinatario:** la solicitud y la modificación van al prestador; la confirmación y el rechazo, al turista. La cancelación va a la otra parte, según `cancelada_por`: si canceló el turista, al prestador; si no, al turista.
+* **Contenido:** la confirmación lleva el contacto del prestador, su política, la regla base de cancelación y el aviso de pagos; el rechazo y la cancelación llevan el `motivo`; la modificación, la fecha y las personas anteriores, y la solicitud, cuándo expira.
+* **Datos:** el servicio y el perfil del prestador salen de la base de catalog. El contacto del destinatario (nombre, correo, idioma) se pide a iam al momento (`GET /internal/usuarios/{id}/contacto`, `contracts/openapi/iam-interno.yaml`) y no se guarda.
+* **Redacción:** plantillas Jinja en el idioma del destinatario (es/en), en HTML y texto (`infrastructure/notificaciones/plantillas/`). Se envían por SMTP (`aiosmtplib`): STARTTLS en producción y Mailpit en desarrollo.
+* **Si no se puede enviar:** si no existe el servicio, el perfil o el usuario en iam (404), no se envía y cuenta como `ignorado`. Si iam falla o tarda más de `IAM_TIMEOUT_SECONDS`, o el servidor SMTP no acepta el correo, se reintenta (1 s, 5 s, 25 s) y luego va a la DLQ.
+
+**Por qué así:**
+
+* **Un correo no es transaccional:** se revisa si el evento ya se procesó, se envía y después se registra el `event_id`. Si el worker cae entre ambos pasos, el correo sale dos veces; se prefiere eso a perderlo.
+* **Una cola aparte de `catalog.demanda`:** un correo que falla reintenta solo él, sin frenar la proyección de reservas, y un reintento de la demanda no reenvía correos.
+
+### Limpieza diaria de la disponibilidad
+
+**Objetivo:** que `disponibilidad_proyeccion` no crezca sin fin. Los días pasados ya no sirven para buscar.
+
+**Qué hace:** `TareaPeriodica` ([`infrastructure/tareas/`](app/infrastructure/tareas/tarea_periodica.py)) corre `LimpiarDisponibilidadPasada` al arrancar el worker y luego cada 24 h desde ese momento, no a una hora fija. Borra las filas con fecha anterior a hoy. Si falla, queda en el log y se intenta otra vez en la siguiente vuelta: una limpieza que no corrió hoy no afecta a nadie.
+
+**Por qué en el worker y no en un CronJob:** no hace falta otro manifiesto ni otro pod, y la tarea se puede repetir sin daño (es un `DELETE` por fecha). Con dos réplicas del worker corre en las dos sin problema. Las reservas de `reserva_proyeccion` **no** se borran: son la analítica.
+
+### Configuración del worker
+
+Variables de entorno (`app/config.py`, valores de desarrollo en `.env.example`; en k8s, `configmap.yaml` y el Secret `catalog-secretos`):
+
+| Variable | Por defecto | Para qué |
+|---|---|---|
+| `DATABASE_URL` | base de desarrollo | Outbox, proyecciones y `evento_procesado` |
+| `VALKEY_URL` / `VALKEY_TIMEOUT_SECONDS` | `:6380` / 0,25 s | Invalidar la caché tras un cambio de prestador |
+| `RABBITMQ_URL` / `RABBITMQ_TIMEOUT_SECONDS` | `:5673` / 5 s | Conexión, confirmación del broker y copias a reintento o DLQ |
+| `EVENTS_EXCHANGE` | `turismo.eventos` | Exchange donde publica y del que consume |
+| `OUTBOX_LOTE` | 100 | Eventos por vuelta del relay |
+| `OUTBOX_INTERVALO_SEGUNDOS` | 1 | Pausa entre vueltas sin fallos |
+| `OUTBOX_ESPERA_MAXIMA_SEGUNDOS` | 30 | Tope de la espera tras fallos (relay y conexión inicial de los consumidores) |
+| `OUTBOX_RETENCION_DIAS` | 7 | Días que se guardan los eventos ya publicados |
+| `CONSUMIDOR_PREFETCH` | 10 | Mensajes en proceso a la vez por cola |
+| `WORKER_METRICS_PORT` | 9102 | `/metrics` (Prometheus y sondas) |
+| `IAM_URL_INTERNA` / `IAM_TIMEOUT_SECONDS` | `:8001` / 3 s | Contacto de usuarios para los correos |
+| `SMTP_HOST`, `SMTP_PORT` | `localhost`, 1026 (Mailpit) | Servidor de correo |
+| `SMTP_USUARIO`, `SMTP_CLAVE`, `SMTP_STARTTLS` | vacíos, `false` | Autenticación y TLS en producción (Secret) |
+| `SMTP_REMITENTE` / `SMTP_TIMEOUT_SECONDS` | Turismo Santa Marta / 10 s | Remitente y espera máxima del envío |
+| `LOG_LEVEL` | `INFO` | Logs JSON con el nombre `catalog-service-worker` |
+
+### Dependencias: qué pasa si fallan
+
+| Si falla... | Relay del outbox | Consumidores |
+|---|---|---|
+| **PostgreSQL** | El lote falla y la espera crece hasta 30 s; los eventos siguen pendientes | El evento se reintenta (1 s, 5 s, 25 s) y, si la base sigue caída, va a la DLQ |
+| **RabbitMQ** | Igual: espera creciente; nada se pierde (está en el outbox) | Al arrancar, cada consumidor reintenta la conexión con espera creciente (de 1 s hasta 30 s); después, `connect_robust` reconecta solo |
+| **Valkey** | — | No se invalida la caché (queda en el log); los datos viejos expiran solos en 300 s |
+| **iam** | — | Solo afecta a `catalog.notificaciones`: reintentos y luego DLQ |
+| **SMTP** | — | Igual que iam |
+
+Los mensajes de la DLQ conservan el cuerpo original y las cabeceras `x-cola`, `x-intentos` y `x-error`, así que se pueden reenviar a su cola desde la consola de RabbitMQ cuando la dependencia vuelva.
+
+### Operación del worker
+
+* **Arranque:** primero levanta `/metrics` en `WORKER_METRICS_PORT` y luego el relay, los consumidores (uno tras otro) y la limpieza.
+* **Apagado ordenado:** con SIGTERM o SIGINT (en Windows, solo Ctrl+C) termina las vueltas en curso y cierra los consumidores, el publicador, el cliente de iam, Valkey y la base de datos. Un mensaje que no alcanzó a reconocerse vuelve a la cola, y como el consumo es idempotente, no se duplica su efecto.
+* **Kubernetes** (`deployment-worker.yaml`): 1 réplica sin HPA; *requests* de 50m de CPU y 192Mi, límites de 1 núcleo y 384Mi. La `startupProbe` (hasta 90 s) y la `livenessProbe` usan `/metrics`. No tiene *readiness* porque no recibe tráfico. Se puede subir a 2 réplicas sin duplicar publicaciones (`SKIP LOCKED` en el relay, consumidores idempotentes, limpieza repetible).
+* **Métricas:** `catalog_outbox_pendientes`, `catalog_outbox_antiguedad_segundos` (alertar si crece), `catalog_eventos_publicados_total{event_type}`, `catalog_eventos_fallos_publicacion_total` y `catalog_eventos_consumidos_total{cola,event_type,resultado}`.
+* **Logs:** en JSON, con el `correlation_id` de cada evento consumido.
 
 ## Correlación
 

@@ -153,7 +153,8 @@ Si no devuelve filas, el servicio consulta el estado actual y responde 404 (no e
 
 * Procesan en lotes de 100 con `FOR UPDATE SKIP LOCKED`, de modo que no chocan con las peticiones de los usuarios.
 * `concurrencyPolicy: Forbid` evita dos ejecuciones simultáneas del mismo CronJob.
-* Los eventos de cada lote se guardan en el outbox dentro de la transacción del lote (§6.5).
+* Los eventos de cada lote se guardan en el outbox dentro de la transacción del lote (§6.5); los publica el relay de los pods de la API, así que el CronJob no necesita RabbitMQ.
+* Comando: `python -m cron expirar-solicitudes` o `python -m cron finalizar-reservas`, con la misma imagen que la API (`k8s/base/cronjobs.yaml`, hora de Bogotá). Sale con 0 si terminó, 1 si falló y 2 si no está en modo postgres.
 
 ### 6.5 Publicación de eventos
 

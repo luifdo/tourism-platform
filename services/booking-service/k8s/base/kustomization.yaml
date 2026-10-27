@@ -1,5 +1,5 @@
 # booking-service (Módulo 3), a partir de templates/service-template/k8s (Plan §7.2-7.4).
-# Pendiente: los CronJobs expirar-solicitudes y finalizar-reservas de la Guía §6.4.
+# Incluye los CronJobs expirar-solicitudes y finalizar-reservas de la Guía §6.4 (cronjobs.yaml).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -17,6 +17,7 @@ resources:
   - hpa.yaml
   - pdb.yaml
   - networkpolicy.yaml
+  - cronjobs.yaml
 
 images:
   - name: booking-service

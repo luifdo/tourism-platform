@@ -101,7 +101,7 @@ docker compose up -d --build booking-service prometheus
 
 ### Kubernetes (k8s)
 
-`k8s/` sale de la [plantilla](../../templates/service-template/k8s/): Deployment con initContainer de migraciones (el candado `pg_advisory_xact_lock` de `migrations/env.py` evita que dos pods migren a la vez), Service `booking-service:8003` (ClusterIP), HPA 2-6 al 70 % (Plan §7.3), PodDisruptionBudget, NetworkPolicy (entran Traefik, Prometheus y recommendation-service) y ConfigMap. Pendientes: los CronJobs de la Guía §6.4. Pasos en el [README de catalog-service](../catalog-service/README.md#kubernetes-k8s):
+`k8s/` sale de la [plantilla](../../templates/service-template/k8s/): Deployment con initContainer de migraciones (el candado `pg_advisory_xact_lock` de `migrations/env.py` evita que dos pods migren a la vez), Service `booking-service:8003` (ClusterIP), HPA 2-6 al 70 % (Plan §7.3), PodDisruptionBudget, NetworkPolicy (entran Traefik, Prometheus y recommendation-service), ConfigMap y los CronJobs `booking-expirar-solicitudes` y `booking-finalizar-reservas` (cada 15 min, hora de Bogotá, `concurrencyPolicy: Forbid`). Pasos en el [README de catalog-service](../catalog-service/README.md#kubernetes-k8s):
 
 ```bash
 cd k8s/overlays/local
@@ -109,6 +109,20 @@ cp secretos.env.example secretos.env
 docker build -t booking-service:local ../../..
 kubectl apply -k .
 ```
+
+### Tareas programadas (CronJobs)
+
+`src/cron.py` ejecuta las tareas de la Guía §6.4 contra `booking_db` y termina (0 = bien, 1 = falló, 2 = no está en modo postgres). Los eventos quedan en el outbox y los publica el relay de la API.
+
+```bash
+# Local, contra el Postgres de pruebas (puerto 5433)
+$env:PYTHONPATH="src"; $env:MODO_PERSISTENCIA="postgres"; python -m cron expirar-solicitudes
+# Con docker compose (desde infra/)
+docker compose run --rm booking-service python -m cron expirar-solicitudes
+docker compose run --rm booking-service python -m cron finalizar-reservas
+```
+
+En modo memoria se usan las rutas `/dev/tareas/expirar` y `/dev/tareas/finalizar` de Swagger.
 
 ### Observabilidad
 

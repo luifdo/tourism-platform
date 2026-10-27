@@ -82,6 +82,7 @@ Todas las horas se calculan en la zona horaria `America/Bogota`. La unidad de re
 * `cupos_totales` no puede superar la `capacidad_aforo_diario` oficial del servicio (capacidad de carga, §2.4.4 del SRS), que también llega en `servicio_ref`.
 * Cerrar un día es poner `cupos_totales` en lo ya reservado; no se borran filas que tengan reservas.
 * Es un formulario que la PWA puede enviar sin conexión (RNF-13, ESC-09): acepta `Idempotency-Key` y usa `If-Match` con la versión de la fila para detectar conflictos (Plan §6.8).
+* Ante un conflicto, el 409 `VERSION_DISTINTA` trae, además del error común, `version_actual` y `actual` (el día como lo devuelve el GET del calendario), y el `ETag` nuevo. La PWA muestra "tu cambio / lo que hay ahora" sin otra petición y, si el prestador insiste, reenvía con el `If-Match` nuevo. Lo mismo vale para el `PATCH` de una reserva, con la reserva completa en `actual`.
 
 ## 5. Arquitectura
 

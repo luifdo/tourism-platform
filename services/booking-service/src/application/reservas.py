@@ -99,7 +99,7 @@ class ModificarReserva:
         async with self.ctx.uow() as uow:
             reserva = await _reserva_de(uow, reserva_id, Actor.TURISTA, turista_id)
             if reserva.version != version_esperada:
-                raise VersionDistinta("La reserva cambió mientras la editaba.", reserva.version)
+                raise VersionDistinta("La reserva cambió mientras la editaba.", reserva)
             await _servicio_activo(uow, reserva.servicio_id)
 
             fecha_anterior, personas_anterior = reserva.fecha_reserva, reserva.numero_personas

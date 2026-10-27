@@ -1,6 +1,8 @@
 """Errores de la capa de aplicación (códigos del contrato booking.yaml)."""
 
+from domain.disponibilidad import DisponibilidadCupo
 from domain.errores import ErrorDominio
+from domain.reserva import Reserva
 
 
 class NoEncontrado(ErrorDominio):
@@ -20,11 +22,20 @@ class DiaExistente(ErrorDominio):
 
 
 class VersionDistinta(ErrorDominio):
+    """El registro cambió en el servidor después de que el usuario lo leyó (If-Match viejo).
+
+    Lleva el registro tal como está ahora para que la PWA muestre el conflicto sin otro GET.
+    """
+
     codigo = "VERSION_DISTINTA"
 
-    def __init__(self, mensaje: str, version_actual: int):
+    def __init__(self, mensaje: str, actual: Reserva | DisponibilidadCupo):
         super().__init__(mensaje)
-        self.version_actual = version_actual
+        self.actual = actual
+
+    @property
+    def version_actual(self) -> int:
+        return self.actual.version
 
 
 class FaltaIfMatch(ErrorDominio):

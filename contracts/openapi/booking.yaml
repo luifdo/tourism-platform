@@ -369,10 +369,12 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409':
-          description: '`DIA_EXISTENTE` (crear sin `If-Match`), `CUPOS_COMPROMETIDOS` (totales menores que lo reservado) o `VERSION_DISTINTA` (el día cambió en el servidor; la PWA muestra el conflicto).'
+          description: '`DIA_EXISTENTE` (crear sin `If-Match`), `CUPOS_COMPROMETIDOS` (totales menores que lo reservado) o `VERSION_DISTINTA` (el día cambió en el servidor: `version_actual` y el día completo en `actual`, para que la PWA muestre el conflicto sin otro GET).'
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+              schema: { $ref: '#/components/schemas/ErrorConflicto' }
         '422':
           description: '`SUPERA_AFORO`.'
           content:
@@ -509,10 +511,10 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     Conflicto:
-      description: '`TRANSICION_INVALIDA`, `PLAZO_VENCIDO`, `CUPOS_INSUFICIENTES` o `VERSION_DISTINTA` (el recurso cambió en el servidor; la versión actual va en `ETag`). El mensaje indica el estado actual.'
+      description: '`TRANSICION_INVALIDA`, `PLAZO_VENCIDO`, `CUPOS_INSUFICIENTES` o `VERSION_DISTINTA` (la reserva cambió en el servidor: la versión actual va en `ETag` y en `version_actual`, y la reserva completa en `actual`). El mensaje indica el estado actual.'
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema: { $ref: '#/components/schemas/ErrorConflicto' }
     FaltaIfMatch:
       description: '`FALTA_IF_MATCH`.'
       content:
@@ -538,6 +540,21 @@ components:
         error: { type: string, example: CUPOS_INSUFICIENTES }
         message: { type: string, example: Solo quedan 1 cupos para el 2026-11-05. }
         correlation_id: { type: string }
+
+    ErrorConflicto:
+      description: |
+        Error común de un 409. Solo con `VERSION_DISTINTA` agrega `version_actual` y `actual`:
+        el registro tal como está en el servidor, con el mismo formato que su GET
+        (`Reserva` en `PATCH /{reserva_id}`; `DiaCalendario` en `PUT /prestador/calendario/...`).
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            version_actual: { type: integer, minimum: 1, example: 2 }
+            actual:
+              oneOf:
+                - $ref: '#/components/schemas/Reserva'
+                - $ref: '#/components/schemas/DiaCalendario'
 
     EstadoReserva:
       type: string

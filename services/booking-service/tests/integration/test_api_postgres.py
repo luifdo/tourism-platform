@@ -141,3 +141,16 @@ async def test_un_error_de_negocio_no_deja_nada_a_medias(cliente, motor, outbox)
             select(solicitud_reserva.c.id).where(solicitud_reserva.c.servicio_id == demo.SERVICIO_DEMO)
         )).first() is None
     assert await outbox() == []  # sin commit no queda ningún evento
+
+
+async def test_conflicto_de_version_del_calendario_trae_el_dia_de_postgres(cliente):
+    """ESC-09 sobre booking_db: el 409 trae el día tal como quedó guardado (con su tarifa)."""
+    url = f"{BASE}/prestador/calendario/{SERVICIO}/2026-11-12"
+    r = await cliente.put(url, json={"cupos_totales": 8, "tarifa_dia": 95000}, headers={**PRESTADOR, "If-Match": '"1"'})
+    assert r.status_code == 200
+    r = await cliente.put(url, json={"cupos_totales": 12}, headers={**PRESTADOR, "If-Match": '"1"'})
+    assert r.status_code == 409 and r.headers["ETag"] == '"2"'
+    cuerpo = r.json()
+    assert cuerpo["version_actual"] == 2
+    assert (cuerpo["actual"]["cupos_totales"], cuerpo["actual"]["version"]) == (8, 2)
+    assert float(cuerpo["actual"]["tarifa_dia"]) == 95000

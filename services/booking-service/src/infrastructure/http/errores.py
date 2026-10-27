@@ -1,14 +1,18 @@
 """Traducción de errores a HTTP con el formato común { error, message, correlation_id }."""
 
 import logging
+from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from application import errores as app
 from domain import errores as dom
+from domain.disponibilidad import DisponibilidadCupo
+from infrastructure.http import esquemas as e
 from infrastructure.observabilidad.correlacion import correlation_id_actual
 
 logger = logging.getLogger(__name__)
@@ -47,22 +51,31 @@ def correlation_id(request: Request) -> str:
     return correlation_id_actual() or request.headers.get("X-Correlation-ID") or f"corr-{uuid4()}"
 
 
-def respuesta_error(request: Request, estado: int, codigo: str, mensaje: str, **headers: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=estado,
-        content={"error": codigo, "message": mensaje, "correlation_id": correlation_id(request)},
-        headers=headers or None,
-    )
+def respuesta_error(
+    request: Request, estado: int, codigo: str, mensaje: str, extra: dict[str, Any] | None = None, **headers: str
+) -> JSONResponse:
+    contenido = {"error": codigo, "message": mensaje, "correlation_id": correlation_id(request), **(extra or {})}
+    return JSONResponse(status_code=estado, content=contenido, headers=headers or None)
+
+
+def _conflicto_de_version(request: Request, estado: int, exc: app.VersionDistinta) -> JSONResponse:
+    """409 VERSION_DISTINTA con el registro actual en el mismo formato que su GET, para que la
+    PWA muestre «tu cambio / lo que hay ahora» sin otra petición (Plan §6.8, ESC-09)."""
+    if isinstance(exc.actual, DisponibilidadCupo):
+        actual = e.DiaCalendario.de(exc.actual)
+    else:
+        actual = e.ReservaSalida.de(exc.actual)
+    extra = {"version_actual": exc.version_actual, "actual": jsonable_encoder(actual)}
+    return respuesta_error(request, estado, exc.codigo, exc.mensaje, extra, ETag=f'"{exc.version_actual}"')
 
 
 def registrar_manejadores(app_fastapi: FastAPI) -> None:
     @app_fastapi.exception_handler(dom.ErrorDominio)
     async def _dominio(request: Request, exc: dom.ErrorDominio) -> JSONResponse:
         estado = next((s for tipo, s in ESTADOS.items() if isinstance(exc, tipo)), 400)
-        headers = {}
         if isinstance(exc, app.VersionDistinta):
-            headers["ETag"] = f'"{exc.version_actual}"'
-        return respuesta_error(request, estado, exc.codigo, exc.mensaje, **headers)
+            return _conflicto_de_version(request, estado, exc)
+        return respuesta_error(request, estado, exc.codigo, exc.mensaje)
 
     @app_fastapi.exception_handler(RequestValidationError)
     async def _validacion(request: Request, exc: RequestValidationError) -> JSONResponse:

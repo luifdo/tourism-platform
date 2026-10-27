@@ -134,7 +134,7 @@ class GuardarDiaCalendario:
                 if version_esperada is None:
                     raise DiaExistente("El día ya existe; envíe If-Match con su versión para editarlo.")
                 if dia.version != version_esperada:
-                    raise VersionDistinta("El día cambió en el servidor.", dia.version)
+                    raise VersionDistinta("El día cambió en el servidor.", dia)
                 dia.ajustar(cupos_totales, tarifa_dia, aforo)
             await uow.disponibilidad.guardar(dia)
             await uow.outbox.agregar(eventos_de_dias([dia]), None)

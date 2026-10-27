@@ -152,6 +152,28 @@ async def test_modificar_exige_if_match_y_controla_version(cliente):
     assert r.status_code == 200 and r.headers["ETag"] == '"2"'
     r = await cliente.patch(url, json={"numero_personas": 4}, headers={**TURISTA, "If-Match": '"1"'})
     assert r.status_code == 409 and r.json()["error"] == "VERSION_DISTINTA" and r.headers["ETag"] == '"2"'
+    # El cuerpo trae la reserva como está ahora, igual que GET /{id}: la PWA muestra el conflicto.
+    cuerpo = r.json()
+    assert cuerpo["version_actual"] == 2
+    assert cuerpo["actual"] == (await cliente.get(url, headers=TURISTA)).json()
+    assert cuerpo["actual"]["numero_personas"] == 3
+
+
+async def test_conflicto_del_calendario_trae_el_dia_actual(cliente):
+    """ESC-09: el prestador editó sin conexión la versión 1; mientras tanto el día pasó a la 2."""
+    url = f"{BASE}/prestador/calendario/{SERVICIO}/2026-11-10"
+    await cliente.put(url, json={"cupos_totales": 8}, headers={**PRESTADOR, "If-Match": '"1"'})  # el otro cambio
+    r = await cliente.put(url, json={"cupos_totales": 12}, headers={**PRESTADOR, "If-Match": '"1"'})
+    assert r.status_code == 409 and r.headers["ETag"] == '"2"'
+    cuerpo = r.json()
+    assert (cuerpo["error"], cuerpo["version_actual"]) == ("VERSION_DISTINTA", 2)
+    assert cuerpo["correlation_id"]  # sigue siendo el formato común de error
+    calendario = (await cliente.get(
+        f"{BASE}/prestador/calendario/{SERVICIO}", params={"desde": "2026-11-10", "hasta": "2026-11-10"},
+        headers=PRESTADOR,
+    )).json()
+    assert cuerpo["actual"] == calendario["dias"][0]
+    assert cuerpo["actual"]["cupos_totales"] == 8  # lo que hay en el servidor, no lo que envió
 
 
 async def test_cancelar_sin_cuerpo_y_rechazar_con_motivo(cliente):

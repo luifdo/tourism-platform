@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { db } from './db'
+import { db } from '../infrastructure/storage/idb'
 import { experiences as demo } from '../data/mock'
 
 /*

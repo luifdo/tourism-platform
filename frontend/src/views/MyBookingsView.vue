@@ -1,17 +1,21 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { bookings, ApiError, isMock } from '../lib/api'
-import { db } from '../lib/db'
+import { bookingUseCases, isMockBackend as isMock } from '../composition'
+import { BookingError } from '../domain/booking/errors'
+import { addDays } from '../domain/booking/dates'
+import { ACTIVOS, ESTADOS as estados, decisionCancelar, decisionModificar, lineaDeTiempo } from '../domain/booking/rules'
 import { queue } from '../lib/offlineQueue'
-import { addDays, fmtDate, today, tomorrow } from '../lib/dates'
 import { findService } from '../data/mock'
+import { fmtDate } from '../ui/format'
 import StatusBadge from '../components/StatusBadge.vue'
 import Countdown from '../components/Countdown.vue'
 
-/* UC13 (historial) + UC12 (modificar solo en SOLICITADA, cancelar). Modificar y cancelar requieren conexión. */
+/*
+ * UC13 (historial) + UC12 (modificar solo en SOLICITADA, cancelar). Modificar y cancelar requieren conexión.
+ * Capa UI: presenta y llama a los casos de uso; las reglas viven en domain/booking.
+ */
 const { t, te, locale, d } = useI18n()
-const estados = ['SOLICITADA', 'CONFIRMADA', 'RECHAZADA', 'CANCELADA', 'FINALIZADA']
 
 const filter = ref('')
 const items = ref([])
@@ -26,40 +30,39 @@ const rowError = ref({})
 const editing = ref(null) // { id, fecha, personas }
 const cancelling = ref(null) // { id, motivo }
 
+const today = () => bookingUseCases.hoy()
+const tomorrow = () => bookingUseCases.manana()
 const name = (r) => { const s = findService(r.servicio_id); return s ? t(`items.${s.id}.name`) : r.servicio_id }
-const errText = (e) => t(`my.errors.${te(`my.errors.${e.code}`) ? e.code : 'generic'}`)
+const errText = (e) => {
+  const code = e instanceof BookingError ? e.code : 'generic'
+  return t(`my.errors.${te(`my.errors.${code}`) ? code : 'generic'}`)
+}
 
 async function load(reset = true) {
   loading.value = reset; loadError.value = ''; cachedAt.value = null
   if (reset) page.value = 1
   try {
-    const res = await bookings.misReservas({ estado: filter.value || undefined, pagina: page.value, tamano: 20 })
+    const res = await bookingUseCases.listarMisReservas({ estado: filter.value || undefined, pagina: page.value })
     items.value = reset ? res.items : [...items.value, ...res.items]
     total.value = res.total
-    if (!filter.value && page.value === 1) db.put('kv', { items: res.items, total: res.total, at: Date.now() }, 'misReservas').catch(() => {})
-  } catch (e) {
-    // Sin conexión: se muestra la última copia guardada (solo lectura)
-    const saved = await db.get('kv', 'misReservas').catch(() => null)
-    if (saved && e instanceof ApiError && e.code === 'SIN_CONEXION' || (saved && !queue.online)) {
-      items.value = filter.value ? saved.items.filter((r) => r.estado === filter.value) : saved.items
-      total.value = items.value.length; cachedAt.value = saved.at
-    } else loadError.value = errText(e)
-  } finally { loading.value = false }
+    cachedAt.value = res.copiaDe // sin conexión el caso de uso devuelve la última copia guardada
+  } catch (e) { loadError.value = errText(e) }
+  finally { loading.value = false }
 }
 onMounted(load)
 const setFilter = (f) => { filter.value = f; load() }
 const more = () => { page.value++; load(false) }
 
-// Reglas del contrato: modificar solo SOLICITADA; el turista cancela CONFIRMADA hasta el día anterior
-const canEdit = (r) => r.estado === 'SOLICITADA'
-const canCancel = (r) => r.estado === 'SOLICITADA' || r.estado === 'CONFIRMADA'
-const tooLate = (r) => r.estado === 'CONFIRMADA' && r.fecha_reserva <= today()
+// Las reglas salen del dominio (modificar solo SOLICITADA; cancelar CONFIRMADA hasta el día anterior)
+const canEdit = (r) => decisionModificar(r).permitido
+const canCancel = (r) => ACTIVOS.includes(r.estado)
+const tooLate = (r) => decisionCancelar(r, today()).codigo === 'FUERA_DE_PLAZO'
 
 function replace(r) { items.value = items.value.map((x) => (x.id === r.id ? r : x)) }
 
 async function run(r, fn, okMsg) {
   busy.value = r.id; rowError.value = { ...rowError.value, [r.id]: '' }; notice.value = ''
-  try { replace((await fn()).data); notice.value = okMsg; editing.value = cancelling.value = null }
+  try { replace((await fn()).reserva); notice.value = okMsg; editing.value = cancelling.value = null }
   catch (e) {
     rowError.value = { ...rowError.value, [r.id]: e.code === 'VERSION_DISTINTA' ? t('my.changed') : errText(e) }
     if (e.code === 'VERSION_DISTINTA' || e.code === 'TRANSICION_INVALIDA') load()
@@ -68,15 +71,11 @@ async function run(r, fn, okMsg) {
 
 const startEdit = (r) => { editing.value = { id: r.id, fecha: r.fecha_reserva, personas: r.numero_personas }; cancelling.value = null }
 const startCancel = (r) => { cancelling.value = { id: r.id, motivo: '' }; editing.value = null }
-const save = (r) => run(r, () => bookings.modificarReserva(r.id, r.version, { fecha_reserva: editing.value.fecha, numero_personas: Number(editing.value.personas) }), t('my.modified'))
-const confirmCancel = (r) => run(r, () => bookings.cancelarReserva(r.id, cancelling.value.motivo.trim() || undefined), t('my.cancelled'))
+const save = (r) => run(r, () => bookingUseCases.modificarReserva(r, { fecha_reserva: editing.value.fecha, numero_personas: Number(editing.value.personas) }), t('my.modified'))
+const confirmCancel = (r) => run(r, () => bookingUseCases.cancelarReserva(r, cancelling.value.motivo.trim() || undefined), t('my.cancelled'))
 
-// Línea de tiempo: Solicitada → (Confirmada | Rechazada | Cancelada) → Finalizada
-const timeline = (r) => {
-  const mid = r.estado === 'RECHAZADA' || r.estado === 'CANCELADA' ? r.estado : 'CONFIRMADA'
-  const reached = { SOLICITADA: 0, CONFIRMADA: 1, RECHAZADA: 1, CANCELADA: 1, FINALIZADA: 2 }[r.estado]
-  return ['SOLICITADA', mid, 'FINALIZADA'].map((s, i) => ({ s, on: i <= reached, bad: i === 1 && mid !== 'CONFIRMADA' }))
-}
+// Línea de tiempo (regla del dominio) adaptada a lo que pinta la plantilla
+const timeline = (r) => lineaDeTiempo(r).map((p) => ({ s: p.estado, on: p.alcanzado, bad: p.negativo }))
 const when = computed(() => (cachedAt.value ? d(cachedAt.value, { dateStyle: 'medium', timeStyle: 'short' }) : ''))
 const hasMore = computed(() => items.value.length < total.value && !cachedAt.value)
 </script>

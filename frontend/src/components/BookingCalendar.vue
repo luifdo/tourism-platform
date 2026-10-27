@@ -1,7 +1,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { addDays, daysInMonth, fmtDate, monthKey, tomorrow, weekday } from '../lib/dates'
+import { addDays, daysInMonth, monthKey, weekday } from '../domain/booking/dates'
+import { estadoDia } from '../domain/booking/rules'
+import { fmtDate } from '../ui/format'
 
 // Calendario de un servicio: marca cada día con los cupos de GET /disponibilidad (UC10)
 const props = defineProps({ days: { type: Array, default: () => [] }, modelValue: String, from: String, to: String })
@@ -26,9 +28,8 @@ const cells = computed(() => {
   for (let d = 1; d <= daysInMonth(cursor.value); d++) {
     const fecha = `${cursor.value}-${String(d).padStart(2, '0')}`
     const info = byDate.value.get(fecha)
-    const inRange = fecha >= tomorrow() && fecha <= props.to
-    let state = 'out' // fuera del rango reservable
-    if (inRange) state = !info ? 'closed' : info.cupos_disponibles === 0 ? 'soldout' : 'ok'
+    // La regla (fuera de rango / sin operación / agotado / disponible) vive en el dominio
+    const state = { fuera: 'out', cerrado: 'closed', agotado: 'soldout', ok: 'ok' }[estadoDia(fecha, info, { desde: props.from, hasta: props.to })]
     out.push({ fecha, d, state, cupos: info?.cupos_disponibles ?? 0 })
   }
   return out

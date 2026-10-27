@@ -36,6 +36,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Pruebas (dominio, casos de uso, adaptadores y regla de dependencias)
+        run: npm test
+
       - name: Compilar con la ruta del repositorio
         run: npm run build
         env:

@@ -1,5 +1,6 @@
 import { reactive, readonly } from 'vue'
-import { db } from './db'
+import { db } from '../infrastructure/storage/idb'
+import { getToken } from '../infrastructure/auth/tokenSession'
 
 /*
  * Formularios diferidos (RNF-13, ESC-09): perfil, reseña, oferta y cupos.
@@ -11,7 +12,6 @@ const state = reactive({ online: navigator.onLine, items: [], syncing: false })
 export const queue = readonly(state)
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`)
-const token = () => { try { return localStorage.getItem('token') } catch { return null } }
 
 async function refresh() {
   state.items = (await db.all('pending')).sort((a, b) => a.createdAt - b.createdAt)
@@ -20,7 +20,8 @@ async function refresh() {
 async function send(item) {
   const headers = { 'Content-Type': 'application/json', 'Idempotency-Key': item.key }
   if (item.version != null) headers['If-Match'] = String(item.version)
-  if (token()) headers.Authorization = `Bearer ${token()}`
+  const token = getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
   return fetch(item.url, { method: item.method, headers, body: JSON.stringify(item.body) })
 }
 

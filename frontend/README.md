@@ -39,3 +39,34 @@ npm run build && npm run preview   # prueba de la PWA y del modo sin conexión (
 * Android/Chrome/Edge: aparece el botón **Instalar app** en la barra (`InstallButton.vue`). iOS Safari: *Compartir → Añadir a pantalla de inicio*.
 * El video del hero no se guarda sin conexión; en su lugar se precarga `hero-poster.jpg` (primer cuadro exacto).
 * Los íconos se generaron a partir de `public/brand/logo-dark.png`.
+
+## Arquitectura del frontend de reservas (puertos y adaptadores)
+
+El backend usa arquitectura hexagonal (ADR-006); el módulo de reservas del frontend sigue el mismo criterio para que las reglas de negocio no dependan de Vue ni de la red.
+
+```
+src/
+├── domain/booking/          Reglas puras (fechas de Bogotá, plazos, cancelación, cupos, estados). Sin Vue, sin fetch.
+├── application/booking/     Casos de uso (UC10–UC13) y PUERTOS: BookingGateway, Session, BookingCache, Clock.
+├── infrastructure/          ADAPTADORES que implementan los puertos:
+│   ├── booking/             httpBookingGateway (Gateway real), mockBookingGateway (simulado), idbBookingCache
+│   ├── auth/                tokenSession (JWT en localStorage)
+│   └── storage/             idb (IndexedDB)
+├── composition.js           Raíz de composición: único lugar que elige qué adaptador implementa cada puerto
+└── components/ views/ ui/   UI (Vue): solo llama a los casos de uso y muestra el resultado
+```
+
+```
+UI ──► application ──► domain          infrastructure ──► (implementa los puertos de application)
+```
+
+* El dominio y la aplicación no importan librerías ni usan `fetch`, `localStorage` ni `indexedDB`; la UI no importa `infrastructure`. Lo comprueba `tests/architecture.test.js`.
+* Para conectar el backend real basta `VITE_API_MOCK=false`: cambia el adaptador en `composition.js`, sin tocar casos de uso ni pantallas.
+* El adaptador simulado reutiliza las reglas del dominio y responde con los códigos del contrato (`CUPOS_INSUFICIENTES`, `VERSION_DISTINTA`, `FUERA_DE_PLAZO`…).
+
+### Pruebas
+
+```bash
+npm test          # dominio, casos de uso (con adaptadores falsos), adaptadores y regla de dependencias
+npm run test:watch
+```

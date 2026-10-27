@@ -1,9 +1,11 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { bookings, hasSession, ApiError, isMock } from '../lib/api'
+import { bookingUseCases, isMockBackend as isMock } from '../composition'
+import { BookingError } from '../domain/booking/errors'
+import { maxPersonas, tarifaDia } from '../domain/booking/rules'
 import { queue } from '../lib/offlineQueue'
-import { addDays, fmtDate, tomorrow } from '../lib/dates'
+import { fmtDate } from '../ui/format'
 import BookingCalendar from './BookingCalendar.vue'
 import Countdown from './Countdown.vue'
 
@@ -11,6 +13,8 @@ import Countdown from './Countdown.vue'
  * Reserva en 4 pasos (RNF-11, ESC-07): 1 Fecha · 2 Personas · 3 Resumen · 4 Enviar.
  * Sin pagos: la solicitud es gratuita y el pago es directo al prestador (SRS §1.2.1).
  * Requiere conexión (SRS §3.6.6): sin red el widget se deshabilita.
+ *
+ * Capa UI: solo presenta y llama a los casos de uso; las reglas viven en domain/booking.
  */
 const props = defineProps({ service: { type: Object, required: true } })
 const { t, n, locale, te, tm, rt } = useI18n()
@@ -26,8 +30,7 @@ const sending = ref(false)
 const error = ref('')
 const result = ref(null)
 
-const from = tomorrow()
-const to = addDays(from, 61) // el contrato permite hasta 62 días por consulta
+const { desde: from, hasta: to } = bookingUseCases.ventana()
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`)
 // Una clave por intento: un doble clic o un reintento devuelve la misma reserva, no una nueva
@@ -35,23 +38,23 @@ let idemKey = uid()
 watch([date, people], () => { idemKey = uid() })
 
 const day = computed(() => days.value.find((d) => d.fecha === date.value))
-const maxPeople = computed(() => day.value?.cupos_disponibles ?? 1)
-const rate = computed(() => day.value?.tarifa_dia ?? props.service.fee)
+const maxPeople = computed(() => maxPersonas(day.value))
+const rate = computed(() => tarifaDia(day.value, props.service.fee))
 const cop = (v) => n(v, { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
+
+const errKey = (e) => {
+  const k = e instanceof BookingError ? e.code : 'generic'
+  return `booking.errors.${te(`booking.errors.${k}`) ? k : 'generic'}`
+}
 
 async function load() {
   loading.value = true; loadError.value = ''
-  try { days.value = (await bookings.consultarDisponibilidad(props.service.id, from, to)).dias }
+  try { days.value = (await bookingUseCases.consultarDisponibilidad(props.service.id)).dias }
   catch (e) { loadError.value = t(errKey(e)) }
   finally { loading.value = false }
 }
 onMounted(load)
 watch(() => queue.online, (on) => { if (on && !days.value.length) load() })
-
-const errKey = (e) => {
-  const k = e instanceof ApiError ? e.code : 'generic'
-  return `booking.errors.${te(`booking.errors.${k}`) ? k : 'generic'}`
-}
 
 function pickDate(d) {
   date.value = d
@@ -61,14 +64,15 @@ const canNext = computed(() => (step.value === 1 ? !!date.value : step.value ===
 
 async function send() {
   error.value = ''
-  if (!hasSession()) { error.value = t('booking.needLogin'); return }
   sending.value = true
   try {
-    const { data } = await bookings.solicitarReserva({ servicio_id: props.service.id, fecha_reserva: date.value, numero_personas: people.value }, idemKey)
-    result.value = data
+    const { reserva } = await bookingUseCases.solicitarReserva({
+      servicioId: props.service.id, fecha: date.value, personas: people.value, maxPersonas: maxPeople.value, idempotencyKey: idemKey,
+    })
+    result.value = reserva
   } catch (e) {
-    error.value = t(errKey(e))
-    if (e instanceof ApiError && ['CUPOS_INSUFICIENTES', 'DIA_NO_DISPONIBLE'].includes(e.code)) { await load(); step.value = 1; date.value = '' }
+    error.value = e instanceof BookingError && e.code === 'NO_AUTENTICADO' ? t('booking.needLogin') : t(errKey(e))
+    if (e instanceof BookingError && ['CUPOS_INSUFICIENTES', 'DIA_NO_DISPONIBLE'].includes(e.code)) { await load(); step.value = 1; date.value = '' }
   } finally { sending.value = false }
 }
 

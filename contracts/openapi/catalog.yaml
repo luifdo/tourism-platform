@@ -1,0 +1,2044 @@
+openapi: 3.0.3
+info:
+  title: catalog-service — Catálogo, GIS & Inteligencia de Destino (Módulo 2)
+  version: 1.0.0
+  description: |
+    Contrato REST acordado del catalog-service: catálogo georreferenciado, búsqueda,
+    mapas (GeoJSON sobre OpenStreetMap), zonas, alertas oficiales y analítica de
+    demanda y capacidad de carga.
+
+    * Las rutas protegidas pasan por ForwardAuth en Traefik, que agrega
+      `X-Usuario-Id` y `X-Usuario-Rol`; el servicio verifica el rol. Un rol no
+      permitido responde 403 y se publica `auditoria.registrada` (ACCESS_DENIED).
+    * Idioma: `Accept-Language` (`es` o `en`, por defecto `es`); el idioma de la
+      respuesta va en `Content-Language`. El sistema funciona completo en ambos
+      idiomas: los mensajes de error y las etiquetas de los valores fijos
+      (`*_etiqueta`: categoría, nivel de alerta, nivel de saturación) salen siempre en
+      el idioma pedido. Los textos escritos por usuarios (nombres, descripciones,
+      alertas) salen en el idioma pedido si tienen traducción y, si no, en español. Las
+      rutas de edición devuelven ambos idiomas.
+    * Coordenadas en GeoJSON (RFC 7946) siempre en orden `[lon, lat]`, SRID 4326.
+    * Fechas de negocio en `America/Bogota`. Tarifas en COP.
+    * Errores con el formato común `Error`.
+  contact:
+    name: Luis Fernando Barraza Sanchez (@luifdo)
+servers:
+  - url: /api/catalog
+    description: Prefijo en el API Gateway (Traefik)
+
+tags:
+  - name: Catálogo
+  - name: Mapa
+  - name: Prestador
+  - name: Entidad
+  - name: Analítica
+  - name: Operación
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ---------- Públicas ----------
+  /servicios:
+    get:
+      tags: [Catálogo]
+      summary: Listar el catálogo (UC7)
+      description: Ruta pública. Solo servicios activos.
+      operationId: listarServicios
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/CategoriaQuery'
+        - $ref: '#/components/parameters/ZonaQuery'
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de servicios.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaServicios' }
+        '400': { $ref: '#/components/responses/Validacion' }
+    post:
+      tags: [Prestador]
+      summary: Registrar una oferta (UC17)
+      description: |
+        Solo un prestador con perfil activo. La zona se asigna según la ubicación.
+        Formulario que la PWA puede enviar sin conexión. Publica `servicio.publicado`.
+      operationId: registrarServicio
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServicioGuardar' }
+      responses:
+        '201':
+          description: Servicio creado.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServicioEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+
+  /servicios/{servicio_id}:
+    parameters:
+      - $ref: '#/components/parameters/ServicioIdPath'
+    get:
+      tags: [Catálogo]
+      summary: Detalle de un servicio (UC9)
+      description: |
+        Ruta pública. La usa la tool `detalle_servicio` del Módulo 5.
+        Responde 404 si el servicio no existe o está inactivo.
+      operationId: obtenerServicio
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Detalle del servicio con su prestador, zona, calificación y alertas vigentes.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServicioDetalle' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+    put:
+      tags: [Prestador]
+      summary: Editar una oferta (UC18)
+      description: |
+        Solo el prestador dueño. Formulario que la PWA puede enviar sin conexión.
+        Publica `servicio.publicado`.
+      operationId: editarServicio
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServicioGuardar' }
+      responses:
+        '200':
+          description: Servicio editado.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServicioEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/VersionDistinta' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /servicios/{servicio_id}/desactivar:
+    parameters:
+      - $ref: '#/components/parameters/ServicioIdPath'
+    post:
+      tags: [Prestador]
+      summary: Desactivar una oferta (UC18)
+      description: Deja de mostrarse en el catálogo; no se borra. Publica `servicio.publicado` con `activo=false`.
+      operationId: desactivarServicio
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Servicio inactivo.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServicioEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/VersionDistinta' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /servicios/{servicio_id}/reactivar:
+    parameters:
+      - $ref: '#/components/parameters/ServicioIdPath'
+    post:
+      tags: [Prestador]
+      summary: Reactivar una oferta (UC18)
+      description: Publica `servicio.publicado` con `activo=true`.
+      operationId: reactivarServicio
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Servicio activo.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServicioEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/VersionDistinta' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /servicios/{servicio_id}/intencion-visita:
+    parameters:
+      - $ref: '#/components/parameters/ServicioIdPath'
+    post:
+      tags: [Mapa]
+      summary: Registrar una intención de visita ("Cómo llegar")
+      description: |
+        Ruta pública que la PWA llama cuando el turista pide la ruta a un servicio.
+        Cuenta una vez por visitante, servicio y día (el IP se guarda solo como hash con
+        sal diaria, durante 24 h). Es un indicador aparte: no entra en el índice de saturación.
+      operationId: registrarIntencionVisita
+      security: []
+      responses:
+        '204':
+          description: Registrada (o ya contada hoy para ese visitante).
+        '400': { $ref: '#/components/responses/Validacion' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /buscar:
+    get:
+      tags: [Catálogo]
+      summary: Buscar y filtrar servicios (UC8)
+      description: |
+        Ruta pública. La usa la tool `buscar_servicios` del Módulo 5.
+        Los filtros de atributos (`idioma_atencion` a `ofrece_credito`) se combinan en una
+        sola contención sobre la columna JSONB `atributos`, con índice GIN.
+        Los resultados se cachean 300 s, salvo con `fecha` (los cupos cambian con cada reserva).
+        Con `fecha` se filtra por los cupos que publica booking (`disponibilidad.actualizada`),
+        sin llamarlo (Plan §4.1): se excluyen los servicios sin cupo para `personas` ese día o
+        con el día cerrado; los que aún no tienen dato de ese día se devuelven con
+        `disponibilidad_confirmada=false` para no esconderlos. Al reservar, booking vuelve a
+        comprobar los cupos.
+      operationId: buscarServicios
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: texto
+          in: query
+          description: Texto libre sobre nombre y descripción (en el idioma pedido).
+          schema: { type: string, maxLength: 200 }
+        - name: categoria
+          in: query
+          description: Una o varias categorías.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Categoria' }
+        - $ref: '#/components/parameters/ZonaQuery'
+        - name: precio_min
+          in: query
+          schema: { type: number, minimum: 0 }
+        - name: precio_max
+          in: query
+          schema: { type: number, minimum: 0 }
+        - name: lat
+          in: query
+          description: Latitud del punto de referencia; requiere `lon`.
+          schema: { type: number, minimum: -90, maximum: 90 }
+        - name: lon
+          in: query
+          description: Longitud del punto de referencia; requiere `lat`.
+          schema: { type: number, minimum: -180, maximum: 180 }
+        - name: radio_m
+          in: query
+          description: Radio en metros alrededor de (`lat`, `lon`).
+          schema: { type: integer, minimum: 100, maximum: 50000, default: 5000 }
+        - $ref: '#/components/parameters/FiltroTipo'
+        - $ref: '#/components/parameters/FiltroUnidadTarifa'
+        - $ref: '#/components/parameters/FiltroIdiomaAtencion'
+        - $ref: '#/components/parameters/FiltroAccesible'
+        - $ref: '#/components/parameters/FiltroMascotas'
+        - $ref: '#/components/parameters/FiltroAptoNinos'
+        - $ref: '#/components/parameters/FiltroOpcionDietaria'
+        - $ref: '#/components/parameters/FiltroNivelFisico'
+        - $ref: '#/components/parameters/FiltroAceptaPagoDigital'
+        - $ref: '#/components/parameters/FiltroOfreceCredito'
+        - $ref: '#/components/parameters/FiltroFecha'
+        - $ref: '#/components/parameters/FiltroPersonas'
+        - name: orden
+          in: query
+          description: '`distancia` requiere `lat` y `lon`; `relevancia` requiere `texto`.'
+          schema:
+            type: string
+            enum: [relevancia, distancia, precio, calificacion]
+            default: calificacion
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/TamanoBusqueda'
+      responses:
+        '200':
+          description: Resultados de la búsqueda.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultadoBusqueda' }
+        '400': { $ref: '#/components/responses/Validacion' }
+
+  /zonas:
+    get:
+      tags: [Catálogo]
+      summary: Listar las zonas activas
+      description: Ruta pública. Sirve para los filtros de la PWA y el parámetro `zona` de la tool `buscar_servicios`.
+      operationId: listarZonas
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Zonas activas.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Zona' }
+    post:
+      tags: [Entidad]
+      summary: Crear una zona
+      description: Roles `Entidad` y `Admin`. Asigna la zona a los servicios cuya ubicación cae dentro del polígono. Publica `auditoria.registrada`.
+      operationId: crearZona
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ZonaGuardar' }
+      responses:
+        '201':
+          description: Zona creada.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ZonaEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '409':
+          description: '`CODIGO_EXISTENTE`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /zonas/{zona_id}:
+    parameters:
+      - $ref: '#/components/parameters/ZonaIdPath'
+    get:
+      tags: [Entidad]
+      summary: Detalle editable de una zona
+      description: Roles `Entidad` y `Admin`. Incluye el polígono completo y los textos en ambos idiomas.
+      operationId: obtenerZona
+      responses:
+        '200':
+          description: Zona.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ZonaEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+    put:
+      tags: [Entidad]
+      summary: Editar una zona
+      description: Roles `Entidad` y `Admin`. Si cambia el polígono, se reasignan los servicios. Publica `auditoria.registrada`.
+      operationId: editarZona
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ZonaGuardar' }
+      responses:
+        '200':
+          description: Zona editada.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ZonaEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: '`CODIGO_EXISTENTE` (el código nuevo ya es de otra zona) o `VERSION_DISTINTA` (la versión actual va en `ETag`).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /zonas/{zona_id}/desactivar:
+    parameters:
+      - $ref: '#/components/parameters/ZonaIdPath'
+    post:
+      tags: [Entidad]
+      summary: Desactivar una zona
+      description: |
+        Roles `Entidad` y `Admin`. La zona deja de ofrecerse en filtros y mapas; el histórico
+        de demanda se conserva. No se puede desactivar si tiene alertas vigentes.
+        Publica `auditoria.registrada`.
+      operationId: desactivarZona
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Zona inactiva.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ZonaEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: '`ZONA_EN_USO` (tiene alertas vigentes) o `VERSION_DISTINTA`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /alertas:
+    get:
+      tags: [Catálogo]
+      summary: Alertas oficiales vigentes (UC26)
+      description: Ruta pública. La usa la tool `alertas_oficiales` del Módulo 5.
+      operationId: listarAlertas
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/ZonaQuery'
+        - name: servicio_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Alertas activas y no expiradas, de mayor a menor nivel.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Alerta' }
+        '400': { $ref: '#/components/responses/Validacion' }
+    post:
+      tags: [Entidad]
+      summary: Publicar una alerta oficial (UC26)
+      description: |
+        Roles `Entidad` y `Admin`. El servicio o la zona deben existir y estar activos (si no,
+        404). No depende de la saturación: también hay alertas por clima, cierres o seguridad.
+        Publica `auditoria.registrada` (`ALERTA_PUBLICADA`).
+      operationId: publicarAlerta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertaCrear' }
+      responses:
+        '201':
+          description: Alerta publicada.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertaEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /alertas/{alerta_id}/desactivar:
+    parameters:
+      - name: alerta_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Entidad]
+      summary: Retirar una alerta oficial (UC26)
+      description: |
+        Roles `Entidad` y `Admin`. La alerta deja de mostrarse; no se borra. Retirar una ya
+        retirada no cambia nada ni se audita. Publica `auditoria.registrada` (`ALERTA_RETIRADA`).
+      operationId: desactivarAlerta
+      responses:
+        '200':
+          description: Alerta inactiva.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertaEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /alertas/{alerta_id}:
+    parameters:
+      - name: alerta_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [Entidad]
+      summary: Editar una alerta oficial vigente (UC26)
+      description: |
+        Roles `Entidad` y `Admin`. Corrige el nivel o el mensaje, o cambia la vigencia (p. ej.
+        "el sendero sigue cerrado una semana más"). El destino no cambia. Exige `If-Match`:
+        varias personas de la Entidad pueden administrar las mismas alertas. Una alerta
+        retirada no se edita (`ALERTA_RETIRADA`). Publica `auditoria.registrada` (`ALERTA_EDITADA`).
+      operationId: editarAlerta
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertaEditar' }
+      responses:
+        '200':
+          description: Alerta editada.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertaEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: '`VERSION_DISTINTA` (la versión actual va en `ETag`) o `ALERTA_RETIRADA`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /entidad/alertas:
+    get:
+      tags: [Entidad]
+      summary: Panel de alertas de la Entidad (UC26)
+      description: |
+        Roles `Entidad` y `Admin`. Todas las alertas (o las de un `estado`), de la más
+        reciente a la más antigua, con el mensaje en ambos idiomas y su versión para editarlas.
+      operationId: alertasDeLaEntidad
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/EstadoAlerta' }
+        - $ref: '#/components/parameters/Pagina'
+        - name: tamano
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Página de alertas.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaAlertasEntidad' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  # ---------- Mapa (GeoJSON) ----------
+  /mapa/servicios:
+    get:
+      tags: [Mapa]
+      summary: Servicios en la vista del mapa (UC16)
+      description: |
+        Admite los mismos filtros de tipo y atributos que `/buscar`, para que la lista y el
+        mapa de la PWA muestren lo mismo.
+        Ruta pública. Devuelve solo lo que cae en `bbox`. Con zoom menor que 13 el servidor
+        agrupa los puntos cercanos en celdas de unos 64 px y cada grupo trae su conteo; un
+        grupo de un solo servicio llega como `tipo=servicio`. Al agrupar, la vista se amplía
+        al borde de las celdas (un grupo no cambia de conteo al mover el mapa) y el
+        resultado se cachea 300 s. Desde zoom 13 devuelve servicios individuales, como
+        máximo 1000 (los mejor calificados).
+      operationId: mapaServicios
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/Bbox'
+        - $ref: '#/components/parameters/Zoom'
+        - name: categoria
+          in: query
+          description: Una o varias categorías.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/Categoria' }
+        - $ref: '#/components/parameters/ZonaQuery'
+        - $ref: '#/components/parameters/FiltroTipo'
+        - $ref: '#/components/parameters/FiltroUnidadTarifa'
+        - $ref: '#/components/parameters/FiltroIdiomaAtencion'
+        - $ref: '#/components/parameters/FiltroAccesible'
+        - $ref: '#/components/parameters/FiltroMascotas'
+        - $ref: '#/components/parameters/FiltroAptoNinos'
+        - $ref: '#/components/parameters/FiltroOpcionDietaria'
+        - $ref: '#/components/parameters/FiltroNivelFisico'
+        - $ref: '#/components/parameters/FiltroAceptaPagoDigital'
+        - $ref: '#/components/parameters/FiltroOfreceCredito'
+        - $ref: '#/components/parameters/FiltroFecha'
+        - $ref: '#/components/parameters/FiltroPersonas'
+      responses:
+        '200':
+          description: FeatureCollection de puntos.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/geo+json:
+              schema: { $ref: '#/components/schemas/ColeccionServiciosMapa' }
+        '400': { $ref: '#/components/responses/Validacion' }
+
+  /mapa/zonas:
+    get:
+      tags: [Mapa]
+      summary: Polígonos de las zonas (UC16)
+      description: |
+        Ruta pública. Polígonos simplificados según `zoom` (tolerancia de un píxel, sin que
+        se crucen ni desaparezcan), siempre como `MultiPolygon`; sin datos de saturación.
+      operationId: mapaZonas
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/BboxOpcional'
+        - $ref: '#/components/parameters/Zoom'
+      responses:
+        '200':
+          description: FeatureCollection de polígonos.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/geo+json:
+              schema: { $ref: '#/components/schemas/ColeccionZonasMapa' }
+        '400': { $ref: '#/components/responses/Validacion' }
+
+  /mapa/alertas:
+    get:
+      tags: [Mapa]
+      summary: Alertas vigentes en la vista del mapa (UC16, UC26)
+      description: |
+        Ruta pública. Las alertas de un servicio son puntos; las de una zona, su polígono.
+        No se cachean. Las de un servicio inactivo o una zona inactiva no se dibujan.
+      operationId: mapaAlertas
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/BboxOpcional'
+      responses:
+        '200':
+          description: FeatureCollection de alertas.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/geo+json:
+              schema: { $ref: '#/components/schemas/ColeccionAlertasMapa' }
+        '400': { $ref: '#/components/responses/Validacion' }
+
+  # ---------- Prestador ----------
+  /prestador/perfil:
+    get:
+      tags: [Prestador]
+      summary: Perfil comercial del prestador autenticado
+      operationId: obtenerPerfil
+      responses:
+        '200':
+          description: Perfil.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PerfilEditable' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+    put:
+      tags: [Prestador]
+      summary: Editar el perfil comercial
+      operationId: editarPerfil
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PerfilGuardar' }
+      responses:
+        '200':
+          description: Perfil editado.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PerfilEditable' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+        '409': { $ref: '#/components/responses/VersionDistinta' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /prestador/servicios:
+    get:
+      tags: [Prestador]
+      summary: Servicios del prestador autenticado (UC18)
+      description: Incluye los inactivos y los textos en ambos idiomas.
+      operationId: serviciosPrestador
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de servicios del prestador.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaServiciosEditables' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+
+  /prestador/imagenes:
+    post:
+      tags: [Prestador]
+      summary: Pedir una URL de subida de imagen
+      description: |
+        Devuelve una URL firmada (PUT, válida 10 minutos) del bucket `catalogo-imagenes`
+        de SeaweedFS. La PWA sube la imagen directamente, con exactamente el
+        `Content-Type` y el tamaño pedidos (van firmados: otro archivo se rechaza), y luego
+        envía `url_publica` en `imagenes_urls` del servicio. Cada imagen queda en la
+        carpeta del prestador y solo se aceptan URLs de su propia carpeta.
+      operationId: solicitarSubidaImagen
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content_type, tamano_bytes]
+              additionalProperties: false
+              properties:
+                content_type:
+                  type: string
+                  enum: [image/jpeg, image/png, image/webp]
+                tamano_bytes:
+                  type: integer
+                  minimum: 1
+                  maximum: 5242880
+                  description: Máximo 5 MB.
+      responses:
+        '201':
+          description: URL de subida.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subida_url, url_publica, expira_en]
+                properties:
+                  subida_url: { type: string, format: uri }
+                  url_publica: { type: string, format: uri }
+                  expira_en: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+
+  /prestador/metricas:
+    get:
+      tags: [Prestador]
+      summary: Métricas de la oferta del prestador (UC22)
+      description: |
+        Rol `Prestador`; todos sus servicios, apagados incluidos. El rango es por la fecha de la
+        visita y cada reserva cuenta en su estado actual. La calificación es la de siempre
+        (todas las reseñas visibles). Un perfil suspendido también puede verlas.
+      operationId: metricasPrestador
+      parameters:
+        - $ref: '#/components/parameters/Desde'
+        - $ref: '#/components/parameters/Hasta'
+      responses:
+        '200':
+          description: Métricas por servicio en el rango.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [desde, hasta, servicios]
+                properties:
+                  desde: { type: string, format: date }
+                  hasta: { type: string, format: date }
+                  servicios:
+                    type: array
+                    items: { $ref: '#/components/schemas/MetricasServicio' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+
+  /geocodificar:
+    get:
+      tags: [Prestador]
+      summary: Sugerir coordenadas para una dirección
+      description: |
+        Rol `Prestador`. Consulta Nominatim (OpenStreetMap) con caché y máximo una petición
+        por segundo, según su política de uso. Es una ayuda: el prestador confirma el punto
+        en el mapa antes de guardar.
+      operationId: geocodificar
+      parameters:
+        - name: direccion
+          in: query
+          required: true
+          schema: { type: string, minLength: 5, maxLength: 200 }
+      responses:
+        '200':
+          description: Hasta 5 candidatos, el más probable primero.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [lat, lon, etiqueta]
+                  properties:
+                    lat: { type: number }
+                    lon: { type: number }
+                    etiqueta: { type: string }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoPrestador' }
+        '503':
+          description: '`DEPENDENCIA_NO_DISPONIBLE`: Nominatim no respondió; el prestador puede marcar el punto a mano.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ---------- Analítica (Entidad) ----------
+  /analitica/demanda:
+    get:
+      tags: [Analítica]
+      summary: Indicadores agregados de demanda (UC23)
+      description: |
+        Roles `Entidad` y `Admin`. Personas que vienen al destino (o a `zona`) por fecha de la
+        visita, según el estado actual de su reserva (una reserva solicitada y luego
+        confirmada cuenta una vez, como confirmada). Las semanas empiezan el lunes y los meses
+        el día 1; los periodos sin reservas salen en 0. Sin `zona`, el total del destino.
+      operationId: demanda
+      parameters:
+        - $ref: '#/components/parameters/Desde'
+        - $ref: '#/components/parameters/Hasta'
+        - $ref: '#/components/parameters/ZonaQuery'
+        - $ref: '#/components/parameters/CategoriaQuery'
+        - name: agrupacion
+          in: query
+          schema:
+            type: string
+            enum: [dia, semana, mes]
+            default: dia
+      responses:
+        '200':
+          description: Serie de demanda.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [agrupacion, serie]
+                properties:
+                  agrupacion: { type: string, enum: [dia, semana, mes] }
+                  serie:
+                    type: array
+                    items: { $ref: '#/components/schemas/PuntoDemanda' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /analitica/capacidad:
+    get:
+      tags: [Analítica]
+      summary: Presión sobre la capacidad de carga (UC24)
+      description: |
+        Roles `Entidad`, `Admin` y `Turista`. La usa la tool `presion_capacidad_carga` del
+        Módulo 5. Para `Turista` la respuesta trae solo `zona`, `fecha`, `nivel` y
+        `nivel_etiqueta` (sin personas, capacidad ni índice). Se calcula al consultar, con
+        caché de 5 minutos: `calculado_en` dice de cuándo es el dato. Las zonas sin
+        servicios no salen. Ordenadas de mayor a menor índice.
+
+        Índice = personas en reservas activas (`SOLICITADA` y `CONFIRMADA`) ÷ capacidad de
+        carga recomendada. Niveles: `BAJO` < 0,60; `MEDIO` de 0,60 a < 0,85; `ALTO` ≥ 0,85
+        (bandera de advertencia). La capacidad es una recomendación, no un tope: el turista
+        puede ir aunque se supere, así que el índice puede pasar de 1 (1,2 = 120 %).
+      operationId: capacidad
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/ZonaQuery'
+        - name: fecha
+          in: query
+          description: Por defecto, hoy.
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Presión por zona; si se indica `zona`, solo esa.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CapacidadZona' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /analitica/mapa-calor:
+    get:
+      tags: [Analítica]
+      summary: Mapa de calor de saturación por zona (RF-07)
+      description: Roles `Entidad` y `Admin`.
+      operationId: mapaCalor
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: fecha
+          in: query
+          description: Por defecto, hoy.
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/BboxOpcional'
+        - name: zoom
+          in: query
+          description: Simplifica los polígonos a la escala del mapa.
+          schema: { type: integer, minimum: 0, maximum: 19, default: 12 }
+      responses:
+        '200':
+          description: FeatureCollection de zonas con su índice.
+          content:
+            application/geo+json:
+              schema: { $ref: '#/components/schemas/ColeccionZonasMapa' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /analitica/intenciones-visita:
+    get:
+      tags: [Analítica]
+      summary: Intenciones de visita ("Cómo llegar") por zona y día
+      description: Roles `Entidad` y `Admin`. Indicador aparte del índice de saturación.
+      operationId: intencionesVisita
+      parameters:
+        - $ref: '#/components/parameters/Desde'
+        - $ref: '#/components/parameters/Hasta'
+        - $ref: '#/components/parameters/ZonaQuery'
+      responses:
+        '200':
+          description: Conteos por zona y día.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [zona, fecha, intenciones]
+                  properties:
+                    zona: { type: string }
+                    fecha: { type: string, format: date }
+                    intenciones: { type: integer, minimum: 0 }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /analitica/tablero:
+    get:
+      tags: [Analítica]
+      summary: Tablero de planificación (UC25)
+      description: |
+        Roles `Entidad` y `Admin`. Reúne los indicadores de UC23 y UC24: totales del rango (por
+        fecha de la visita), capacidad de hoy por zona, las 5 zonas con más personas (reservas
+        no canceladas) y sus intenciones de visita, y las alertas vigentes ahora.
+      operationId: tablero
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/Desde'
+        - $ref: '#/components/parameters/Hasta'
+      responses:
+        '200':
+          description: Indicadores clave.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tablero' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /analitica/reportes/demanda:
+    get:
+      tags: [Analítica]
+      summary: Exportar el reporte de demanda (UC38)
+      description: |
+        Roles `Entidad` y `Admin`. Publica `auditoria.registrada` con acción `EXPORT` (usuario
+        y filtros) antes de entregar el archivo. Es un reporte interno para el personal de la
+        Entidad en Santa Marta: **siempre en español**, con formato para Excel en español
+        (separador `;`, coma decimal, UTF-8 con BOM).
+
+        Una fila por servicio y día con actividad (reservas o intenciones de visita), por fecha
+        de la visita y estado actual de la reserva. Columnas: Fecha; Zona; Servicio; Categoría;
+        Tipo; Personas solicitadas; Personas confirmadas; Personas finalizadas; Personas
+        canceladas (incluye rechazadas); Total de personas (solicitadas + confirmadas +
+        finalizadas); Capacidad recomendada (personas); Índice de saturación (total ÷
+        capacidad, puede pasar de 1); Intenciones de visita. Un texto que empiece por `=`, `+`,
+        `-` o `@` se escribe con un apóstrofo delante (evita la inyección de fórmulas).
+
+        El formato PDF se agregará en una versión posterior del contrato (RF-13 es *Could*).
+      operationId: exportarDemanda
+      parameters:
+        - $ref: '#/components/parameters/Desde'
+        - $ref: '#/components/parameters/Hasta'
+        - $ref: '#/components/parameters/ZonaQuery'
+        - name: formato
+          in: query
+          schema:
+            type: string
+            enum: [csv]
+            default: csv
+      responses:
+        '200':
+          description: Archivo del reporte.
+          headers:
+            Content-Disposition:
+              schema: { type: string, example: 'attachment; filename="demanda_2026-10-01_2026-10-31.csv"' }
+          content:
+            text/csv:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  # ---------- Operación ----------
+  /health:
+    get:
+      tags: [Operación]
+      summary: Estado del servicio (sondas de Kubernetes)
+      operationId: health
+      security: []
+      servers:
+        - url: /
+      responses:
+        '200':
+          description: El servicio y su base de datos responden.
+        '503':
+          description: La base de datos no responde.
+
+  /metrics:
+    get:
+      tags: [Operación]
+      summary: Métricas para Prometheus
+      operationId: metrics
+      security: []
+      servers:
+        - url: /
+      responses:
+        '200':
+          description: Métricas en formato de texto de Prometheus.
+          content:
+            text/plain:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT emitido por iam-service; Traefik lo valida con ForwardAuth y reenvía `X-Usuario-Id` y `X-Usuario-Rol`.
+
+  headers:
+    ETag:
+      description: Versión del recurso, para usar en `If-Match`.
+      schema: { type: string, example: '"3"' }
+    ContentLanguage:
+      description: Idioma de la respuesta (textos del sistema y etiquetas).
+      schema: { type: string, enum: [es, en] }
+
+  parameters:
+    FiltroFecha:
+      name: fecha
+      in: query
+      description: Día con cupo según booking (`disponibilidad.actualizada`). Sin dato de ese día, el servicio se incluye sin confirmar.
+      schema: { type: string, format: date }
+    FiltroPersonas:
+      name: personas
+      in: query
+      description: Personas que necesitan cupo en `fecha`; distinto de 1 requiere `fecha`.
+      schema: { type: integer, minimum: 1, default: 1 }
+    FiltroTipo:
+      name: tipo
+      in: query
+      description: Uno o varios tipos de servicio.
+      style: form
+      explode: false
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/TipoServicio' }
+    FiltroUnidadTarifa:
+      name: unidad_tarifa
+      in: query
+      schema: { $ref: '#/components/schemas/UnidadTarifa' }
+    FiltroIdiomaAtencion:
+      name: idioma_atencion
+      in: query
+      description: Idioma en que se atiende (ISO 639-1), sobre `atributos.comunes.idiomas_atencion`.
+      schema: { type: string, pattern: '^[a-z]{2}$', example: en }
+    FiltroAccesible:
+      name: accesible
+      in: query
+      description: 'Sobre `atributos.comunes.accesible`. Filtra por lo informado: `false` trae los que dijeron que no, no los que no lo informaron (igual en los demás sí/no).'
+      schema: { type: boolean }
+    FiltroMascotas:
+      name: mascotas
+      in: query
+      description: Sobre `atributos.comunes.mascotas`.
+      schema: { type: boolean }
+    FiltroAptoNinos:
+      name: apto_ninos
+      in: query
+      description: Sobre `atributos.comunes.apto_ninos`.
+      schema: { type: boolean }
+    FiltroOpcionDietaria:
+      name: opcion_dietaria
+      in: query
+      description: Sobre `atributos.gastronomia.opciones_dietarias`.
+      schema: { type: string, enum: [VEGETARIANA, VEGANA, SIN_GLUTEN, SIN_LACTOSA] }
+    FiltroNivelFisico:
+      name: nivel_fisico
+      in: query
+      description: Sobre `atributos.experiencia.nivel_fisico`.
+      schema: { type: string, enum: [BAJO, MEDIO, ALTO] }
+    FiltroAceptaPagoDigital:
+      name: acepta_pago_digital
+      in: query
+      description: Acepta tarjeta o transferencia en el lugar (`atributos.pagos.medios_pago`).
+      schema: { type: boolean }
+    FiltroOfreceCredito:
+      name: ofrece_credito
+      in: query
+      description: El prestador ofrece crédito (`atributos.pagos.credito.ofrece`).
+      schema: { type: boolean }
+
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      required: false
+      description: Idioma preferido. Cualquier valor distinto de `en` se trata como `es`.
+      schema: { type: string, example: en }
+    ServicioIdPath:
+      name: servicio_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ZonaIdPath:
+      name: zona_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CategoriaQuery:
+      name: categoria
+      in: query
+      schema: { $ref: '#/components/schemas/Categoria' }
+    ZonaQuery:
+      name: zona
+      in: query
+      description: Código de la zona (por ejemplo `minca`).
+      schema: { type: string, pattern: '^[a-z0-9-]{2,40}$' }
+    Bbox:
+      name: bbox
+      in: query
+      required: true
+      description: Vista del mapa como `minLon,minLat,maxLon,maxLat`; cada mínimo menor que su máximo (si no, 400).
+      style: form
+      explode: false
+      schema:
+        type: array
+        minItems: 4
+        maxItems: 4
+        items: { type: number }
+    BboxOpcional:
+      name: bbox
+      in: query
+      required: false
+      description: Vista del mapa como `minLon,minLat,maxLon,maxLat`; cada mínimo menor que su máximo (si no, 400).
+      style: form
+      explode: false
+      schema:
+        type: array
+        minItems: 4
+        maxItems: 4
+        items: { type: number }
+    Zoom:
+      name: zoom
+      in: query
+      required: true
+      description: Nivel de zoom de Leaflet; define la agrupación de puntos y la simplificación de polígonos.
+      schema: { type: integer, minimum: 0, maximum: 19 }
+    Desde:
+      name: desde
+      in: query
+      required: true
+      schema: { type: string, format: date }
+    Hasta:
+      name: hasta
+      in: query
+      required: true
+      description: No antes de `desde` y como máximo 366 días después (si no, 400).
+      schema: { type: string, format: date }
+    Pagina:
+      name: pagina
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
+    Tamano:
+      name: tamano
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    TamanoBusqueda:
+      name: tamano
+      in: query
+      description: Máximo 50.
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Clave única por intento de envío; un reintento con la misma clave devuelve la misma
+        respuesta (con `Idempotent-Replayed: true`) sin repetir la operación, durante 48 h.
+        La clave vale por usuario y operación. Solo se guardan las respuestas exitosas: si la
+        operación falló, el reintento se ejecuta de nuevo. Si llega mientras el primer
+        intento sigue en curso, responde 409 `SOLICITUD_EN_PROCESO`.
+      schema: { type: string, format: uuid }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: 'Versión (`ETag`) que el usuario tenía al editar: `"3"`, `W/"3"` o `3`. Vacía o ausente, 428; con otro formato, 400.'
+      schema: { type: string, pattern: '^(W/)?"?0*[1-9][0-9]*"?$' }
+
+  responses:
+    Validacion:
+      description: '`VALIDACION`: datos inválidos (rango de fechas, `bbox` mal formado, `lat` sin `lon`, texto obligatorio en español faltante, URL de imagen fuera del bucket).'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NoAutenticado:
+      description: Token ausente o inválido (lo responde Traefik). Si la petición llega sin `X-Usuario-Id` o `X-Usuario-Rol`, el servicio responde `NO_AUTENTICADO`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Prohibido:
+      description: '`ROL_NO_PERMITIDO`; se registra en la bitácora de auditoría.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ProhibidoPrestador:
+      description: '`ROL_NO_PERMITIDO` (se registra en la bitácora de auditoría) o `PERFIL_INACTIVO` (el prestador no está aprobado o fue suspendido; un perfil suspendido puede leer su perfil y sus servicios, pero no escribir).'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NoEncontrado:
+      description: '`NO_ENCONTRADO`: no existe, está inactivo o no pertenece al usuario.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    VersionDistinta:
+      description: '`VERSION_DISTINTA`: el recurso cambió en el servidor; la versión actual va en `ETag` y la PWA muestra el conflicto.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    FaltaIfMatch:
+      description: '`FALTA_IF_MATCH`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message, correlation_id]
+      properties:
+        error: { type: string, example: VERSION_DISTINTA }
+        message: { type: string, description: En el idioma de `Accept-Language`. }
+        correlation_id: { type: string }
+
+    Categoria:
+      type: string
+      description: Código estable; la PWA lo traduce.
+      enum: [PLAYA, NATURALEZA, CULTURA, GASTRONOMIA, AVENTURA, ALOJAMIENTO, TRANSPORTE]
+
+    TipoServicio:
+      type: string
+      description: |
+        Qué es la oferta. Define la categoría y qué bloques de `atributos` usa:
+        * ALOJAMIENTO (bloque `alojamiento`): HOTEL, HOSTAL, POSADA_ECOHOTEL, GLAMPING_CAMPING, APARTAMENTO_TURISTICO.
+        * GASTRONOMIA: RESTAURANTE y CAFE_BAR (`gastronomia`); EXPERIENCIA_GASTRONOMICA (`experiencia`, y `gastronomia` opcional).
+        * AVENTURA (`experiencia`): TOUR_GUIADO, SENDERISMO, DEPORTE_ACUATICO.
+        * NATURALEZA: AVISTAMIENTO (`experiencia`); RESERVA_PARQUE (`entrada`).
+        * PLAYA: ACCESO_PLAYA (`entrada`); ALQUILER_EQUIPO (`alquiler`).
+        * CULTURA: TOUR_CULTURAL y EXPERIENCIA_COMUNITARIA (`experiencia`); MUSEO_SITIO (`entrada`); EVENTO_FESTIVAL (`entrada`, y `experiencia` opcional).
+        * TRANSPORTE (`transporte`): TRANSPORTE_MARITIMO, TRASLADO_TERRESTRE.
+        Todos admiten `comunes` y `pagos`. Un establecimiento con varias ofertas registra un servicio por cada una.
+      enum: [HOTEL, HOSTAL, POSADA_ECOHOTEL, GLAMPING_CAMPING, APARTAMENTO_TURISTICO,
+             RESTAURANTE, CAFE_BAR, EXPERIENCIA_GASTRONOMICA, TOUR_GUIADO, SENDERISMO,
+             DEPORTE_ACUATICO, AVISTAMIENTO, RESERVA_PARQUE, ACCESO_PLAYA, ALQUILER_EQUIPO,
+             TOUR_CULTURAL, MUSEO_SITIO, EXPERIENCIA_COMUNITARIA, EVENTO_FESTIVAL,
+             TRANSPORTE_MARITIMO, TRASLADO_TERRESTRE]
+
+    UnidadTarifa:
+      type: string
+      description: A qué corresponde `tarifa_base`.
+      enum: [POR_PERSONA, POR_NOCHE, POR_GRUPO, POR_UNIDAD, POR_HORA, POR_DIA]
+
+    NivelAlerta:
+      type: string
+      enum: [INFORMATIVA, PREVENTIVA, CRITICA]
+
+    NivelSaturacion:
+      type: string
+      enum: [BAJO, MEDIO, ALTO]
+
+    TextoTraducido:
+      type: object
+      required: [es]
+      properties:
+        es: { type: string, minLength: 1 }
+        en: { type: string, minLength: 1, nullable: true, description: Nulo o ausente si no hay traducción. }
+      additionalProperties: false
+
+    Nulo:
+      description: |
+        Valor nulo. En OpenAPI 3.0 `nullable` no se aplica a un `$ref` (ni dentro de `allOf`),
+        así que un campo que puede ser nulo y apunta a otro esquema se escribe
+        `anyOf: [{ $ref: ... }, { $ref: '#/components/schemas/Nulo' }]`.
+      type: object
+      nullable: true
+      enum: [null]
+
+    Coordenada:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lon: { type: number, minimum: -180, maximum: 180 }
+
+    ZonaResumen:
+      type: object
+      required: [codigo, nombre]
+      properties:
+        codigo: { type: string, example: minca }
+        nombre: { type: string, example: Minca }
+
+    Zona:
+      type: object
+      required: [id, codigo, nombre, centro]
+      properties:
+        id: { type: string, format: uuid }
+        codigo: { type: string }
+        nombre: { type: string }
+        centro: { $ref: '#/components/schemas/Coordenada' }
+
+    ZonaGuardar:
+      type: object
+      required: [codigo, nombre, poligono]
+      additionalProperties: false
+      properties:
+        codigo: { type: string, pattern: '^[a-z0-9-]{2,40}$' }
+        nombre: { $ref: '#/components/schemas/TextoTraducido' }
+        poligono:
+          $ref: '#/components/schemas/GeometriaPoligonal'
+
+    ZonaEditable:
+      type: object
+      required: [id, codigo, nombre, poligono, activa, version]
+      properties:
+        id: { type: string, format: uuid }
+        codigo: { type: string }
+        nombre: { $ref: '#/components/schemas/TextoTraducido' }
+        poligono: { $ref: '#/components/schemas/GeometriaPoligonal' }
+        activa: { type: boolean }
+        version: { type: integer, minimum: 1 }
+
+    ServicioResumen:
+      type: object
+      required: [id, nombre, tipo, categoria, ubicacion, tarifa_base, unidad_tarifa]
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        tipo: { $ref: '#/components/schemas/TipoServicio' }
+        tipo_etiqueta: { type: string, description: Nombre del tipo en el idioma pedido. }
+        categoria: { $ref: '#/components/schemas/Categoria' }
+        categoria_etiqueta: { type: string, description: Nombre de la categoría en el idioma pedido. }
+        zona:
+          anyOf: [{ $ref: '#/components/schemas/ZonaResumen' }, { $ref: '#/components/schemas/Nulo' }]
+          description: Nula si la ubicación no cae en ninguna zona activa.
+        ubicacion: { $ref: '#/components/schemas/Coordenada' }
+        tarifa_base: { type: number, minimum: 0 }
+        unidad_tarifa: { $ref: '#/components/schemas/UnidadTarifa' }
+        unidad_tarifa_etiqueta: { type: string, example: por persona }
+        calificacion_promedio: { type: number, minimum: 1, maximum: 5, nullable: true }
+        total_resenas: { type: integer, minimum: 0 }
+        imagen_principal: { type: string, format: uri, nullable: true }
+
+    ServicioDetalle:
+      allOf:
+        - $ref: '#/components/schemas/ServicioResumen'
+        - type: object
+          required: [descripcion, capacidad_aforo_diario, prestador, regla_base_cancelacion, alertas, atributos, etiquetas]
+          properties:
+            descripcion: { type: string }
+            capacidad_aforo_diario: { type: integer, minimum: 1 }
+            imagenes_urls:
+              type: array
+              items: { type: string, format: uri }
+            prestador:
+              type: object
+              required: [id, razon_social]
+              properties:
+                id: { type: string, format: uuid }
+                razon_social: { type: string }
+                telefono: { type: string, nullable: true }
+                politica_cancelacion:
+                  type: string
+                  nullable: true
+                  description: Informativa; la regla base de la plataforma la aplica booking-service.
+            regla_base_cancelacion:
+              type: string
+              description: |
+                Regla de cancelación de la plataforma en el idioma pedido, para mostrarla junto a la
+                política del prestador (UC9). La aplica booking-service (Guía Técnica del Módulo de
+                Reservas §4.3); si booking la cambia, se cambia este texto. La política del prestador
+                puede ser más flexible, nunca más estricta.
+              example: 'Regla de la plataforma: puedes cancelar una reserva solicitada en cualquier momento y una confirmada hasta las 23:59 del día anterior a la fecha reservada. El prestador puede cancelar una reserva confirmada indicando el motivo. La política del prestador puede ser más flexible, nunca más estricta.'
+            alertas:
+              type: array
+              description: Alertas vigentes del servicio y de su zona.
+              items: { $ref: '#/components/schemas/Alerta' }
+            atributos:
+              type: object
+              description: |
+                Mismos bloques que `AtributosServicio`, con los textos ya en el idioma pedido
+                (cadenas en lugar de `{es, en}`). Los códigos fijos se mantienen; su texto va en `etiquetas`.
+            etiquetas:
+              type: object
+              description: Etiqueta en el idioma pedido de cada código fijo que aparece en `atributos`.
+              additionalProperties: { type: string }
+              example: { SIN_SENAL: Sin señal, EFECTIVO: Efectivo }
+            aviso_pagos:
+              anyOf: [{ $ref: '#/components/schemas/AvisoPagos' }, { $ref: '#/components/schemas/Nulo' }]
+              description: Nulo si el servicio no informó el bloque `pagos`.
+
+    AvisoPagos:
+      type: object
+      description: Qué dinero llevar, en una frase lista para mostrar en la ficha o para el chatbot.
+      required: [importante, recomendacion_dinero, mensaje]
+      properties:
+        importante:
+          type: boolean
+          description: La ficha lo destaca si no hay señal o es intermitente, si solo se acepta efectivo o si no hay cajeros cerca.
+        recomendacion_dinero: { type: string, enum: [EFECTIVO, DIGITAL, CUALQUIERA] }
+        mensaje:
+          type: string
+          example: 'Lleva efectivo: no hay señal de internet y no hay cajeros cerca (el más cercano: Parque de Minca, a 8 km). El prestador ofrece crédito: si no tienes cómo pagar, le pagas después (plazo: 3 días). Es un acuerdo con el prestador; la plataforma no lo cobra ni lo garantiza.'
+
+    ServicioGuardar:
+      type: object
+      description: La categoría no se envía; sale de `tipo`. Un campo que no está aquí responde 400 (`additionalProperties` no se declara porque este esquema se reutiliza con `allOf` en la respuesta editable).
+      required: [nombre, descripcion, tipo, ubicacion, tarifa_base, unidad_tarifa, capacidad_aforo_diario]
+      properties:
+        nombre: { $ref: '#/components/schemas/TextoTraducido' }
+        descripcion: { $ref: '#/components/schemas/TextoTraducido' }
+        tipo: { $ref: '#/components/schemas/TipoServicio' }
+        ubicacion: { $ref: '#/components/schemas/Coordenada' }
+        tarifa_base: { type: number, minimum: 0 }
+        unidad_tarifa: { $ref: '#/components/schemas/UnidadTarifa' }
+        capacidad_aforo_diario: { type: integer, minimum: 1 }
+        atributos: { $ref: '#/components/schemas/AtributosServicio' }
+        imagenes_urls:
+          type: array
+          maxItems: 10
+          items: { type: string, format: uri }
+
+    # ---------- Atributos por tipo de servicio (columna JSONB `atributos`) ----------
+    # Textos en {es, en}; horas "HH:MM"; idiomas ISO 639-1 ("es", "en", "fr"...).
+    # En los sí/no de `comunes`, null significa "no informado".
+
+    Hora:
+      type: string
+      pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+      example: '14:00'
+
+    Idiomas:
+      type: array
+      maxItems: 20
+      uniqueItems: true
+      items: { type: string, pattern: '^[a-z]{2}$' }
+
+    AtributosServicio:
+      type: object
+      description: Bloques de atributos. `tipo` define cuál es obligatorio y cuáles se admiten (ver TipoServicio).
+      additionalProperties: false
+      properties:
+        comunes: { $ref: '#/components/schemas/BloqueComunes' }
+        alojamiento: { $ref: '#/components/schemas/BloqueAlojamiento' }
+        experiencia: { $ref: '#/components/schemas/BloqueExperiencia' }
+        gastronomia: { $ref: '#/components/schemas/BloqueGastronomia' }
+        entrada: { $ref: '#/components/schemas/BloqueEntrada' }
+        alquiler: { $ref: '#/components/schemas/BloqueAlquiler' }
+        transporte: { $ref: '#/components/schemas/BloqueTransporte' }
+        pagos: { $ref: '#/components/schemas/BloquePagos' }
+
+    BloqueComunes:
+      type: object
+      description: Bloque A, para todos los tipos.
+      additionalProperties: false
+      properties:
+        horario: { $ref: '#/components/schemas/TextoTraducido' }
+        idiomas_atencion: { allOf: [{ $ref: '#/components/schemas/Idiomas' }], default: [es] }
+        incluye: { $ref: '#/components/schemas/TextoTraducido' }
+        no_incluye: { $ref: '#/components/schemas/TextoTraducido' }
+        accesible: { type: boolean, nullable: true, description: Silla de ruedas y movilidad reducida. }
+        mascotas: { type: boolean, nullable: true }
+        apto_ninos: { type: boolean, nullable: true }
+        practicas_sostenibles: { $ref: '#/components/schemas/TextoTraducido' }
+        certificacion_sostenible: { type: string, maxLength: 100, example: NTS-TS 002 }
+
+    BloqueAlojamiento:
+      type: object
+      description: Bloque B.
+      additionalProperties: false
+      required: [check_in, check_out, habitaciones]
+      properties:
+        check_in: { $ref: '#/components/schemas/Hora' }
+        check_out: { $ref: '#/components/schemas/Hora' }
+        habitaciones:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [tipo, capacidad_personas]
+            properties:
+              tipo: { type: string, enum: [PRIVADA, COMPARTIDA, DORMITORIO, SUITE, CABANA, CARPA] }
+              capacidad_personas: { type: integer, minimum: 1, maximum: 50 }
+              cantidad: { type: integer, minimum: 1, maximum: 500, default: 1 }
+        amenidades:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [WIFI, AIRE_ACONDICIONADO, VENTILADOR, AGUA_CALIENTE, PISCINA, PARQUEADERO, COCINA_COMPARTIDA, LAVANDERIA]
+        desayuno_incluido: { type: boolean, default: false }
+
+    BloqueExperiencia:
+      type: object
+      description: Bloque C. `grupo_maximo` no puede superar `capacidad_aforo_diario`.
+      additionalProperties: false
+      required: [duracion_minutos, nivel_fisico]
+      properties:
+        duracion_minutos: { type: integer, minimum: 1, maximum: 20160 }
+        nivel_fisico: { type: string, enum: [BAJO, MEDIO, ALTO] }
+        punto_encuentro: { $ref: '#/components/schemas/TextoTraducido' }
+        salidas_por_dia: { type: integer, minimum: 1, maximum: 48 }
+        edad_minima: { type: integer, minimum: 0, maximum: 99 }
+        grupo_minimo: { type: integer, minimum: 1, maximum: 1000 }
+        grupo_maximo: { type: integer, minimum: 1, maximum: 1000 }
+        incluye_guia: { type: boolean, default: false }
+        idiomas_guia: { allOf: [{ $ref: '#/components/schemas/Idiomas' }], description: Requiere `incluye_guia`. }
+        incluye_transporte: { type: boolean, default: false }
+        incluye_equipo: { type: boolean, default: false }
+        que_llevar: { $ref: '#/components/schemas/TextoTraducido' }
+        requisitos: { $ref: '#/components/schemas/TextoTraducido' }
+
+    BloqueGastronomia:
+      type: object
+      description: Bloque D.
+      additionalProperties: false
+      required: [tipos_cocina]
+      properties:
+        tipos_cocina:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [CARIBENA, DE_MAR, COLOMBIANA, INTERNACIONAL, VEGETARIANA, CAFE_Y_POSTRES, COMIDA_RAPIDA] }
+        opciones_dietarias:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [VEGETARIANA, VEGANA, SIN_GLUTEN, SIN_LACTOSA] }
+        precio_min_persona: { type: number, minimum: 0 }
+        precio_max_persona: { type: number, minimum: 0 }
+        requiere_reserva: { type: boolean, default: false }
+        puestos: { type: integer, minimum: 1, maximum: 5000 }
+        domicilio: { type: boolean, default: false }
+
+    BloqueEntrada:
+      type: object
+      description: Bloque E. Sin `tarifas` por visitante se cobra `tarifa_base` a todos.
+      additionalProperties: false
+      properties:
+        tarifas:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [tipo_visitante, valor]
+            properties:
+              tipo_visitante: { type: string, enum: [GENERAL, NACIONAL, EXTRANJERO, NINO, ESTUDIANTE, ADULTO_MAYOR] }
+              valor: { type: number, minimum: 0 }
+        temporadas_cierre: { $ref: '#/components/schemas/TextoTraducido' }
+        reglas: { $ref: '#/components/schemas/TextoTraducido' }
+        servicios_en_sitio:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [BANOS, DUCHAS, SALVAVIDAS, COMIDA, PARQUEADERO, CASILLEROS] }
+
+    BloqueAlquiler:
+      type: object
+      description: Bloque F. El tiempo de alquiler lo da `unidad_tarifa`.
+      additionalProperties: false
+      required: [equipos]
+      properties:
+        equipos: { $ref: '#/components/schemas/TextoTraducido' }
+        deposito: { type: number, minimum: 0 }
+        requiere_documento: { type: boolean, default: false }
+
+    BloqueTransporte:
+      type: object
+      description: Bloque G.
+      additionalProperties: false
+      required: [origen, destino, duracion_minutos, capacidad_vehiculo]
+      properties:
+        origen: { $ref: '#/components/schemas/TextoTraducido' }
+        destino: { $ref: '#/components/schemas/TextoTraducido' }
+        duracion_minutos: { type: integer, minimum: 1, maximum: 1440 }
+        capacidad_vehiculo: { type: integer, minimum: 1, maximum: 500 }
+        horarios_salida: { type: array, uniqueItems: true, items: { $ref: '#/components/schemas/Hora' } }
+        incluye_chaleco_salvavidas: { type: boolean, nullable: true }
+
+    BloquePagos:
+      type: object
+      description: |
+        Bloque H: dinero y pagos en el lugar, para sitios sin señal o sin cajeros.
+        `recomendacion_dinero` DIGITAL exige TARJETA o TRANSFERENCIA en `medios_pago`; EFECTIVO exige EFECTIVO.
+        El crédito es un acuerdo entre turista y prestador: la plataforma lo informa, no lo cobra ni lo garantiza.
+      additionalProperties: false
+      required: [senal_internet, medios_pago, recomendacion_dinero]
+      properties:
+        senal_internet: { type: string, enum: [CON_SENAL, INTERMITENTE, SIN_SENAL] }
+        medios_pago:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [EFECTIVO, TARJETA, TRANSFERENCIA], description: 'TRANSFERENCIA incluye Nequi, Daviplata y Bre-B.' }
+        recomendacion_dinero: { type: string, enum: [EFECTIVO, DIGITAL, CUALQUIERA] }
+        credito:
+          type: object
+          description: El prestador cubre el gasto y el turista le paga después (al recuperar señal o pasar por un cajero).
+          additionalProperties: false
+          # `plazo_dias` y `condiciones` solo con `ofrece: true` (si no, 400).
+          anyOf:
+            - { required: [ofrece], properties: { ofrece: { enum: [true] } } }
+            - { not: { anyOf: [{ required: [plazo_dias] }, { required: [condiciones] }] } }
+          properties:
+            ofrece: { type: boolean, default: false }
+            plazo_dias: { type: integer, minimum: 1, maximum: 90, description: Requiere `ofrece`. }
+            condiciones: { allOf: [{ $ref: '#/components/schemas/TextoTraducido' }], description: Requiere `ofrece`. }
+        cajeros:
+          type: object
+          additionalProperties: false
+          required: [hay_cerca]
+          properties:
+            hay_cerca: { type: boolean }
+            referencia: { allOf: [{ $ref: '#/components/schemas/TextoTraducido' }], description: 'Dónde está el más cercano, p. ej. "En el parque de Minca".' }
+            distancia_km: { type: number, minimum: 0, maximum: 200 }
+
+    ServicioEditable:
+      allOf:
+        - $ref: '#/components/schemas/ServicioGuardar'
+        - type: object
+          required: [id, prestador_id, categoria, atributos, activo, version, creado_en, actualizado_en]
+          properties:
+            id: { type: string, format: uuid }
+            prestador_id: { type: string, format: uuid }
+            tipo_etiqueta: { type: string, description: Nombre del tipo en el idioma pedido. }
+            categoria: { $ref: '#/components/schemas/Categoria' }
+            categoria_etiqueta: { type: string, description: Nombre de la categoría en el idioma pedido. }
+            unidad_tarifa_etiqueta: { type: string, example: por persona }
+            zona:
+              anyOf: [{ $ref: '#/components/schemas/ZonaResumen' }, { $ref: '#/components/schemas/Nulo' }]
+            activo: { type: boolean }
+            version: { type: integer, minimum: 1 }
+            creado_en: { type: string, format: date-time }
+            actualizado_en: { type: string, format: date-time }
+
+    PaginaServicios:
+      type: object
+      required: [items, pagina, tamano, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ServicioResumen' }
+        pagina: { type: integer }
+        tamano: { type: integer }
+        total: { type: integer }
+
+    PaginaServiciosEditables:
+      type: object
+      required: [items, pagina, tamano, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ServicioEditable' }
+        pagina: { type: integer }
+        tamano: { type: integer }
+        total: { type: integer }
+
+    ResultadoBusqueda:
+      type: object
+      required: [items, pagina, tamano, total]
+      properties:
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/ServicioResumen'
+              - type: object
+                properties:
+                  distancia_m:
+                    type: integer
+                    nullable: true
+                    description: Solo si se enviaron `lat` y `lon`.
+                  cupos_disponibles:
+                    type: integer
+                    nullable: true
+                    description: Solo con `fecha`; nulo si booking aún no publicó ese día.
+                  disponibilidad_confirmada:
+                    type: boolean
+                    nullable: true
+                    description: Nulo sin `fecha`; `false` si booking aún no publicó los cupos de ese día (la PWA lo muestra como "disponibilidad sin confirmar").
+        pagina: { type: integer }
+        tamano: { type: integer }
+        total:
+          type: integer
+          description: Total con todos los filtros, incluida la disponibilidad.
+
+    PerfilGuardar:
+      type: object
+      description: Un campo que no está aquí responde 400 (`additionalProperties` no se declara porque este esquema se reutiliza con `allOf` en la respuesta editable).
+      properties:
+        telefono: { type: string, maxLength: 30, nullable: true }
+        direccion: { type: string, maxLength: 200, nullable: true }
+        politica_cancelacion:
+          anyOf: [{ $ref: '#/components/schemas/TextoTraducido' }, { $ref: '#/components/schemas/Nulo' }]
+
+    PerfilEditable:
+      allOf:
+        - $ref: '#/components/schemas/PerfilGuardar'
+        - type: object
+          required: [id, razon_social, activo, version]
+          properties:
+            id: { type: string, format: uuid, description: Id del prestador (`prestador_id`). }
+            razon_social: { type: string }
+            activo: { type: boolean }
+            version: { type: integer, minimum: 1 }
+
+    Alerta:
+      type: object
+      required: [id, nivel, mensaje, fecha_expiracion]
+      properties:
+        id: { type: string, format: uuid }
+        nivel: { $ref: '#/components/schemas/NivelAlerta' }
+        nivel_etiqueta: { type: string, description: Nivel en el idioma pedido. }
+        mensaje: { type: string }
+        servicio_id: { type: string, format: uuid, nullable: true }
+        zona:
+          anyOf: [{ $ref: '#/components/schemas/ZonaResumen' }, { $ref: '#/components/schemas/Nulo' }]
+        fecha_expiracion: { type: string, format: date-time }
+
+    AlertaCrear:
+      type: object
+      description: |
+        Debe indicar exactamente uno de `servicio_id` o `zona`. `fecha_expiracion` lleva zona
+        horaria, es futura y como máximo a 365 días: una alerta olvidada no queda vigente
+        para siempre.
+      required: [nivel, mensaje, fecha_expiracion]
+      additionalProperties: false
+      properties:
+        nivel: { $ref: '#/components/schemas/NivelAlerta' }
+        mensaje: { $ref: '#/components/schemas/TextoTraducido' }
+        servicio_id: { type: string, format: uuid }
+        zona: { type: string, pattern: '^[a-z0-9-]{2,40}$', description: Código de la zona. }
+        fecha_expiracion: { type: string, format: date-time }
+
+    AlertaEditar:
+      type: object
+      description: Lo que se puede cambiar de una alerta vigente; el destino no cambia. Mismas reglas de fecha que `AlertaCrear`.
+      required: [nivel, mensaje, fecha_expiracion]
+      additionalProperties: false
+      properties:
+        nivel: { $ref: '#/components/schemas/NivelAlerta' }
+        mensaje: { $ref: '#/components/schemas/TextoTraducido' }
+        fecha_expiracion: { type: string, format: date-time }
+
+    EstadoAlerta:
+      type: string
+      description: Se calcula con la hora actual.
+      enum: [VIGENTE, VENCIDA, RETIRADA]
+
+    AlertaEditable:
+      type: object
+      required: [id, nivel, mensaje, activa, estado, fecha_expiracion, creada_en, entidad_usuario_id, version]
+      properties:
+        id: { type: string, format: uuid }
+        nivel: { $ref: '#/components/schemas/NivelAlerta' }
+        nivel_etiqueta: { type: string }
+        mensaje: { $ref: '#/components/schemas/TextoTraducido' }
+        servicio_id: { type: string, format: uuid, nullable: true }
+        zona: { type: string, nullable: true, description: Código de la zona. }
+        activa: { type: boolean }
+        estado: { $ref: '#/components/schemas/EstadoAlerta' }
+        estado_etiqueta: { type: string }
+        fecha_expiracion: { type: string, format: date-time }
+        creada_en: { type: string, format: date-time }
+        entidad_usuario_id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+
+    PaginaAlertasEntidad:
+      type: object
+      required: [items, pagina, tamano, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AlertaEditable' }
+        pagina: { type: integer, minimum: 1 }
+        tamano: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+
+    MetricasServicio:
+      type: object
+      required: [servicio_id, nombre, reservas, personas_finalizadas, ocupacion, total_resenas, intenciones_visita]
+      properties:
+        servicio_id: { type: string, format: uuid }
+        nombre: { type: string }
+        reservas:
+          type: object
+          description: Número de reservas por estado actual.
+          required: [solicitadas, confirmadas, rechazadas, canceladas, finalizadas]
+          properties:
+            solicitadas: { type: integer }
+            confirmadas: { type: integer }
+            rechazadas: { type: integer }
+            canceladas: { type: integer }
+            finalizadas: { type: integer }
+        personas_finalizadas: { type: integer }
+        ocupacion:
+          type: number
+          description: Personas finalizadas ÷ (capacidad diaria × días del rango). Puede pasar de 1, porque el aforo es la capacidad recomendada, no un tope.
+        calificacion_promedio: { type: number, nullable: true }
+        total_resenas: { type: integer }
+        intenciones_visita: { type: integer }
+
+    PuntoDemanda:
+      type: object
+      required: [periodo, personas_solicitadas, personas_confirmadas, personas_finalizadas, personas_canceladas]
+      properties:
+        periodo: { type: string, format: date, description: Primer día del periodo. }
+        zona: { type: string, nullable: true }
+        personas_solicitadas: { type: integer }
+        personas_confirmadas: { type: integer }
+        personas_finalizadas: { type: integer }
+        personas_canceladas:
+          type: integer
+          description: Incluye rechazadas y canceladas.
+
+    CapacidadZona:
+      type: object
+      description: Para el rol `Turista` solo se incluyen `zona`, `fecha`, `nivel` y `nivel_etiqueta`.
+      required: [zona, fecha, nivel]
+      properties:
+        zona: { $ref: '#/components/schemas/ZonaResumen' }
+        fecha: { type: string, format: date }
+        nivel: { $ref: '#/components/schemas/NivelSaturacion' }
+        nivel_etiqueta: { type: string, description: Nivel en el idioma pedido. }
+        personas_activas: { type: integer }
+        capacidad: { type: integer, description: Capacidad de carga recomendada (suma del aforo diario de los servicios de la zona). }
+        indice: { type: number, minimum: 0, description: Puede pasar de 1. }
+        calculado_en: { type: string, format: date-time }
+        servicios_con_bandera:
+          type: array
+          description: Servicios con índice ≥ 0,85.
+          items:
+            type: object
+            required: [servicio_id, nombre, indice]
+            properties:
+              servicio_id: { type: string, format: uuid }
+              nombre: { type: string }
+              indice: { type: number }
+
+    Tablero:
+      type: object
+      required: [desde, hasta, totales, capacidad_hoy, zonas_mas_demandadas, alertas_vigentes]
+      properties:
+        desde: { type: string, format: date }
+        hasta: { type: string, format: date }
+        totales: { $ref: '#/components/schemas/PuntoDemanda' }
+        capacidad_hoy:
+          type: array
+          items: { $ref: '#/components/schemas/CapacidadZona' }
+        zonas_mas_demandadas:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            required: [zona, personas]
+            properties:
+              zona: { $ref: '#/components/schemas/ZonaResumen' }
+              personas: { type: integer, description: Personas en reservas no canceladas del rango. }
+              intenciones_visita: { type: integer }
+        alertas_vigentes: { type: integer }
+
+    GeometriaPoligonal:
+      description: |
+        Geometría GeoJSON `Polygon` o `MultiPolygon` en `[lon, lat]` (RFC 7946). Cada anillo
+        tiene al menos 4 posiciones y está cerrado (la última igual a la primera); el servidor
+        además exige un polígono válido (sin cruces) y responde 400 si no lo es.
+      oneOf:
+        - type: object
+          required: [type, coordinates]
+          properties:
+            type: { type: string, enum: [Polygon] }
+            coordinates: { type: array, minItems: 1, items: { $ref: '#/components/schemas/AnilloGeoJSON' } }
+        - type: object
+          required: [type, coordinates]
+          properties:
+            type: { type: string, enum: [MultiPolygon] }
+            coordinates:
+              type: array
+              minItems: 1
+              items: { type: array, minItems: 1, items: { $ref: '#/components/schemas/AnilloGeoJSON' } }
+
+    AnilloGeoJSON:
+      type: array
+      minItems: 4
+      items:
+        type: array
+        description: '`[lon, lat]`.'
+        minItems: 2
+        maxItems: 3
+        items: { type: number }
+
+    PuntoGeoJSON:
+      type: object
+      required: [type, coordinates]
+      properties:
+        type: { type: string, enum: [Point] }
+        coordinates:
+          type: array
+          description: '`[lon, lat]`.'
+          minItems: 2
+          maxItems: 2
+          items: { type: number }
+
+    ColeccionServiciosMapa:
+      type: object
+      required: [type, features]
+      properties:
+        type: { type: string, enum: [FeatureCollection] }
+        features:
+          type: array
+          items:
+            type: object
+            required: [type, geometry, properties]
+            properties:
+              type: { type: string, enum: [Feature] }
+              geometry: { $ref: '#/components/schemas/PuntoGeoJSON' }
+              properties:
+                type: object
+                required: [tipo]
+                description: '`tipo=servicio` trae id, nombre, categoría y calificación; `tipo=grupo` trae `conteo`.'
+                properties:
+                  tipo: { type: string, enum: [servicio, grupo] }
+                  id: { type: string, format: uuid }
+                  nombre: { type: string }
+                  categoria: { $ref: '#/components/schemas/Categoria' }
+                  categoria_etiqueta: { type: string }
+                  calificacion_promedio: { type: number, nullable: true }
+                  conteo: { type: integer }
+
+    ColeccionZonasMapa:
+      type: object
+      required: [type, features]
+      properties:
+        type: { type: string, enum: [FeatureCollection] }
+        features:
+          type: array
+          items:
+            type: object
+            required: [type, geometry, properties]
+            properties:
+              type: { type: string, enum: [Feature] }
+              geometry: { $ref: '#/components/schemas/GeometriaPoligonal' }
+              properties:
+                type: object
+                required: [codigo, nombre]
+                description: '`indice`, `nivel` y `nivel_etiqueta` solo en `/analitica/mapa-calor` (nulos si la zona no tiene servicios).'
+                properties:
+                  id: { type: string, format: uuid }
+                  codigo: { type: string }
+                  nombre: { type: string }
+                  indice: { type: number, nullable: true }
+                  nivel:
+                    anyOf: [{ $ref: '#/components/schemas/NivelSaturacion' }, { $ref: '#/components/schemas/Nulo' }]
+                  nivel_etiqueta: { type: string, nullable: true }
+
+    ColeccionAlertasMapa:
+      type: object
+      required: [type, features]
+      properties:
+        type: { type: string, enum: [FeatureCollection] }
+        features:
+          type: array
+          items:
+            type: object
+            required: [type, geometry, properties]
+            properties:
+              type: { type: string, enum: [Feature] }
+              geometry:
+                oneOf:
+                  - $ref: '#/components/schemas/PuntoGeoJSON'
+                  - $ref: '#/components/schemas/GeometriaPoligonal'
+              properties:
+                type: object
+                required: [id, nivel, mensaje]
+                properties:
+                  id: { type: string, format: uuid }
+                  nivel: { $ref: '#/components/schemas/NivelAlerta' }
+                  nivel_etiqueta: { type: string }
+                  mensaje: { type: string }
+                  servicio_id: { type: string, format: uuid, nullable: true }
+                  zona:
+                    type: string
+                    nullable: true
+                    description: Código de la zona, si la alerta es de zona.
+                  fecha_expiracion: { type: string, format: date-time }

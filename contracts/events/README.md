@@ -17,7 +17,11 @@ Los eventos solo llevan identificadores; los datos personales (por ejemplo, el c
 | [`reserva.cancelada.v1`](./reserva.cancelada.v1.json) | booking-service | catalog-service (correo, métricas) | UC12 |
 | [`reserva.finalizada.v1`](./reserva.finalizada.v1.json) | booking-service | review-service (habilita la reseña), catalog-service (ocupación) | RF-14 |
 | [`resena.publicada.v1`](./resena.publicada.v1.json) | review-service | catalog-service (calificación promedio, UC22) | UC15, UC29 |
-| [`prestador.aprobado.v1`](./prestador.aprobado.v1.json) | iam-service | catalog-service (crea el perfil, habilita UC17) | UC28 |
+| [`resena.ocultada.v1`](./resena.ocultada.v1.json) | review-service | catalog-service (quita la reseña del promedio) | UC29 |
+| [`prestador.aprobado.v1`](./prestador.aprobado.v1.json) | iam-service | catalog-service (crea o reactiva el perfil, habilita UC17) | UC28 |
+| [`prestador.suspendido.v1`](./prestador.suspendido.v1.json) | iam-service | catalog-service (desactiva el perfil y sus servicios) | UC27, UC28 |
+| [`disponibilidad.actualizada.v1`](./disponibilidad.actualizada.v1.json) | booking-service | catalog-service (filtro por fecha y personas en búsqueda y mapa) | UC8, UC16, UC19 |
+| [`servicio.publicado.v1`](./servicio.publicado.v1.json) | catalog-service | booking-service (proyección `servicio_ref`: dueño y aforo) | UC17, UC18 |
 | [`auditoria.registrada.v1`](./auditoria.registrada.v1.json) | catalog, booking y review | iam-service (bitácora) | UC33 |
 
 recommendation-service (Módulo 5) no publica ni consume eventos: consulta los demás servicios por REST mediante sus herramientas.

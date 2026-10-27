@@ -146,7 +146,7 @@ services/<servicio>/
   * **Capa Geoespacial PostGIS:** Almacenamiento de puntos georreferenciados mediante el tipo nativo `GEOMETRY(Point, 4326)`. Búsquedas por radio y proximidad ejecutadas mediante la función `ST_DWithin` optimizada con índices espaciales `GIST`.
   * **Caché de Segundo Nivel:** Consultas de alto tráfico (catálogo general y listados de categorías) cacheadas en **Valkey** con un tiempo de expiración (TTL) de 300 segundos, invalidándose ante mutaciones del catálogo.
   * **Perfiles de Prestador:** Se crean al consumir `prestador.aprobado`; solo un prestador con perfil activo puede publicar ofertas (UC17).
-  * **Analítica de Demanda por Eventos:** El módulo consume los eventos `reserva.*` y mantiene su propia tabla `demanda_diaria` (Sección 6.7). No consulta `booking_db`.
+  * **Analítica de Demanda por Eventos:** El módulo consume los eventos `reserva.*` y mantiene su propia proyección `reserva_proyeccion` (Sección 6.7). No consulta `booking_db`.
   * **Índice de Saturación:**
     $$\text{Índice de Saturación} = \frac{\sum \text{Personas con reserva activa}}{\text{Capacidad de Carga Oficial}}$$
     Si el índice supera el 85%, el atractivo se marca con bandera de advertencia y se habilita al rol Entidad para emitir alertas oficiales (UC26).
@@ -240,7 +240,7 @@ Las peticiones de la PWA interactúan exclusivamente con el **API Gateway (Traef
 
 Convenciones:
 * **Identidad:** En las rutas protegidas, Traefik consulta `GET /api/iam/auth/verificar` (ForwardAuth). Si la respuesta es 200, reenvía la petición agregando `X-Usuario-Id` y `X-Usuario-Rol`; los servicios confían en esos encabezados porque las políticas de red solo permiten tráfico desde Traefik y desde el Módulo 5 (Sección 7.4). Cada servicio verifica el rol requerido por su endpoint (RBAC) y responde 403 si no corresponde.
-* **Llamadas entre servicios:** Solo el Módulo 5 llama a otros servicios (sus herramientas), con el `X-Usuario-Id` original de la petición.
+* **Llamadas entre servicios:** Solo el Módulo 5 llama a otros servicios (sus herramientas), con el `X-Usuario-Id` original de la petición. **Única excepción:** el worker del Módulo 2 consulta a iam los datos de contacto de un usuario (`GET /internal/usuarios/{id}/contacto`, `contracts/openapi/iam-interno.yaml`) para enviar los correos de reservas (UC36), porque los eventos solo llevan identificadores y los datos personales no viajan por el bus (Sección 4.2). Es una ruta interna, sin gateway, y si iam no responde el correo se reintenta sin afectar a los usuarios.
 * **Errores:** Formato común `{ "error": "<CODIGO>", "message": "<texto>", "correlation_id": "<id>" }`.
 * **Trazabilidad y Correlación:** Cada petición entrante en el gateway recibe un identificador en la cabecera `X-Correlation-ID`, que se propaga a las llamadas internas y a los eventos y se registra en los logs de todos los servicios.
 * **Idempotencia de formularios:** Los `POST`/`PUT` que la PWA puede reintentar aceptan el encabezado `Idempotency-Key` (Sección 6.8).
@@ -262,7 +262,9 @@ Para que las tareas secundarias (correos, métricas, habilitación de reseñas, 
 | `reserva.rechazada` | booking-service | `catalog.notificaciones`, `catalog.demanda` | catalog-service | Correo al turista; resta de la demanda. |
 | `reserva.cancelada` | booking-service | `catalog.notificaciones`, `catalog.demanda` | catalog-service | Correo a la otra parte; resta de la demanda. |
 | `reserva.finalizada` | booking-service | `review.elegibilidad`, `catalog.demanda` | review-service, catalog-service | Habilita la reseña del turista; registra ocupación efectiva. |
+| `disponibilidad.actualizada` | booking-service | `catalog.disponibilidad` | catalog-service | Guarda los cupos del servicio ese día para filtrar la búsqueda y el mapa por fecha y personas sin llamar a booking. Booking lo publica al cambiar el calendario (UC19) o los cupos por una reserva. |
 | `resena.publicada` | review-service | `catalog.calificaciones` | catalog-service | Actualiza calificación promedio y métricas del prestador (UC22). |
+| `resena.ocultada` | review-service | `catalog.calificaciones` | catalog-service | Quita del promedio la reseña que el Administrador ocultó al moderarla (UC29); si se vuelve a publicar, vuelve a contar. |
 | `prestador.aprobado` | iam-service | `catalog.prestadores` | catalog-service | Crea el perfil del prestador y habilita UC17. |
 | `auditoria.registrada` | catalog, booking y review | `iam.auditoria` | iam-service | Inserta el evento en la bitácora (Sección 4.4). |
 
@@ -296,8 +298,8 @@ Los eventos solo llevan identificadores; el consumidor que necesita datos de con
 
 Para prevenir efectos secundarios no deseados causados por la entrega repetida de mensajes en el bus:
 
-1. **Confirmación de publicación:** Los productores publican con *publisher confirms* y mensajes persistentes; si el broker no confirma, el publicador reintenta y deja un registro de error.
-2. **Identificador de Idempotencia:** Cada consumidor guarda en Valkey el `event_id` procesado con un TTL de 24 horas. Si llega un mensaje con un `event_id` ya existente, se reconoce (`ACK`) y se descarta su reejecución.
+1. **Confirmación de publicación (patrón outbox):** El evento se guarda en la tabla `outbox` del servicio en la misma transacción que el cambio. Un *worker* aparte lo publica con *publisher confirms* y mensajes persistentes y solo lo marca como publicado cuando el broker confirma; si no confirma, el evento sigue en la tabla y se reintenta con espera creciente (ADR-008).
+2. **Identificador de Idempotencia:** Cada consumidor guarda el `event_id` procesado en la tabla `evento_procesado` de su propia base, en la misma transacción que aplica el efecto. Si llega un mensaje con un `event_id` ya existente, se reconoce (`ACK`) y se descarta su reejecución. *Al programar el Módulo 2 nos dimos cuenta de que era más sencillo y más seguro guardarlo en la tabla que en Valkey con TTL de 24 h: efecto y registro se confirman juntos y no vencen.*
 3. **Dead Letter Queue (DLQ):** Los mensajes que fallan tras 3 intentos con retroceso exponencial (1s, 5s, 25s) se enrutan al exchange `turismo.dlx` y quedan en la cola `turismo.dead-letter` para análisis del equipo.
 
 ---
@@ -307,10 +309,10 @@ Para prevenir efectos secundarios no deseados causados por la entrega repetida d
 * **Dueño único:** El Módulo 1 es el único que escribe en `bitacora_auditoria` (`iam_db`).
 * **Eventos propios:** El Módulo 1 inserta sus eventos en la misma transacción que la acción (por ejemplo, el cambio de rol y su registro se confirman juntos).
 * **Eventos de otros módulos:** catalog, booking y review publican `auditoria.registrada` (accesos denegados por rol, exportaciones, cambios de estado de reservas, decisiones de moderación). La cola `iam.auditoria` los inserta en la bitácora.
-* **Sin duplicados:** La tabla tiene una restricción `UNIQUE` sobre `event_id`, de modo que un evento reentregado después del TTL de 24 h de Valkey (Sección 4.3) no se inserta dos veces: el consumidor lo reconoce (`ACK`) y lo descarta.
+* **Sin duplicados:** La tabla tiene una restricción `UNIQUE` sobre `event_id`, de modo que un evento reentregado (la entrega es "al menos una vez", Sección 4.3) no se inserta dos veces: el consumidor lo reconoce (`ACK`) y lo descarta.
 * **Accesos con token inválido (ESC-04):** Los detecta el endpoint de verificación de ForwardAuth, que pertenece al Módulo 1 y los registra directamente.
 * **Inmutabilidad:** El usuario de base de datos del servicio solo tiene permisos de inserción y consulta sobre la tabla (Sección 5.2).
-* **Evolución:** Si se exige garantía total de entrega, cada productor adoptará el patrón *outbox*: el evento se guarda en una tabla de su propia base en la misma transacción y un proceso lo publica después (ADR-008).
+* **Garantía de entrega:** Los productores usan el patrón *outbox* (Sección 4.3): el evento se guarda en una tabla de su propia base en la misma transacción y un *worker* lo publica después. catalog-service lo adoptó al implementarse, porque un fallo entre el commit y la publicación perdía el evento; se recomienda lo mismo a booking y review (ADR-008).
 
 ---
 
@@ -325,14 +327,14 @@ Las cinco bases son bases lógicas dentro de un mismo clúster PostgreSQL (Cloud
 | Base | Dueño | Modelo | Entidades principales |
 |---|---|---|---|
 | `iam_db` | iam-service | Relacional | `USUARIO`, `DOCUMENTO_VERIFICACION`, `BITACORA_AUDITORIA` |
-| `catalog_db` | catalog-service | Relacional + geoespacial (PostGIS) | `PRESTADOR_PERFIL`, `ATRACTIVO_SERVICIO`, `ALERTA_OFICIAL`, proyección `demanda_diaria` |
+| `catalog_db` | catalog-service | Relacional + geoespacial (PostGIS) | `PRESTADOR_PERFIL`, `ATRACTIVO_SERVICIO`, `ALERTA_OFICIAL`, proyección `reserva_proyeccion` |
 | `booking_db` | booking-service | Relacional (ACID) | `DISPONIBILIDAD_CUPO`, `SOLICITUD_RESERVA` |
 | `review_db` | review-service | Documental (JSONB) | `RESENA_OPINION`, `REPORTE_RESENA`, proyección `elegibilidad_resena` |
 | `recommendation_db` | recommendation-service | Relacional | `RECOMENDACION_LOG` |
 
 ### 5.2 Reglas de Diseño de Datos
 
-* **Sin acceso cruzado:** Ningún servicio lee la base de otro. Las referencias a entidades ajenas (por ejemplo, `servicio_id` en `booking_db`) son identificadores sin llave foránea; los datos que se necesitan de otro servicio se obtienen por REST o se mantienen como **proyecciones locales** alimentadas por eventos (`demanda_diaria` desde `reserva.*`; `elegibilidad_resena` desde `reserva.finalizada`; `PRESTADOR_PERFIL` desde `prestador.aprobado`).
+* **Sin acceso cruzado:** Ningún servicio lee la base de otro. Las referencias a entidades ajenas (por ejemplo, `servicio_id` en `booking_db`) son identificadores sin llave foránea; los datos que se necesitan de otro servicio se obtienen por REST o se mantienen como **proyecciones locales** alimentadas por eventos (`reserva_proyeccion` desde `reserva.*`; `elegibilidad_resena` desde `reserva.finalizada`; `PRESTADOR_PERFIL` desde `prestador.aprobado`).
 * **Bitácora inmutable (RNF-10):** El usuario de aplicación de `iam_db` solo tiene permisos de inserción y consulta sobre la bitácora.
 * **Consistencia de cupos:** Las operaciones de reserva bloquean la fila de disponibilidad dentro de una transacción (Sección 2.3, Módulo 3).
 * **Concurrencia optimista:** Las entidades que la PWA puede editar sin conexión (oferta y cupos) llevan un número de versión para detectar conflictos (Sección 6.8).
@@ -530,8 +532,10 @@ sequenceDiagram
 
 Al estar unificado en el **Módulo 2 (Catálogo, GIS & Inteligencia de Destino)**:
 
-1. **Proyección de demanda:** El consumidor `catalog.demanda` actualiza la proyección `demanda_diaria` con cada evento `reserva.*` (suma al solicitar, mueve a confirmadas al confirmar, resta al rechazar o cancelar y suma a finalizadas al finalizar). La idempotencia por `event_id` evita contar dos veces. El Módulo 2 nunca consulta `booking_db`.
-2. **Cálculo de aforos:** Un CronJob cada 30 minutos compara la demanda activa por fecha y zona con `capacidad_aforo_diario` y calcula el índice de saturación.
+1. **Proyección de demanda:** El consumidor `catalog.demanda` guarda en `reserva_proyeccion` el **estado actual de cada reserva** (servicio, fecha, personas, estado y momento del último evento aplicado) con cada evento `reserva.*`; un evento solo se aplica si ocurrió después del último aplicado. La demanda de un día es la suma de personas de las reservas activas (Solicitada y Confirmada) de esa fecha, con el índice `(fecha_reserva, servicio_id)`. La idempotencia por `event_id` (tabla `evento_procesado`) evita aplicar dos veces el mismo evento. El Módulo 2 nunca consulta `booking_db`.
+   *Al programar el Módulo 2 nos dimos cuenta de que era más seguro guardar el estado de cada reserva que llevar contadores en una tabla `demanda_diaria` (sumar al solicitar, restar al cancelar…): con contadores, un evento repetido o que llega desordenado por un reintento suma o resta de más y el número queda mal para siempre; con el estado por reserva, el resultado siempre es correcto.*
+2. **Cálculo de aforos:** Al consultar (`/analitica/capacidad`, mapa de calor) se compara la demanda activa por fecha y zona con `capacidad_aforo_diario` y se calcula el índice de saturación, con caché de 5 minutos en Valkey (`calculado_en` indica de cuándo es el dato).
+   *Al programar el Módulo 2 nos dimos cuenta de que era más sencillo y más fresco calcularlo al consultar que con un CronJob cada 30 minutos: la suma por día usa el índice de `reserva_proyeccion`, se consulta poco (la Entidad y el chatbot) y no hace falta una tabla de resultados. Las tareas de mantenimiento del módulo (limpieza del outbox y de la disponibilidad de días pasados) corren en su worker.*
 3. **Mapa de calor:** El backend transforma coordenadas y porcentajes de saturación a **GeoJSON** para su visualización en Leaflet.js por parte de la Entidad de Gestión.
 4. **Alertas:** Cuando la Entidad emite una alerta (UC26), se inserta en `alertas_oficiales`; la PWA la muestra en el mapa y el chatbot la consulta con la herramienta `alertas_oficiales` antes de recomendar una zona.
 
@@ -609,7 +613,7 @@ Las vistas de despliegue por actor (Turista, Prestador, Entidad y Administrador)
 | Namespace | Contenido |
 |---|---|
 | `kube-system` | Traefik (Ingress de k3s), cert-manager para certificados TLS. |
-| `turismo-app` | `frontend`, los 5 microservicios y los CronJobs del Módulo 3 y el Módulo 2. |
+| `turismo-app` | `frontend`, los 5 microservicios, los CronJobs del Módulo 3 y el worker del Módulo 2. |
 | `turismo-datos` | Clúster PostgreSQL (CloudNativePG), Valkey, RabbitMQ y SeaweedFS. |
 | `observabilidad` | Prometheus, Grafana, Loki y Blackbox exporter. |
 
@@ -666,6 +670,7 @@ Las sondas de *readiness* se consultan cada 2 segundos con umbral de 2 fallos, d
 1. **Pruebas Unitarias:** `pytest` sobre el dominio y los casos de uso, con los puertos simulados; cobertura mínima del 70%.
 2. **Pruebas de Integración:** `pytest` con **Testcontainers** (PostgreSQL + PostGIS, Valkey y RabbitMQ reales y efímeros) para validar consultas espaciales, bloqueos transaccionales, consumidores de eventos e idempotencia.
 3. **Pruebas de Contrato:** Validación de los eventos contra los esquemas de `contracts/events/` y de las respuestas REST contra el OpenAPI de cada servicio.
+   *Al programar el Módulo 2 se hizo en tres capas: toda respuesta de cualquier prueba se valida contra el OpenAPI (sin escribir casos nuevos), Schemathesis genera peticiones válidas e inválidas desde el contrato contra la app con la base real, y cada evento publicado o consumido en las pruebas se valida con su esquema. Encontró errores que las pruebas escritas a mano no veían (un campo de evento con otro tipo que el del contrato, un 500 con una página enorme, errores fuera del formato común), además de un contrato que no era OpenAPI 3.0 válido. Se recomienda a cada servicio; la base está en `services/catalog-service/tests/conftest.py`.*
 4. **Pruebas de Rendimiento y Carga (k6):**
    * **ESC-02:** 500 solicitudes por segundo sobre `GET /api/catalog/buscar` durante 10 minutos; criterio $p95 < 2.0$s y 0 errores 5xx.
    * **ESC-08:** Rampa hasta 1.000 solicitudes por segundo sobre catálogo y reservas durante 30 minutos; se registran las réplicas creadas por el HPA y el tiempo en que quedan listas.

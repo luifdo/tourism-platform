@@ -20,7 +20,7 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 | [ADR-005](#adr-005-plataforma-de-despliegue) | Plataforma de despliegue: contenedores en Kubernetes (k3s) | No | Aceptada |
 | [ADR-006](#adr-006-lenguaje-y-framework-de-los-microservicios) | Lenguaje y framework: Python + FastAPI en los 5 servicios | No | Aceptada |
 | [ADR-007](#adr-007-api-gateway) | API Gateway: Traefik con ForwardAuth | No | Aceptada |
-| [ADR-008](#adr-008-mensajería-asíncrona-y-auditoría) | Mensajería: RabbitMQ y auditoría asíncrona centralizada en el Módulo 1 | No | Aceptada |
+| [ADR-008](#adr-008-mensajería-asíncrona-y-auditoría) | Mensajería: RabbitMQ y auditoría asíncrona centralizada en el Módulo 1 | No | Aceptada (actualizada: outbox) |
 | [ADR-009](#adr-009-observabilidad) | Observabilidad: Prometheus, Grafana y Loki | No | Aceptada |
 | [ADR-010](#adr-010-componente-de-inteligencia-artificial) | IA: chatbot sobre la API de Gemini con herramientas de solo lectura | No | Aceptada |
 
@@ -126,13 +126,17 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 
 ## ADR-008: Mensajería asíncrona y auditoría
 
-* **Estado:** Aceptada. Elimina la alternativa "RabbitMQ o Redis Streams".
+* **Estado:** Aceptada. Elimina la alternativa "RabbitMQ o Redis Streams". Actualizada en la implementación del Módulo 2: patrón outbox e idempotencia en la base del consumidor.
 * **Contexto:** Correos, métricas, habilitación de reseñas y bitácora de auditoría no deben bloquear al usuario. La bitácora debe registrar el 100% de los accesos indebidos (ESC-04) y ser inmutable (RNF-10).
 * **Decisión:** **RabbitMQ** con el exchange `turismo.eventos` (topic), una cola por consumidor, *publisher confirms*, idempotencia por `event_id` y DLQ tras 3 intentos. La auditoría tiene un único dueño, el Módulo 1: escribe sus eventos en la misma transacción de la acción y consume `auditoria.registrada` de los demás módulos; la tabla solo admite inserciones.
+* **Actualización (implementación del Módulo 2, octubre de 2026):** al programar catalog-service nos dimos cuenta de que era más sencillo y más seguro guardar los eventos y los `event_id` procesados en tablas de la propia base del servicio:
+  * **Patrón outbox adoptado:** el evento se guarda en la tabla `outbox` en la misma transacción que el cambio, y un proceso aparte (*worker*, otro Deployment con la misma imagen) lo publica con *publisher confirms* y lo marca como publicado. Si RabbitMQ está caído, el evento espera en la tabla; si la transacción se deshace, el evento no existe. Varios workers no publican el mismo evento (`SELECT … FOR UPDATE SKIP LOCKED`).
+  * **Idempotencia en la base, no en Valkey:** el consumidor registra el `event_id` en la tabla `evento_procesado` en la misma transacción que aplica el efecto. Con Valkey, una caída entre el efecto y el registro (o el vencimiento del TTL de 24 h) podía aplicar un evento dos veces; en la tabla, efecto y registro se confirman juntos.
+  * Se recomienda el mismo esquema a booking-service y review-service.
 * **Alternativas consideradas:**
   * *Redis/Valkey Streams:* descartada; evita un componente, pero carece del enrutamiento por *topic*, las DLQ y la consola de administración que facilitan la operación y la depuración.
   * *Escritura directa de cada módulo en la bitácora del Módulo 1:* descartada; viola *Database-per-Service*.
-  * *Patrón outbox desde el inicio:* pospuesta; garantiza la entrega pero agrega una tabla y un proceso por servicio. Se adoptará si las pruebas de ESC-04 muestran pérdidas.
+  * *Publicar directamente después de confirmar la transacción (sin outbox):* era la opción inicial; se reemplazó en la implementación del Módulo 2 porque un fallo entre el commit y la publicación perdía el evento (ESC-04 exige registrar el 100% de los accesos indebidos).
 * **Consecuencias:** Desacople y resiliencia ante fallos transitorios, con consistencia eventual. Los consumidores deben ser idempotentes y los contratos de eventos se versionan en `contracts/events/`.
 * **Trazabilidad:** RF-09, RF-11, RF-14, RNF-10, ESC-04, SRS §3.6.2, Plan §4.2 a §4.4.
 

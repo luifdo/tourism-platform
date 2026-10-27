@@ -1,0 +1,28 @@
+# Plantilla de manifiestos (Plan §7.2-7.4), sacada de services/catalog-service/k8s/.
+# Para usarla:
+#   1. Copia templates/service-template/k8s/ a services/<tu-servicio>/k8s/.
+#   2. Reemplaza "service-template" por el nombre del servicio y 8000 por su puerto (Plan §4).
+#   3. Ajusta réplicas y HPA según la tabla del Plan §7.3 y revisa la NetworkPolicy.
+#   4. Si tu servicio tiene worker o CronJobs, mira los de catalog-service y booking (Plan §3).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: turismo-app
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: turismo-santa-marta
+    includeSelectors: false
+
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: service-template
+    newName: ghcr.io/turismo-santa-marta/service-template
+    newTag: latest # CI la cambia por el commit: kustomize edit set image service-template=...:<sha>

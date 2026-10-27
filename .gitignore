@@ -222,3 +222,6 @@ node_modules/
 target/
 *.class
 .gradle/
+
+# Secretos de Kubernetes que genera Kustomize (se sube solo el .example)
+secretos.env

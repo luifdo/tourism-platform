@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block contenido %}
+  <p>Hola, {{ nombre }}:</p>
+  <p>Tienes una <strong>nueva solicitud de reserva</strong>.</p>
+  <table role="presentation" cellpadding="6" cellspacing="0" style="margin:16px 0;border-collapse:collapse;">
+    <tr><td style="color:#6b7478;">Servicio</td><td><strong>{{ servicio }}</strong></td></tr>
+    <tr><td style="color:#6b7478;">Fecha</td><td>{{ fecha }}</td></tr>
+    <tr><td style="color:#6b7478;">Personas</td><td>{{ personas }}</td></tr>
+  </table>
+  <p>Tienes <strong>48 horas</strong> para confirmarla o rechazarla desde tu panel. Si no respondes, la solicitud vence sola y se avisa al turista.</p>
+{% endblock %}

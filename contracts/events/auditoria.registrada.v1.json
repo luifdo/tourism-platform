@@ -23,7 +23,10 @@
         "ACCESS_DENIED",
         "EXPORT",
         "RESERVA_CANCELADA",
-        "MODERACION"
+        "MODERACION",
+        "ZONA_CREADA",
+        "ZONA_EDITADA",
+        "ZONA_DESACTIVADA"
       ]
     },
     "resultado": {

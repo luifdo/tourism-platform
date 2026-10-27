@@ -1,0 +1,13 @@
+{
+  "identities": [
+    {
+      "name": "catalog",
+      "credentials": [{ "accessKey": "catalog_access_dev", "secretKey": "catalog_secret_dev" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    },
+    {
+      "name": "anonymous",
+      "actions": ["Read"]
+    }
+  ]
+}

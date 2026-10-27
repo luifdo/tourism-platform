@@ -1,0 +1,48 @@
+# Plan §7.4: solo entra el tráfico previsto. La salida no se restringe (la API y el worker
+# hablan con PostgreSQL, Valkey, RabbitMQ, iam, SMTP y Nominatim).
+# catalog -> iam (/internal/usuarios/{id}/contacto) lo debe permitir la NetworkPolicy de iam.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: catalog-service-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+      app.kubernetes.io/component: api
+  policyTypes: ["Ingress"]
+  ingress:
+    - from: # Traefik (Ingress de k3s)
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: traefik }
+      ports: [{ port: 8002 }]
+    - from: # recommendation-service (chatbot) consulta el catálogo
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: recommendation-service }
+      ports: [{ port: 8002 }]
+    - from: # Prometheus lee /metrics
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 8002 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: catalog-worker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+      app.kubernetes.io/component: worker
+  policyTypes: ["Ingress"]
+  ingress:
+    - from: # nadie llama al worker; solo Prometheus lee sus métricas
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 9102 }]

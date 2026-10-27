@@ -1,0 +1,10 @@
+Hola, {{ nombre }}:
+
+Lo sentimos, tu solicitud no fue aceptada.
+
+Servicio: {{ servicio }}
+Fecha: {{ fecha }}
+Personas: {{ personas }}
+{% if motivo %}Motivo: {{ motivo }}
+{% endif %}
+Puedes buscar otras opciones en la plataforma.

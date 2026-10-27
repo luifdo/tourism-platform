@@ -1,0 +1,19 @@
+# Configuración que no es secreta. Las credenciales (DATABASE_URL, RABBITMQ_URL) van en el Secret
+# `booking-service-secretos`, que genera cada overlay (ver overlays/local).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: booking-service-config
+data:
+  ENVIRONMENT: production
+  LOG_LEVEL: INFO
+  EVENTS_EXCHANGE: turismo.eventos
+  TZ: America/Bogota
+  MODO_PERSISTENCIA: postgres
+  DATOS_DEMO: "false"
+  PLAZO_RESPUESTA_HORAS: "48"
+  # Pool por réplica: con el HPA en 6 son hasta 6 × (10 + 5) conexiones a booking_db.
+  DB_POOL_TAMANO: "10"
+  DB_POOL_EXTRA: "5"
+  RELAY_LOTE: "100"
+  RELAY_ESPERA_S: "1"

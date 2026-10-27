@@ -53,7 +53,7 @@ tests/
 
 ## Ejecución
 
-Servicio en Python 3.12 + FastAPI. En el clúster corre como contenedor en Kubernetes (k3s) según el [Plan de Implementación](../../Documents/Pages/Plan_de_Implementacion.md) §7; el `Dockerfile` y los manifiestos llegan en el Sprint 5.
+Servicio en Python 3.12 + FastAPI. En el clúster corre como contenedor en Kubernetes (k3s) según el [Plan de Implementación](../../Documents/Pages/Plan_de_Implementacion.md) §7 (ver [Docker Compose](#docker-compose) y [Kubernetes](#kubernetes-k8s) más abajo).
 
 ### Local, en modo memoria (sin Postgres ni RabbitMQ)
 
@@ -89,3 +89,32 @@ alembic upgrade head --sql    # muestra el SQL sin ejecutarlo
 ```
 
 Para cambiar el esquema: editar `src/infrastructure/persistence/tablas.py`, generar la migración con `alembic revision --autogenerate -m "..."` y **revisarla a mano** antes de subirla. La prueba `test_la_base_migrada_coincide_con_tablas_py` falla si `tablas.py` y las migraciones no coinciden.
+
+### Docker Compose
+
+```bash
+# Desde infra/ (cp .env.example .env la primera vez)
+docker compose up -d --build booking-service prometheus
+```
+
+`booking-migraciones` aplica `alembic upgrade head` sobre `booking_db` y termina; después arranca `booking-service` en modo postgres, con el relay del outbox y el consumidor de `servicio.publicado` dentro. Swagger en <http://localhost:8003/docs>; Prometheus ya tiene el job `booking-service` (`booking-service:8003`).
+
+### Kubernetes (k8s)
+
+`k8s/` sale de la [plantilla](../../templates/service-template/k8s/): Deployment con initContainer de migraciones (el candado `pg_advisory_xact_lock` de `migrations/env.py` evita que dos pods migren a la vez), Service `booking-service:8003` (ClusterIP), HPA 2-6 al 70 % (Plan §7.3), PodDisruptionBudget, NetworkPolicy (entran Traefik, Prometheus y recommendation-service) y ConfigMap. Pendientes: los CronJobs de la Guía §6.4. Pasos en el [README de catalog-service](../catalog-service/README.md#kubernetes-k8s):
+
+```bash
+cd k8s/overlays/local
+cp secretos.env.example secretos.env
+docker build -t booking-service:local ../../..
+kubectl apply -k .
+```
+
+### Observabilidad
+
+| Qué | Cómo |
+|---|---|
+| `GET /health` | `{"status": "ok" \| "degraded", "checks": {"postgres": "up" \| "down"}}`; 503 si Postgres no responde (readiness). RabbitMQ no cuenta: sin él los eventos esperan en el outbox. En modo memoria el check es `almacen_memoria`. |
+| `GET /metrics` | prometheus-fastapi-instrumentator: `http_requests_total`, `http_request_duration_seconds` (como catalog, iam y recommendation), más `booking_eventos_consumidos_total`. |
+| Logs | JSON por stdout, una línea por registro: `ts`, `nivel`, `servicio`, `logger`, `mensaje`, `correlation_id`, `excepcion`. Nivel con `LOG_LEVEL`. |
+| `X-Correlation-ID` | Se toma de Traefik (o se genera `corr-<uuid>`), se devuelve en la respuesta y viaja en los errores y en los eventos. |

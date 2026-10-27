@@ -1,0 +1,29 @@
+# Plan §7.4: solo entra el tráfico previsto. catalog y review no llaman a booking: se enteran por
+# los eventos reserva.* en RabbitMQ.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: booking-service
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: booking-service
+      app.kubernetes.io/component: api
+  policyTypes: ["Ingress"]
+  ingress:
+    - from: # Traefik (Ingress de k3s)
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: traefik }
+      ports: [{ port: 8003 }]
+    - from: # Prometheus lee /metrics
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 8003 }]
+    - from: # recommendation-service: tools consultar_disponibilidad e historial_turista (Guía §11)
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: recommendation-service }
+      ports: [{ port: 8003 }]

@@ -1,0 +1,16 @@
+# Destino de Traefik (/api/bookings) y de recommendation-service (tools de disponibilidad e historial).
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-service
+  labels:
+    app.kubernetes.io/name: booking-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: booking-service
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8003
+      targetPort: http

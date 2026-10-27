@@ -10,6 +10,7 @@
 import asyncio
 
 from alembic import context
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from config import Configuracion
@@ -17,6 +18,8 @@ from infrastructure.persistence.tablas import metadata
 
 config = context.config
 target_metadata = metadata
+# Número propio de booking para pg_advisory_xact_lock; dura lo que la transacción de la migración.
+CANDADO_MIGRACIONES = 3_000_003
 
 
 def _url() -> str:
@@ -43,6 +46,9 @@ async def migraciones_con_conexion() -> None:
     motor = create_async_engine(_url())
     async with motor.connect() as conexion:
         await conexion.run_sync(_configurar)
+        # Dos pods que arrancan a la vez (initContainer de k8s) no migran al mismo tiempo: el
+        # segundo espera aquí hasta el COMMIT del primero y luego ve que ya no hay nada que hacer.
+        await conexion.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": CANDADO_MIGRACIONES})
         await conexion.run_sync(lambda _: context.run_migrations())
         await conexion.commit()
     await motor.dispose()

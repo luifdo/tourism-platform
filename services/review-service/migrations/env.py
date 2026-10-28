@@ -8,8 +8,16 @@ from sqlalchemy.engine import Connection
 from app.config import get_settings
 from app.infrastructure.persistence.database import Base, build_engine
 
-# modelos/ no tiene __init__.py: cuando haya modelos (paso 3), se importa aquí cada archivo
-# para registrar su tabla en Base.metadata.
+# modelos/ no tiene __init__.py: se importa cada archivo para registrar su tabla en Base.metadata.
+from app.infrastructure.persistence.modelos import (  # noqa: F401
+    elegibilidad_resena,
+    evento_procesado,
+    idempotencia,
+    outbox,
+    reporte_resena,
+    resena,
+    servicio_dueno,
+)
 
 config = context.config
 if config.config_file_name is not None:

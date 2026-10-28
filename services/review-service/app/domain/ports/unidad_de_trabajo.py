@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from types import TracebackType
 from typing import Protocol, Self
 
@@ -36,3 +37,7 @@ class UnidadDeTrabajo(Protocol):
     ) -> None: ...
 
     async def confirmar(self) -> None: ...
+
+
+# Cada caso de uso abre una unidad de trabajo nueva por operación.
+FabricaUnidadDeTrabajo = Callable[[], UnidadDeTrabajo]

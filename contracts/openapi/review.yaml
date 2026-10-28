@@ -604,7 +604,7 @@ components:
         id: { type: string, format: uuid }
         servicio_id: { type: string, format: uuid }
         autor: { type: string, description: '"Turista verificado" en el idioma pedido; nunca el nombre.', example: Turista verificado }
-        mes_visita: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', description: Mes de la última visita (AAAA-MM)., example: 2026-11 }
+        mes_visita: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', description: Mes de la visita más reciente al escribir o editar la reseña (AAAA-MM); una visita posterior no lo cambia hasta que el turista la edite., example: 2026-11 }
         puntuacion: { $ref: '#/components/schemas/Puntuacion' }
         aspectos: { $ref: '#/components/schemas/Aspectos' }
         aspectos_etiquetas:

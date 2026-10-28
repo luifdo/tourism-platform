@@ -6,7 +6,8 @@ en el outbox (ESC-01).
 
 * Relay del outbox → `turismo.eventos` (`resena.publicada`, `resena.ocultada`) y limpieza
   diaria del outbox ya publicado.
-* Consumidores de `reserva.finalizada` y `servicio.publicado` (paso 5).
+* Consumidor `review.elegibilidad` (`reserva.finalizada` → quién puede reseñar).
+* Consumidor `review.servicios` (`servicio.publicado` → dueño de cada servicio).
 * Limpieza diaria de la idempotencia vencida y de `evento_procesado` viejo.
 
 Expone sus métricas en `WORKER_METRICS_PORT` (/metrics), que también sirve de sonda de vida.
@@ -23,14 +24,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.use_cases.limpiar_registros_vencidos import LimpiarRegistrosVencidos
 from app.application.use_cases.publicar_eventos_pendientes import PublicarEventosPendientes
+from app.application.use_cases.registrar_dueno_servicio import RegistrarDuenoServicio
+from app.application.use_cases.registrar_visita import RegistrarVisita
 from app.config import Settings, get_settings
+from app.infrastructure.messaging import manejador_elegibilidad, manejador_servicios
 from app.infrastructure.messaging.consumidor_rabbitmq import ConsumidorRabbitMQ, Manejador
+from app.infrastructure.messaging.manejador_elegibilidad import ManejadorElegibilidad
+from app.infrastructure.messaging.manejador_servicios import ManejadorServicios
 from app.infrastructure.messaging.publicador_rabbitmq import PublicadorRabbitMQ
 from app.infrastructure.messaging.relay_outbox import RelayOutbox
 from app.infrastructure.observabilidad.configurar_logs import configurar_logs
 from app.infrastructure.persistence.database import build_engine, build_session_factory
 from app.infrastructure.persistence.repositorios.outbox_pendiente import SqlOutboxPendiente
 from app.infrastructure.persistence.repositorios.registros_vencidos import SqlRegistrosVencidos
+from app.infrastructure.persistence.unidad_de_trabajo import SqlUnidadDeTrabajo
 from app.infrastructure.reloj import RelojSistema
 from app.infrastructure.tareas.tarea_periodica import TareaPeriodica
 
@@ -55,8 +62,21 @@ def construir_relay(
 def construir_consumidores(
     settings: Settings, sesiones: async_sessionmaker[AsyncSession]
 ) -> list[ConsumidorRabbitMQ]:
-    # Los consumidores de review.elegibilidad y review.servicios llegan en el paso 5.
-    colas: list[tuple[str, tuple[str, ...], Manejador]] = []
+    def uow() -> SqlUnidadDeTrabajo:
+        return SqlUnidadDeTrabajo(sesiones)
+
+    colas: list[tuple[str, tuple[str, ...], Manejador]] = [
+        (
+            manejador_elegibilidad.COLA,
+            manejador_elegibilidad.CLAVES,
+            ManejadorElegibilidad(RegistrarVisita(uow)),
+        ),
+        (
+            manejador_servicios.COLA,
+            manejador_servicios.CLAVES,
+            ManejadorServicios(RegistrarDuenoServicio(uow)),
+        ),
+    ]
     return [
         ConsumidorRabbitMQ(
             url=settings.rabbitmq_url,

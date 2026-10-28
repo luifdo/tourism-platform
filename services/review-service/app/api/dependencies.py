@@ -15,10 +15,12 @@ from app.application.ports.consulta_resenas import ConsultaResenas
 from app.application.use_cases.check_health import CheckHealth
 from app.application.use_cases.editar_resena import EditarResena
 from app.application.use_cases.escribir_resena import EscribirResena
+from app.application.use_cases.listar_cola_moderacion import ListarColaModeracion
 from app.application.use_cases.listar_mis_resenas import ListarMisResenas
 from app.application.use_cases.listar_pendientes import ListarPendientes
 from app.application.use_cases.listar_resenas_prestador import ListarResenasPrestador
 from app.application.use_cases.listar_resenas_servicio import ListarResenasServicio
+from app.application.use_cases.moderar_resena import ModerarResena
 from app.application.use_cases.obtener_resena_publica import ObtenerResenaPublica
 from app.application.use_cases.reportar_resena import ReportarResena
 from app.application.use_cases.responder_resena import ResponderResena
@@ -100,3 +102,11 @@ def get_responder_resena(uow: UowDep, reloj: RelojDep) -> ResponderResena:
 
 def get_reportar_resena(uow: UowDep, reloj: RelojDep) -> ReportarResena:
     return ReportarResena(uow, reloj)
+
+
+def get_listar_cola_moderacion(consulta: ConsultaDep) -> ListarColaModeracion:
+    return ListarColaModeracion(consulta)
+
+
+def get_moderar_resena(uow: UowDep, reloj: RelojDep) -> ModerarResena:
+    return ModerarResena(uow, reloj)

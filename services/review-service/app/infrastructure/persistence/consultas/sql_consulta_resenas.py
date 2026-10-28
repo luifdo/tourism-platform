@@ -9,20 +9,25 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, func, select, text
+from sqlalchemy import Select, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.dto.orden_resenas import OrdenResenas
+from app.application.dto.pagina_moderacion import PaginaModeracion
 from app.application.dto.pagina_resenas import PaginaResenas
 from app.application.dto.promedio_aspecto import PromedioAspecto
+from app.application.dto.resena_en_moderacion import ResenaEnModeracion
 from app.application.dto.resumen_servicio import ResumenServicio
 from app.application.dto.servicio_pendiente import ServicioPendiente
+from app.domain.entities.reporte_resena import ReporteResena
 from app.domain.entities.resena import Resena
 from app.domain.value_objects.aspecto import Aspecto
 from app.domain.value_objects.estado_resena import EstadoResena
 from app.infrastructure.persistence.modelos.elegibilidad_resena import ElegibilidadResenaModelo
+from app.infrastructure.persistence.modelos.reporte_resena import ReporteResenaModelo
 from app.infrastructure.persistence.modelos.resena import ResenaModelo
 from app.infrastructure.persistence.modelos.servicio_dueno import ServicioDuenoModelo
+from app.infrastructure.persistence.repositorios.reporte_repository import reporte_desde_modelo
 from app.infrastructure.persistence.repositorios.resena_repository import resena_desde_modelo
 
 R = ResenaModelo
@@ -34,6 +39,21 @@ ORDEN = {
 }
 # Las que cuentan en el promedio: en revisión siguen contando, solo OCULTA no.
 _CUENTAN = (EstadoResena.PUBLICADA.value, EstadoResena.EN_REVISION.value)
+
+_EN_REVISION = EstadoResena.EN_REVISION.value
+# Cola del Administrador (índice parcial `ix_resena_moderacion`): en revisión, o publicadas
+# con reportes sin resolver. Las en revisión van primero (están ocultas esperando), luego las
+# más reportadas y, a igualdad, la más antigua, para que ninguna espere sin fin.
+_EN_COLA = or_(
+    R.estado == _EN_REVISION,
+    (R.estado == EstadoResena.PUBLICADA.value) & (R.reportes_pendientes > 0),
+)
+_ORDEN_COLA = (
+    case((R.estado == _EN_REVISION, 0), else_=1),
+    R.reportes_pendientes.desc(),
+    R.creada_en,
+    R.id,
+)
 
 _RESUMEN = text(
     """
@@ -137,6 +157,32 @@ class SqlConsultaResenas:
         if sin_respuesta:
             consulta = consulta.where(R.respuesta.is_(None))
         return await self._pagina(consulta, _RECIENTE, pagina, tamano)
+
+    async def cola_moderacion(
+        self, estado: EstadoResena | None, pagina: int, tamano: int
+    ) -> PaginaModeracion:
+        consulta = select(R).where(_EN_COLA)
+        if estado is not None:
+            consulta = consulta.where(R.estado == estado.value)
+        resenas = await self._pagina(consulta, _ORDEN_COLA, pagina, tamano)
+        # Los reportes de toda la página en una sola consulta, no uno por reseña.
+        reportes: dict[UUID, list[ReporteResena]] = {r.id: [] for r in resenas.items}
+        if reportes:
+            m = ReporteResenaModelo
+            async with self._sesiones() as session:
+                filas = await session.scalars(
+                    select(m)
+                    .where(m.resena_id.in_(reportes), m.resuelto_en.is_(None))
+                    .order_by(m.reportado_en, m.id)
+                )
+                for fila in filas:
+                    reportes[fila.resena_id].append(reporte_desde_modelo(fila))
+        return PaginaModeracion(
+            items=[ResenaEnModeracion(resena=r, reportes=reportes[r.id]) for r in resenas.items],
+            pagina=pagina,
+            tamano=tamano,
+            total=resenas.total,
+        )
 
     async def _pagina(
         self, consulta: Select[Any], orden: tuple[Any, ...], pagina: int, tamano: int

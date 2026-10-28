@@ -8,6 +8,7 @@ from app.api.errores.manejador_errores import registrar_manejadores
 from app.api.middleware.correlacion_middleware import CorrelacionMiddleware
 from app.api.routers import (
     health,
+    moderacion,
     reportes,
     resenas_prestador,
     resenas_publicas,
@@ -44,7 +45,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=settings.service_name, version="0.1.0", lifespan=lifespan)
     app.add_middleware(CorrelacionMiddleware)
     registrar_manejadores(app)
-    for modulo in (health, resenas_publicas, resenas_turista, resenas_prestador, reportes):
+    for modulo in (
+        health,
+        resenas_publicas,
+        resenas_turista,
+        resenas_prestador,
+        reportes,
+        moderacion,
+    ):
         app.include_router(modulo.router)
     Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
     return app

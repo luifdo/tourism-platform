@@ -8,10 +8,12 @@ from typing import Protocol
 from uuid import UUID
 
 from app.application.dto.orden_resenas import OrdenResenas
+from app.application.dto.pagina_moderacion import PaginaModeracion
 from app.application.dto.pagina_resenas import PaginaResenas
 from app.application.dto.resumen_servicio import ResumenServicio
 from app.application.dto.servicio_pendiente import ServicioPendiente
 from app.domain.entities.resena import Resena
+from app.domain.value_objects.estado_resena import EstadoResena
 
 
 class ConsultaResenas(Protocol):
@@ -48,4 +50,11 @@ class ConsultaResenas(Protocol):
         tamano: int,
     ) -> PaginaResenas:
         """Publicadas y en revisión de los servicios de los que es dueño."""
+        ...
+
+    async def cola_moderacion(
+        self, estado: EstadoResena | None, pagina: int, tamano: int
+    ) -> PaginaModeracion:
+        """Reseñas que esperan al Administrador, con sus reportes sin resolver: primero las
+        en revisión, luego las más reportadas y, a igualdad, la más antigua."""
         ...

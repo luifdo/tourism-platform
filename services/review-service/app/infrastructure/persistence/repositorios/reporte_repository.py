@@ -9,12 +9,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.reporte_resena import ReporteResena
 from app.domain.errors import YaReportada
+from app.domain.value_objects.identidad import Rol
+from app.domain.value_objects.motivo_reporte import MotivoReporte
 from app.infrastructure.persistence.modelos.reporte_resena import ReporteResenaModelo
 from app.infrastructure.persistence.repositorios.comun import viola
 
 UNO_POR_USUARIO = "uq_reporte_resena_usuario"
 # Espacio propio del candado consultivo: no choca con los de otras tablas o migraciones.
 CANDADO_REPORTES = 4_401
+
+
+def reporte_desde_modelo(fila: ReporteResenaModelo) -> ReporteResena:
+    """También la usa la cola de moderación."""
+    return ReporteResena(
+        id=fila.id,
+        resena_id=fila.resena_id,
+        usuario_id=fila.usuario_id,
+        rol=Rol(fila.rol),
+        motivo=MotivoReporte(fila.motivo),
+        detalle=fila.detalle,
+        es_dueno=fila.es_dueno,
+        reportado_en=fila.reportado_en,
+        resuelto_en=fila.resuelto_en,
+    )
 
 
 class SqlReporteRepository:

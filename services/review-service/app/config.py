@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     outbox_intervalo_segundos: float = 1.0
     outbox_espera_maxima_segundos: float = 30.0
     outbox_retencion_dias: int = 7
+    # Limpieza diaria: los duplicados de un evento llegan en minutos (o días, si alguien
+    # reprocesa la DLQ a mano); 30 días cubren eso de sobra.
+    evento_procesado_retencion_dias: int = 30
     worker_metrics_port: int = 9104
     # Mensajes que cada consumidor procesa a la vez (prefetch de RabbitMQ).
     consumidor_prefetch: int = 10

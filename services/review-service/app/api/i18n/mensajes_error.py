@@ -32,6 +32,36 @@ MENSAJES: dict[str, dict[Idioma, str]] = {
         _ES: "Tu rol no tiene permiso para esta operación.",
         _EN: "Your role is not allowed to perform this operation.",
     },
+    "NO_ELEGIBLE": {
+        _ES: "Solo puedes reseñar un servicio después de una reserva finalizada en él.",
+        _EN: "You can only review a service after a completed booking with it.",
+    },
+    "NO_ES_DUENO": {
+        _ES: "Esta reseña no es tuya o el servicio no es tuyo.",
+        _EN: "This review or this service is not yours.",
+    },
+    "RESENA_PROPIA": {
+        _ES: "No puedes reportar tu propia reseña; puedes editarla.",
+        _EN: "You cannot report your own review; you can edit it.",
+    },
+    "YA_RESENADO": {
+        _ES: "Ya reseñaste este servicio. Puedes editar tu reseña.",
+        _EN: "You already reviewed this service. You can edit your review.",
+    },
+    "RESENA_EN_MODERACION": {
+        _ES: "La reseña está en revisión u oculta por moderación y no admite este cambio.",
+        _EN: "The review is under moderation or hidden and cannot be changed this way.",
+    },
+    "YA_REPORTADA": {
+        _ES: "Ya reportaste esta reseña; el equipo de moderación la revisará.",
+        _EN: "You already reported this review; the moderation team will check it.",
+    },
+    "DEMASIADOS_REPORTES": {
+        _ES: "Llegaste al límite de {limite} reportes por hora. Intenta de nuevo en "
+        "{retry_after} segundos.",
+        _EN: "You reached the limit of {limite} reports per hour. Try again in "
+        "{retry_after} seconds.",
+    },
     "NO_AUTENTICADO": {
         _ES: "Debes iniciar sesión para esta operación.",
         _EN: "You must sign in to perform this operation.",

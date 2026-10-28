@@ -42,3 +42,49 @@ class RolNoPermitido(ErrorDominio):
     """El rol del usuario no puede ejecutar la operación (HTTP 403, se audita)."""
 
     codigo = "ROL_NO_PERMITIDO"
+
+
+class NoElegible(ErrorDominio):
+    """El turista no tiene una reserva finalizada del servicio (HTTP 403, se audita)."""
+
+    codigo = "NO_ELEGIBLE"
+
+
+class NoEsDueno(ErrorDominio):
+    """La reseña no es del usuario o el servicio no es del prestador (HTTP 403)."""
+
+    codigo = "NO_ES_DUENO"
+
+
+class ResenaPropia(ErrorDominio):
+    """El autor no puede reportar su propia reseña (HTTP 403)."""
+
+    codigo = "RESENA_PROPIA"
+
+
+class YaResenado(ErrorDominio):
+    """El turista ya reseñó el servicio; se edita la que tiene (HTTP 409)."""
+
+    codigo = "YA_RESENADO"
+
+
+class ResenaEnModeracion(ErrorDominio):
+    """En revisión u oculta no se edita; oculta no se responde (HTTP 409)."""
+
+    codigo = "RESENA_EN_MODERACION"
+
+
+class YaReportada(ErrorDominio):
+    """El usuario ya reportó esta reseña (HTTP 409)."""
+
+    codigo = "YA_REPORTADA"
+
+
+class DemasiadosReportes(ErrorDominio):
+    """El usuario llegó al límite de reportes por hora (HTTP 429 con `Retry-After`)."""
+
+    codigo = "DEMASIADOS_REPORTES"
+
+    def __init__(self, retry_after: int, limite: int) -> None:
+        self.retry_after = retry_after
+        super().__init__(retry_after=retry_after, limite=limite)

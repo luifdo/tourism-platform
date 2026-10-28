@@ -491,7 +491,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     ConflictoEdicion:
-      description: '`VERSION_DISTINTA` (la reseña cambió; la versión actual va en `ETag`) o `RESENA_EN_MODERACION` (en revisión u oculta, no se puede editar ni responder).'
+      description: '`VERSION_DISTINTA` (la reseña cambió; la versión actual va en `ETag`) o `RESENA_EN_MODERACION` (en revisión u oculta no se puede editar; oculta no se puede responder).'
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

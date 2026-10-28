@@ -9,7 +9,7 @@ from starlette.exceptions import HTTPException
 
 from app.api.i18n.mensajes_error import mensaje_codigo, mensaje_error, mensaje_validacion
 from app.api.schemas.error_respuesta import ErrorRespuesta
-from app.domain.errors import ErrorDominio, VersionDistinta
+from app.domain.errors import DemasiadosReportes, ErrorDominio, VersionDistinta
 from app.domain.value_objects.idioma import Idioma
 from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 
@@ -19,7 +19,14 @@ ESTADO_POR_CODIGO = {
     "VALIDACION": status.HTTP_400_BAD_REQUEST,
     "NO_ENCONTRADO": status.HTTP_404_NOT_FOUND,
     "ROL_NO_PERMITIDO": status.HTTP_403_FORBIDDEN,
+    "NO_ELEGIBLE": status.HTTP_403_FORBIDDEN,
+    "NO_ES_DUENO": status.HTTP_403_FORBIDDEN,
+    "RESENA_PROPIA": status.HTTP_403_FORBIDDEN,
     "VERSION_DISTINTA": status.HTTP_409_CONFLICT,
+    "YA_RESENADO": status.HTTP_409_CONFLICT,
+    "RESENA_EN_MODERACION": status.HTTP_409_CONFLICT,
+    "YA_REPORTADA": status.HTTP_409_CONFLICT,
+    "DEMASIADOS_REPORTES": status.HTTP_429_TOO_MANY_REQUESTS,
     "FALTA_IF_MATCH": status.HTTP_428_PRECONDITION_REQUIRED,
     "NO_AUTENTICADO": status.HTTP_401_UNAUTHORIZED,
     "DEPENDENCIA_NO_DISPONIBLE": status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -48,9 +55,17 @@ def _idioma(request: Request) -> Idioma:
 async def manejar_error_dominio(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ErrorDominio)
     idioma = _idioma(request)
-    cabeceras = {"ETag": f'"{exc.version_actual}"'} if isinstance(exc, VersionDistinta) else None
+    cabeceras = _cabeceras(exc)
     estado = ESTADO_POR_CODIGO.get(exc.codigo, status.HTTP_400_BAD_REQUEST)
     return _respuesta(estado, exc.codigo, mensaje_error(exc, idioma), idioma, cabeceras)
+
+
+def _cabeceras(exc: ErrorDominio) -> dict[str, str] | None:
+    if isinstance(exc, VersionDistinta):
+        return {"ETag": f'"{exc.version_actual}"'}
+    if isinstance(exc, DemasiadosReportes):
+        return {"Retry-After": str(exc.retry_after)}
+    return None
 
 
 async def manejar_validacion(request: Request, exc: Exception) -> JSONResponse:

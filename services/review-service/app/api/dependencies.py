@@ -1,8 +1,8 @@
 """Cableado de casos de uso con sus adaptadores.
 
-Los adaptadores (engine, sesiones) se crean una vez en el lifespan de `main.py` y viven en
-`app.state`; aquí solo se arman los casos de uso por petición. Las pruebas reemplazan estas
-funciones con `app.dependency_overrides`.
+Los adaptadores (engine, sesiones, idempotencia) se crean una vez en el lifespan de
+`main.py` y viven en `app.state`; aquí solo se arman los casos de uso por petición. Las
+pruebas reemplazan estas funciones con `app.dependency_overrides`.
 """
 
 from typing import Annotated
@@ -10,13 +10,34 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from app.application.ports.almacen_idempotencia import AlmacenIdempotencia
 from app.application.use_cases.check_health import CheckHealth
+from app.application.use_cases.editar_resena import EditarResena
+from app.application.use_cases.escribir_resena import EscribirResena
 from app.config import Settings, get_settings
+from app.domain.ports.reloj import Reloj
+from app.domain.ports.unidad_de_trabajo import FabricaUnidadDeTrabajo
 from app.infrastructure.persistence.database import SqlAlchemyDatabaseProbe
 
 
 def get_engine(request: Request) -> AsyncEngine:
     return request.app.state.engine
+
+
+def get_reloj(request: Request) -> Reloj:
+    return request.app.state.reloj
+
+
+def get_unidad_de_trabajo(request: Request) -> FabricaUnidadDeTrabajo:
+    return request.app.state.unidad_de_trabajo
+
+
+def get_idempotencia(request: Request) -> AlmacenIdempotencia:
+    return request.app.state.idempotencia
+
+
+UowDep = Annotated[FabricaUnidadDeTrabajo, Depends(get_unidad_de_trabajo)]
+RelojDep = Annotated[Reloj, Depends(get_reloj)]
 
 
 def get_check_health(
@@ -25,3 +46,11 @@ def get_check_health(
 ) -> CheckHealth:
     probe = SqlAlchemyDatabaseProbe(engine, settings.database_health_timeout_seconds)
     return CheckHealth(database=probe)
+
+
+def get_escribir_resena(uow: UowDep, reloj: RelojDep) -> EscribirResena:
+    return EscribirResena(uow, reloj)
+
+
+def get_editar_resena(uow: UowDep, reloj: RelojDep) -> EditarResena:
+    return EditarResena(uow, reloj)

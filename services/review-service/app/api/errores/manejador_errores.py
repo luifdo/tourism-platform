@@ -1,6 +1,8 @@
 """Traduce errores a respuestas HTTP con el formato común y en el idioma de la petición."""
 
 import logging
+from typing import Any
+from uuid import UUID
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -9,7 +11,15 @@ from starlette.exceptions import HTTPException
 
 from app.api.i18n.mensajes_error import mensaje_codigo, mensaje_error, mensaje_validacion
 from app.api.schemas.error_respuesta import ErrorRespuesta
-from app.domain.errors import DemasiadosReportes, ErrorDominio, VersionDistinta
+from app.api.seguridad.ip_origen import ip_origen
+from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoDenegado
+from app.domain.errors import (
+    DemasiadosReportes,
+    ErrorDominio,
+    NoElegible,
+    RolNoPermitido,
+    VersionDistinta,
+)
 from app.domain.value_objects.idioma import Idioma
 from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 
@@ -29,7 +39,7 @@ ESTADO_POR_CODIGO = {
     "DEMASIADOS_REPORTES": status.HTTP_429_TOO_MANY_REQUESTS,
     "FALTA_IF_MATCH": status.HTTP_428_PRECONDITION_REQUIRED,
     "NO_AUTENTICADO": status.HTTP_401_UNAUTHORIZED,
-    "DEPENDENCIA_NO_DISPONIBLE": status.HTTP_503_SERVICE_UNAVAILABLE,
+    "SOLICITUD_EN_PROCESO": status.HTTP_409_CONFLICT,
     "METODO_NO_PERMITIDO": status.HTTP_405_METHOD_NOT_ALLOWED,
 }
 
@@ -54,10 +64,43 @@ def _idioma(request: Request) -> Idioma:
 
 async def manejar_error_dominio(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ErrorDominio)
+    if isinstance(exc, RolNoPermitido | NoElegible):
+        await _auditar_acceso_denegado(request, exc)
     idioma = _idioma(request)
     cabeceras = _cabeceras(exc)
     estado = ESTADO_POR_CODIGO.get(exc.codigo, status.HTTP_400_BAD_REQUEST)
     return _respuesta(estado, exc.codigo, mensaje_error(exc, idioma), idioma, cabeceras)
+
+
+async def _auditar_acceso_denegado(request: Request, exc: ErrorDominio) -> None:
+    """ESC-04. Si no se puede guardar, se registra en el log y la respuesta 403 sale igual."""
+    auditor: RegistrarAccesoDenegado | None = getattr(request.app.state, "auditor_accesos", None)
+    if auditor is None:
+        return
+    detalles: dict[str, Any] = (
+        {"roles_permitidos": list(exc.detalle.get("permitidos", []))}
+        if isinstance(exc, RolNoPermitido)
+        else {"servicio_id": exc.detalle.get("servicio")}
+    )
+    try:
+        await auditor.execute(
+            usuario_id=_uuid_o_none(request.headers.get("x-usuario-id")),
+            rol=exc.detalle.get("rol") or request.headers.get("x-usuario-rol"),
+            motivo=exc.codigo,
+            detalles=detalles,
+            metodo=request.method,
+            ruta=request.url.path,
+            ip_origen=ip_origen(request),
+        )
+    except Exception:
+        logger.exception("No se pudo auditar el acceso denegado a %s", request.url.path)
+
+
+def _uuid_o_none(valor: str | None) -> UUID | None:
+    try:
+        return UUID(valor) if valor else None
+    except ValueError:
+        return None
 
 
 def _cabeceras(exc: ErrorDominio) -> dict[str, str] | None:

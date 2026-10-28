@@ -570,7 +570,7 @@ components:
       properties:
         puntuacion: { $ref: '#/components/schemas/Puntuacion' }
         aspectos: { $ref: '#/components/schemas/Aspectos' }
-        comentario: { type: string, maxLength: 2000, nullable: true, description: Texto libre; sin HTML. }
+        comentario: { type: string, maxLength: 2000, nullable: true, description: 'Texto libre; se guarda tal cual y se muestra como texto, nunca como HTML.' }
 
     ResenaCrear:
       type: object
@@ -580,7 +580,7 @@ components:
         servicio_id: { type: string, format: uuid }
         puntuacion: { $ref: '#/components/schemas/Puntuacion' }
         aspectos: { $ref: '#/components/schemas/Aspectos' }
-        comentario: { type: string, maxLength: 2000, nullable: true, description: Texto libre; sin HTML. }
+        comentario: { type: string, maxLength: 2000, nullable: true, description: 'Texto libre; se guarda tal cual y se muestra como texto, nunca como HTML.' }
 
     RespuestaGuardar:
       type: object

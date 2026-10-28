@@ -66,9 +66,9 @@ MENSAJES: dict[str, dict[Idioma, str]] = {
         _ES: "Debes iniciar sesión para esta operación.",
         _EN: "You must sign in to perform this operation.",
     },
-    "DEPENDENCIA_NO_DISPONIBLE": {
-        _ES: "Un servicio interno no respondió a tiempo. Intenta de nuevo en un momento.",
-        _EN: "An internal service did not respond in time. Try again shortly.",
+    "SOLICITUD_EN_PROCESO": {
+        _ES: "Este envío ya se está procesando. Espera unos segundos y vuelve a intentarlo.",
+        _EN: "This submission is already being processed. Wait a few seconds and try again.",
     },
     "METODO_NO_PERMITIDO": {
         _ES: "Esta ruta no admite el método {metodo}.",

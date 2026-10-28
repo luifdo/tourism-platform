@@ -51,7 +51,11 @@ app/
 migrations/              # Alembic
 tests/
 ├── unit/
-└── integration/
+└── integration/         # incluye Schemathesis y las pruebas e2e de cada endpoint
+k8s/                     # Kustomize: base y overlay local (Docker Desktop)
+k6/                      # prueba ESC-01 (k6 dentro del clúster)
+scripts/                 # esc01_aislamiento.py: tumba la API de review y mide el aislamiento
+Coordinacion_Modulo_Resenas.md   # qué espera review de los demás módulos
 ```
 
 ## Ejecución
@@ -74,6 +78,19 @@ Los puertos de `docker-compose.dev.yml` (5435, 5674 y 15674) no chocan con los d
 `/health` responde 503 solo si PostgreSQL no contesta: sin RabbitMQ el outbox acumula los eventos y la réplica sigue atendiendo (ESC-01). `/metrics` expone las métricas HTTP para Prometheus.
 
 Toda respuesta que recibe una prueba se valida contra [`review.yaml`](../../contracts/openapi/review.yaml) (`tests/conftest.py`); una prueba que se sale del contrato a propósito lleva `@pytest.mark.sin_contrato`.
+
+## Pruebas
+
+| Capa | Qué comprueba | Dónde |
+|---|---|---|
+| Unitarias | Dominio (estados, reportes, moderación, límite por hora, proyecciones) y errores con su estado HTTP y mensajes es/en | `tests/unit/` |
+| Integración | Repositorios, idempotencia, outbox, relay, consumidores, limpieza y cada endpoint de punta a punta con PostgreSQL y RabbitMQ reales (testcontainers) | `tests/integration/` |
+| Contrato REST | **Toda** respuesta que recibe cualquier prueba se valida contra [`review.yaml`](../../contracts/openapi/review.yaml). Una prueba que se sale del contrato a propósito lleva `@pytest.mark.sin_contrato` | `tests/conftest.py` |
+| Contrato REST (fuzzing) | Schemathesis genera peticiones válidas e inválidas por operación desde el contrato, como Turista, Prestador y Admin, contra la app con la base real: nunca un 500, solo respuestas documentadas. Como inventa los ids, las operaciones sobre una reseña responden 404 antes de llegar a las reglas que dan 400 (`OTRO` sin detalle, `OCULTAR` sin motivo); esas las cubren las pruebas e2e | `tests/integration/test_contrato_schemathesis.py` |
+| Contrato de eventos | Lo que las pruebas publican como booking y catalog, y cada fila que review deja en el outbox, se valida contra `envelope.v1` y su esquema en [`contracts/events/`](../../contracts/events/) | `tests/conftest.py`, `tests/integration/conftest.py` |
+| ESC-01 | k6 contra catalog y review mientras un script tumba la API de review y mide el aislamiento. **Pendiente de medir en el clúster del equipo** | [`k6/`](./k6/README.md) |
+
+`tests/unit/test_pruebas_de_contrato.py` comprueba que los validadores **sí** detectan errores (un cuerpo que no cumple, una operación que no existe, un evento roto); y se comprobó a mano que Schemathesis falla con una copia del contrato estropeada.
 
 ## Despliegue
 

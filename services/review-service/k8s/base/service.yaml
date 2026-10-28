@@ -1,0 +1,16 @@
+# Destino de Traefik (/api/reviews) y de recommendation-service. Solo la API, no el worker.
+apiVersion: v1
+kind: Service
+metadata:
+  name: review-service
+  labels:
+    app.kubernetes.io/name: review-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: review-service
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8004
+      targetPort: http

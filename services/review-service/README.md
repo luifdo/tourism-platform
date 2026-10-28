@@ -75,6 +75,63 @@ Los puertos de `docker-compose.dev.yml` (5435, 5674 y 15674) no chocan con los d
 
 Toda respuesta que recibe una prueba se valida contra [`review.yaml`](../../contracts/openapi/review.yaml) (`tests/conftest.py`); una prueba que se sale del contrato a propósito lleva `@pytest.mark.sin_contrato`.
 
+## Despliegue
+
+### Con el compose del monorepo
+
+`infra/docker-compose.yml` levanta review como catalog: `review-migraciones` aplica las migraciones una vez y termina, y luego arrancan `review-service` (API en :8004) y `review-worker` (métricas en :9104). Solo dependen de `postgres` (base `review_db`) y `rabbitmq`; ni de Valkey ni de otros servicios. Prometheus (http://localhost:9090) ya los tiene como objetivos.
+
+```bash
+cd infra
+cp .env.example .env
+docker compose up -d --build review-service review-worker
+```
+
+Usa los puertos estándar (5432, 5672, 8004, 9104). El `docker-compose.dev.yml` de review usa 5435 y 5674, así que los dos pueden estar arriba a la vez, pero no corras `uvicorn` local en el 8004 mientras el del compose esté levantado.
+
+### Kubernetes (`k8s/`)
+
+Manifiestos con Kustomize (Plan §7.2-7.4), basados en [`templates/service-template/k8s/`](../../templates/service-template/k8s/). Plan §7.3: **1 réplica, HPA hasta 3 al 75 %**; su caída no afecta a catálogo ni a reservas (ESC-01).
+
+| Archivo (`k8s/base/`) | Qué es |
+|---|---|
+| `deployment-api.yaml` | API: 1 réplica, `RollingUpdate` sin indisponibilidad, *startup* hasta 90 s, *readiness* `/health` cada 2 s, *liveness* `/metrics` (no toca la base: si PostgreSQL cae, la réplica sale del tráfico pero no se reinicia). Un `initContainer` aplica las migraciones con el candado de `migrations/env.py`. *Request* de 100m de CPU: en reposo la API usa 25–45m, y con menos el HPA no bajaría nunca de 3 réplicas. |
+| `deployment-worker.yaml` | Worker: 1 réplica, sin HPA ni *readiness* (no recibe tráfico). Se puede subir a 2 sin duplicar publicaciones (SKIP LOCKED, consumidores idempotentes, limpieza repetible). |
+| `hpa.yaml` | De 1 a 3 réplicas de la API al 75 % de CPU. Sube con una ventana de 60 s (la recomendación más baja del último minuto): el pico de CPU al arrancar un pod no hace escalar, una carga sostenida sí. Baja con 300 s para no oscilar. |
+| `networkpolicy.yaml` | A la API solo entran Traefik, `recommendation-service` (tool `resenas_servicio`) y Prometheus por el 8004; al worker, solo Prometheus por el 9104. |
+| `service.yaml`, `configmap.yaml` | Service ClusterIP en el 8004 y la configuración no secreta. |
+
+**Sin PodDisruptionBudget, a propósito:** con 1 réplica, `minAvailable: 1` impediría desalojar el pod y bloquearía el drenado del nodo en mantenimiento; el Plan acepta que review caiga sin afectar a nadie.
+
+**Orden de despliegue:** el worker de review se aplica **antes o junto** con catalog y booking, para que sus colas existan antes de los primeros `servicio.publicado` y `reserva.finalizada` (ver *Orden de despliegue* en el worker).
+
+Las credenciales (`DATABASE_URL`, `RABBITMQ_URL`) van en el Secret `review-secretos`, que cada entorno genera desde un `secretos.env` que no se sube (`overlays/local/secretos.env.example`). Los contenedores corren sin root, con el sistema de archivos de solo lectura y sin *capabilities*.
+
+#### Probarlo en el Kubernetes de Docker Desktop (`k8s/overlays/local/`)
+
+Igual que catalog (su README tiene la guía paso a paso: encender Kubernetes, `metrics-server`, comandos para mirar y cambiar cosas, problemas comunes). En corto, con `postgres` y `rabbitmq` del compose arriba:
+
+```bash
+cd services/review-service
+docker build -t review-service:local .
+cp k8s/overlays/local/secretos.env.example k8s/overlays/local/secretos.env
+kubectl apply -k k8s/overlays/local
+kubectl -n turismo-app rollout status deployment/review-service
+kubectl -n turismo-app port-forward service/review-service 8004:8004   # y curl http://localhost:8004/health
+kubectl delete -k k8s/overlays/local                                   # borrar todo al terminar
+```
+
+Si el compose también tiene `review-service` y `review-worker` corriendo, detenlos (`docker compose stop review-service review-worker`): si no, el 8004 queda ocupado y dos workers consumen las mismas colas (no duplica efectos, pero confunde al mirar logs).
+
+**Qué se comprobó en local (2026-10-27):**
+
+* **Entre módulos, con el compose:** un `reserva.finalizada` publicado como booking dejó el servicio en `/turista/pendientes`; la reseña escrita llegó por el outbox a `catalog.calificaciones` (puntuación 5), y al editarla catalog pasó a 4. Prometheus ve los cuatro objetivos (catalog y review, API y worker) en `up`.
+* **Kubernetes:** migraciones en el `initContainer`, API y worker `1/1`, el worker consume sus dos colas. Con PostgreSQL caído la API pasa a `0/1` sin bajar el worker, y vuelve sola a `1/1`.
+* **HPA:** en reposo se queda en 1 réplica (10–32 % de CPU) también tras reiniciar el pod; con carga sostenida (8 clientes contra el resumen) subió de 1 a 3.
+* **Ajustes que salieron de la prueba:** con el *request* inicial de 50m el HPA nunca bajaba de 3 (la API en reposo ya usaba más del 75 %), y con la ventana de subida en 0 s cada arranque sumaba una réplica por 5 minutos; de ahí los 100m y los 60 s. Con el nodo al 86 % de CPU (compose completo más el clúster en la misma máquina) una *liveness* llegó a vencer y reinició la API una vez: en una máquina tan cargada conviene apagar lo que no se use.
+
+En el clúster k3s real cambian tres cosas: la imagen sale de GHCR (`images` de `k8s/base/kustomization.yaml`), la infraestructura vive en `turismo-datos` (`infra/k8s/`) y el tráfico entra por Traefik. Docker Desktop no aplica las NetworkPolicy; k3s sí.
+
 ## Endpoints implementados
 
 Bajo `/api/reviews` sin StripPrefix (Traefik reenvía la ruta completa). Identidad por `X-Usuario-Id` y `X-Usuario-Rol`, que pone Traefik tras validar el JWT; sin ellas, 401 `NO_AUTENTICADO`.

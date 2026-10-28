@@ -56,4 +56,20 @@ tests/
 
 ## Ejecución
 
-Servicio en Python 3.12 + FastAPI, empaquetado como contenedor y desplegado en Kubernetes (k3s) según el [Plan de Implementación](../../Documents/Pages/Plan_de_Implementacion.md) §7. El código, el `Dockerfile` y los manifiestos se agregan en la Fase 4.
+Requiere [uv](https://docs.astral.sh/uv/) y Python 3.12 (`uv python install 3.12`).
+
+```bash
+docker compose -f docker-compose.dev.yml up -d   # PostgreSQL y RabbitMQ
+uv sync                                          # instala dependencias (incluye dev)
+cp .env.example .env
+uv run alembic upgrade head                      # aplicar migraciones
+uv run uvicorn app.main:app --reload --port 8004
+uv run pytest                                    # unitarias + integración (PostgreSQL en testcontainers)
+uv run ruff check . && uv run ruff format --check .
+```
+
+Los puertos de `docker-compose.dev.yml` (5435, 5674 y 15674) no chocan con los de iam-service ni catalog-service, así que los tres entornos pueden correr a la vez. Review no usa Valkey: la idempotencia (`Idempotency-Key`) y el límite de reportes por hora se guardan en PostgreSQL, porque las reseñas no necesitan esa latencia y así el servicio depende de una pieza menos. Las pruebas de integración levantan su propio PostgreSQL efímero y no tocan la base de desarrollo; sin Docker se omiten.
+
+`/health` responde 503 solo si PostgreSQL no contesta: sin RabbitMQ el outbox acumula los eventos y la réplica sigue atendiendo (ESC-01). `/metrics` expone las métricas HTTP para Prometheus.
+
+Toda respuesta que recibe una prueba se valida contra [`review.yaml`](../../contracts/openapi/review.yaml) (`tests/conftest.py`); una prueba que se sale del contrato a propósito lleva `@pytest.mark.sin_contrato`.

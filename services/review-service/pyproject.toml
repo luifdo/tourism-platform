@@ -1,0 +1,56 @@
+[project]
+name = "review-service"
+version = "0.1.0"
+description = "Módulo 4: Reseñas & Moderación de la Plataforma Digital de Turismo — Santa Marta"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "alembic>=1.14",
+    "asyncpg>=0.30",
+    "prometheus-fastapi-instrumentator>=7.0",
+    "tzdata>=2024.1",
+    "aio-pika>=9.4",
+    "prometheus-client>=0.21",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "testcontainers[postgres,rabbitmq]>=4.8",
+    "openapi-core>=0.23.1",
+    "jsonschema>=4.26.0",
+    "schemathesis>=4.32.4",
+    "pytest-cov>=7.1.0",
+    "httpx>=0.28",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# El SQL de las migraciones se lee mejor sin cortar las expresiones.
+"migrations/versions/*" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Solo app/ tiene __init__.py; importlib evita choques entre pruebas con el mismo nombre.
+addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
+markers = ["sin_contrato: la prueba se sale del contrato a propósito (no se valida la respuesta)"]

@@ -89,6 +89,7 @@ Bajo `/api/reviews` sin StripPrefix (Traefik reenvía la ruta completa). Identid
 | `GET /turista/resenas` | `Turista` | Todas sus reseñas, en cualquier estado, con estado y versión |
 | `GET /turista/pendientes` | `Turista` | Servicios con reserva finalizada y sin reseña suya, de la visita más reciente; el nombre lo toma la PWA del catálogo |
 | `PUT /resenas/{id}/respuesta` | `Prestador` dueño | Crea o reemplaza la respuesta pública (UC21) con `If-Match`. Se puede responder una reseña `EN_REVISION` (es la forma de dar su versión); `OCULTA`, no (409 `RESENA_EN_MODERACION`). 403 `NO_ES_DUENO` si el servicio no es suyo o review aún no conoce su dueño. No publica eventos ni se borra |
+| `POST /resenas/{id}/reportes` | `Turista` o `Prestador` | Reporta una reseña `PUBLICADA` ajena (UC39); 204. Un reporte por usuario y reseña (409 `YA_REPORTADA`), máximo 10 por hora (429 `DEMASIADOS_REPORTES` con `Retry-After`, revisado antes de mirar la reseña). No la oculta: pasa a `EN_REVISION` al tercer reporte o con el del prestador dueño, y su nota sigue contando (no publica eventos). 403 `RESENA_PROPIA`; 404 si no está publicada |
 | `GET /prestador/resenas` | `Prestador` | Reseñas `PUBLICADA` y `EN_REVISION` de sus servicios, con su versión para responder; filtros `servicio_id` (403 `NO_ES_DUENO` si no es suyo) y `sin_respuesta` |
 
 * **Lecturas:** sin bloquear filas, con los índices de la migración 0001 y sin caché (review no usa Valkey). Ninguna llama a otro servicio.

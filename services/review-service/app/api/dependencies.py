@@ -20,6 +20,7 @@ from app.application.use_cases.listar_pendientes import ListarPendientes
 from app.application.use_cases.listar_resenas_prestador import ListarResenasPrestador
 from app.application.use_cases.listar_resenas_servicio import ListarResenasServicio
 from app.application.use_cases.obtener_resena_publica import ObtenerResenaPublica
+from app.application.use_cases.reportar_resena import ReportarResena
 from app.application.use_cases.responder_resena import ResponderResena
 from app.application.use_cases.resumir_servicio import ResumirServicio
 from app.config import Settings, get_settings
@@ -95,3 +96,7 @@ def get_listar_resenas_prestador(consulta: ConsultaDep) -> ListarResenasPrestado
 
 def get_responder_resena(uow: UowDep, reloj: RelojDep) -> ResponderResena:
     return ResponderResena(uow, reloj)
+
+
+def get_reportar_resena(uow: UowDep, reloj: RelojDep) -> ReportarResena:
+    return ReportarResena(uow, reloj)

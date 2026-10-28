@@ -80,6 +80,9 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      # Sin esto la máquina virtual de Erlang hace espera activa y gasta 70-115 % de CPU sin
+      # trabajo, quitándosela al resto del entorno local (se vio al medir ESC-01).
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+sbwt none +sbwtdcpu none +sbwtdio none"
     ports:
       - "5672:5672"     # AMQP
       - "15672:15672"   # consola web

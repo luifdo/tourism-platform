@@ -86,7 +86,8 @@ El worker corre a la vez, en un mismo bucle asyncio (`asyncio.gather`), estos co
 | Componente | Objetivo | Código |
 |---|---|---|
 | Relay del outbox | Llevar a RabbitMQ los eventos que la API guarda en la tabla `outbox` (`resena.publicada`, `resena.ocultada`; más adelante `auditoria.registrada`) | `RelayOutbox`, `PublicarEventosPendientes`, `SqlOutboxPendiente`, `PublicadorRabbitMQ` |
-| Consumidores | `review.elegibilidad` (`reserva.finalizada`) y `review.servicios` (`servicio.publicado`); llegan en el paso 5 | `ConsumidorRabbitMQ` |
+| `review.elegibilidad` | Quién puede reseñar cada servicio y el mes de su visita (`reserva.finalizada` de booking) | `ManejadorElegibilidad`, `RegistrarVisita` |
+| `review.servicios` | Qué prestador es dueño de cada servicio (`servicio.publicado` de catalog) | `ManejadorServicios`, `RegistrarDuenoServicio` |
 | Limpieza diaria | Borrar la idempotencia vencida y `evento_procesado` viejo | `TareaPeriodica`, `LimpiarRegistrosVencidos`, `SqlRegistrosVencidos` |
 | Métricas | `/metrics` para Prometheus y sonda de vida en k8s | `start_http_server(WORKER_METRICS_PORT)` |
 
@@ -107,6 +108,26 @@ Todo está copiado de catalog-service (no importado: los servicios no comparten 
 ### Consumidores: base común
 
 `ConsumidorRabbitMQ` ([`consumidor_rabbitmq.py`](app/infrastructure/messaging/consumidor_rabbitmq.py)): cola durable `review.<propósito>`, prefetch `CONSUMIDOR_PREFETCH` (10), solo `version` 1 del sobre, reintentos a 1 s, 5 s y 25 s y luego la DLQ con `x-cola`, `x-intentos` y `x-error`. Un error permanente (sobre o payload fuera de contrato, `EventoInvalido`, `DatoInvalido`) va directo a la DLQ. El original se reconoce solo después de copiarlo al reintento o a la DLQ: no se pierde nada. La idempotencia por `event_id` la hace cada caso de uso en la misma transacción de su efecto.
+
+### `review.elegibilidad` (booking → quién puede reseñar)
+
+**Objetivo:** saber, sin llamar a booking, qué turista tiene una reserva finalizada de qué servicio (RF-14). Con esa fila el servicio aparece en `/turista/pendientes` y `POST /resenas` lo admite; sin ella, 403 `NO_ELEGIBLE`.
+
+* Clave `reserva.finalizada`. Del payload usa `turista_id`, `servicio_id` y `fecha_reserva`; ignora lo demás.
+* Guarda una fila por turista y servicio con la **visita más reciente** (`GREATEST` en la base: dos eventos a la vez no la hacen retroceder). Una visita más vieja o igual queda registrada como procesada y no cambia nada (`ignorado`).
+* El mes de la reseña se toma de aquí al escribirla o editarla. Una visita posterior no cambia el mes de una reseña ya escrita hasta que el turista la edite: el texto habla de la visita sobre la que escribió.
+
+### `review.servicios` (catalog → dueño de cada servicio)
+
+**Objetivo:** saber, sin llamar a catalog, qué prestador es dueño de cada servicio: solo él responde sus reseñas (UC21) y su reporte las pasa a revisión (UC39).
+
+* Clave `servicio.publicado`. Usa `servicio_id`, `prestador_usuario_id` y `version`.
+* Descarta las versiones iguales o menores a la guardada (`WHERE version <` en la base), así el orden de llegada no importa.
+* `activo` se ignora a propósito: un servicio desactivado conserva sus reseñas y su dueño puede seguir respondiéndolas. Un prestador suspendido ya no inicia sesión (lo controla iam).
+
+### Orden de despliegue
+
+RabbitMQ descarta un mensaje si ninguna cola está enlazada a su clave. Por eso **el worker de review se despliega antes o junto con catalog y booking**: si catalog publicara servicios antes de que exista `review.servicios`, review no sabría sus dueños y esos prestadores no podrían responder (403 `NO_ES_DUENO`); lo mismo con las reservas finalizadas antes de `review.elegibilidad`. Una vez declaradas, las colas son durables y guardan los mensajes aunque el worker esté caído: el riesgo existe solo en el primer despliegue. En una plataforma nueva no hay datos previos, así que no pasa nada.
 
 ### Limpieza diaria
 

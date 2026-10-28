@@ -75,6 +75,21 @@ Los puertos de `docker-compose.dev.yml` (5435, 5674 y 15674) no chocan con los d
 
 Toda respuesta que recibe una prueba se valida contra [`review.yaml`](../../contracts/openapi/review.yaml) (`tests/conftest.py`); una prueba que se sale del contrato a propósito lleva `@pytest.mark.sin_contrato`.
 
+## Endpoints implementados
+
+Bajo `/api/reviews` sin StripPrefix (Traefik reenvía la ruta completa). Identidad por `X-Usuario-Id` y `X-Usuario-Rol`, que pone Traefik tras validar el JWT; sin ellas, 401 `NO_AUTENTICADO`.
+
+| Ruta | Quién | Qué hace |
+|---|---|---|
+| `POST /resenas` | `Turista` | Escribe la reseña (UC15). 201 con `ResenaPropia` y `ETag`. 403 `NO_ELEGIBLE` sin reserva finalizada; 409 `YA_RESENADO` si ya reseñó el servicio. Admite `Idempotency-Key` |
+| `PUT /resenas/{id}` | Su autor | Edita la reseña con `If-Match`. 409 `VERSION_DISTINTA` (con el `ETag` actual) o `RESENA_EN_MODERACION`; 403 `NO_ES_DUENO`; 428 sin `If-Match` |
+
+* **Anónima:** la respuesta dice "Turista verificado" (o "Verified tourist") y el mes de la visita; nunca el nombre ni el id del turista.
+* **El comentario se guarda tal cual**, sin quitar etiquetas: la PWA debe mostrarlo como texto, nunca como HTML. Así se evita el XSS sin cambiar lo que escribió el turista ("precio < 50 mil").
+* **Evento:** crear y editar guardan `resena.publicada` en el outbox en la misma transacción.
+* **Auditoría (ESC-04):** `ROL_NO_PERMITIDO` y `NO_ELEGIBLE` se publican como `auditoria.registrada` (`ACCESS_DENIED`) con el usuario, el rol, el motivo, los roles permitidos o el servicio, el método, la ruta y la IP de `X-Forwarded-For`. Si no se puede guardar, queda en el log y el 403 sale igual.
+* **Idempotencia:** la clave se guarda por usuario, método y ruta en PostgreSQL. Un reenvío devuelve la misma respuesta con `Idempotent-Replayed: true`; si el primero sigue en curso, 409 `SOLICITUD_EN_PROCESO`.
+
 ## Worker y mensajería (RabbitMQ)
 
 La API no publica en RabbitMQ ni consume eventos: todo el trabajo en segundo plano lo hace el **worker** ([`app/worker.py`](app/worker.py)), un proceso aparte que usa la misma imagen con otro comando (`python -m app.worker`) y tendrá su propio Deployment.

@@ -20,7 +20,8 @@ class ResenaModelo(Base):
     puntuacion: Mapped[int] = mapped_column(SmallInteger)
     aspectos: Mapped[dict[str, int]] = mapped_column(JSONB)
     comentario: Mapped[str | None] = mapped_column(Text)
-    respuesta: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # none_as_null: sin respuesta es NULL de SQL (no `null` de JSON), para filtrar con IS NULL.
+    respuesta: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     ultima_visita: Mapped[date]
     estado: Mapped[str] = mapped_column(Text)
     reportes_pendientes: Mapped[int]

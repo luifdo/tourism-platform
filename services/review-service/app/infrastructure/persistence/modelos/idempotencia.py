@@ -15,5 +15,5 @@ class IdempotenciaModelo(Base):
     clave: Mapped[str] = mapped_column(Text, primary_key=True)
     estado_http: Mapped[int | None]
     cuerpo: Mapped[bytes | None] = mapped_column(LargeBinary)
-    cabeceras: Mapped[dict[str, str] | None] = mapped_column(JSONB)
+    cabeceras: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
     expira_en: Mapped[datetime]

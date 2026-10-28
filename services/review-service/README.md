@@ -83,7 +83,14 @@ Bajo `/api/reviews` sin StripPrefix (Traefik reenvía la ruta completa). Identid
 |---|---|---|
 | `POST /resenas` | `Turista` | Escribe la reseña (UC15). 201 con `ResenaPropia` y `ETag`. 403 `NO_ELEGIBLE` sin reserva finalizada; 409 `YA_RESENADO` si ya reseñó el servicio. Admite `Idempotency-Key` |
 | `PUT /resenas/{id}` | Su autor | Edita la reseña con `If-Match`. 409 `VERSION_DISTINTA` (con el `ETag` actual) o `RESENA_EN_MODERACION`; 403 `NO_ES_DUENO`; 428 sin `If-Match` |
+| `GET /servicios/{id}/resenas` | Pública | Solo las `PUBLICADA`, por `recientes` (por defecto), `mejores` o `peores`; `pagina` y `tamano` (1–50, 20 por defecto). La usa la tool `resenas_servicio` |
+| `GET /servicios/{id}/resumen` | Pública | Total, promedio con 2 decimales, distribución 1–5 y promedio de cada aspecto. Cuentan las `PUBLICADA` y las `EN_REVISION` (igual que catalog); las `OCULTA`, no. Sin reseñas: `total: 0`, `promedio: null` |
+| `GET /resenas/{id}` | Pública | La reseña si está `PUBLICADA`; si no, 404 |
+| `GET /turista/resenas` | `Turista` | Todas sus reseñas, en cualquier estado, con estado y versión |
+| `GET /turista/pendientes` | `Turista` | Servicios con reserva finalizada y sin reseña suya, de la visita más reciente; el nombre lo toma la PWA del catálogo |
+| `GET /prestador/resenas` | `Prestador` | Reseñas `PUBLICADA` y `EN_REVISION` de sus servicios, con su versión para responder; filtros `servicio_id` (403 `NO_ES_DUENO` si no es suyo) y `sin_respuesta` |
 
+* **Lecturas:** sin bloquear filas, con los índices de la migración 0001 y sin caché (review no usa Valkey). Ninguna llama a otro servicio.
 * **Anónima:** la respuesta dice "Turista verificado" (o "Verified tourist") y el mes de la visita; nunca el nombre ni el id del turista.
 * **El comentario se guarda tal cual**, sin quitar etiquetas: la PWA debe mostrarlo como texto, nunca como HTML. Así se evita el XSS sin cambiar lo que escribió el turista ("precio < 50 mil").
 * **Evento:** crear y editar guardan `resena.publicada` en el outbox en la misma transacción.

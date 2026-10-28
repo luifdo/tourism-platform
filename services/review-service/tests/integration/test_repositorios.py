@@ -64,6 +64,16 @@ class TestResenas:
             del_turista = await u.resenas.obtener_de_turista(r.turista_id, r.servicio_id)
         assert leida == r == del_turista
 
+    async def test_sin_respuesta_es_null_de_sql(self, uow: Fabrica, engine: AsyncEngine) -> None:
+        """No `null` de JSON: el filtro `sin_respuesta` usa `respuesta IS NULL`."""
+        r = nueva_resena()
+        await guardar(uow, r)
+        async with engine.connect() as conn:
+            sin_respuesta = await conn.scalar(
+                text("SELECT respuesta IS NULL FROM resena WHERE id = :id"), {"id": r.id}
+            )
+        assert sin_respuesta is True
+
     async def test_respuesta_y_estado_en_jsonb(self, uow: Fabrica) -> None:
         r = nueva_resena()
         dueno = uuid4()

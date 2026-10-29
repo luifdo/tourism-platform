@@ -13,6 +13,7 @@ from src.config import Configuracion
 from src.infrastructure.http import chat, health
 from src.infrastructure.http.errores import registrar_manejadores
 from src.infrastructure.llm.fabrica import crear_modelo
+from src.infrastructure.llm.modelo_groq import ModeloGroq
 from src.infrastructure.persistence.base_de_datos import SondaPostgres, crear_motor
 from src.infrastructure.persistence.registro_recomendaciones_pg import (
     RegistroRecomendacionesPostgres,
@@ -35,10 +36,13 @@ def create_app(
     motor = crear_motor(config.db_url)
     valkey = crear_cliente_valkey(config.valkey_url)
     cliente_http = httpx.AsyncClient(timeout=config.herramientas_timeout_segundos)
+    modelo = modelo or crear_modelo(config)
 
     @asynccontextmanager
     async def ciclo_de_vida(_: FastAPI) -> AsyncIterator[None]:
         yield
+        if isinstance(modelo, ModeloGroq):
+            await modelo.cerrar()
         await cliente_http.aclose()
         await valkey.aclose()
         await motor.dispose()
@@ -46,7 +50,7 @@ def create_app(
     app = FastAPI(title="recommendation-service", version="1.0.0", lifespan=ciclo_de_vida)
     app.state.verificar_salud = VerificarSalud(SondaPostgres(motor), SondaValkey(valkey))
     app.state.responder_mensaje = ResponderMensaje(
-        modelo=modelo or crear_modelo(config),
+        modelo=modelo,
         herramientas=HerramientasPlataforma(
             cliente_http, config.catalog_url, config.booking_url, config.review_url
         ),

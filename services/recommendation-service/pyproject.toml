@@ -13,6 +13,7 @@ dependencies = [
     "redis>=5.2",
     "pydantic-settings>=2.6",
     "httpx>=0.28",
+    "groq>=0.30",
 ]
 
 [dependency-groups]
@@ -43,7 +44,9 @@ select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "ASYNC"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "--import-mode=importlib"
+# Las pruebas `groq` llaman al proveedor real y consumen cuota: solo con `pytest -m groq`.
+addopts = "--import-mode=importlib -m 'not groq'"
+markers = ["groq: llaman a la API real de Groq (requieren LLM_API_KEY en .env)"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 

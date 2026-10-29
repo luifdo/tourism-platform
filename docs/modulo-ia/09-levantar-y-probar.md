@@ -27,14 +27,14 @@ El compose levanta el servicio, PostgreSQL (`localhost:5434`), Valkey (`localhos
 | Mock (Fase 2) | `curl "localhost:9000/api/catalog/buscar?zona=minca"` | Dos servicios de Minca con el formato de `catalog.yaml` |
 | Mock con identidad | `curl localhost:9000/api/catalog/analitica/capacidad -H "X-Usuario-Id: 7c0e7a52-6f4b-4d65-9a3e-2f1d8b0c4e11" -H "X-Usuario-Rol: Turista"` | Las 5 zonas con su nivel, sin cifras; 401 sin los encabezados |
 
-Chat (Fase 3), sin proveedor de IA configurado:
+Chat (fases 3 a 5):
 
 | Comprobación | Comando | Resultado esperado |
 |---|---|---|
-| Chat sin proveedor | `curl -X POST localhost:8005/api/recommendations/chat -H "X-Usuario-Id: 7c0e7a52-6f4b-4d65-9a3e-2f1d8b0c4e11" -H "X-Usuario-Rol: Turista" -H "Content-Type: application/json" -d '{"mensaje":"¿Qué puedo hacer en Taganga?"}'` | 503 `ASISTENTE_NO_DISPONIBLE` hasta la Fase 5 (con Groq: respuesta con recomendaciones justificadas) |
+| Chat | `curl -X POST localhost:8005/api/recommendations/chat -H "X-Usuario-Id: 7c0e7a52-6f4b-4d65-9a3e-2f1d8b0c4e11" -H "X-Usuario-Rol: Turista" -H "Content-Type: application/json" -d '{"mensaje":"¿Qué puedo hacer en Taganga?"}'` | Con Groq configurado: respuesta con recomendaciones justificadas (gasta cuota). Sin `LLM_API_KEY`: 503 `ASISTENTE_NO_DISPONIBLE` |
 | Chat sin identidad | El mismo `curl` sin `X-Usuario-Id` | 401 `NO_AUTENTICADO` |
 | Mensaje vacío (Fase 4) | El mismo `curl` con `-d '{"mensaje":"   "}'` | 400 `VALIDACION` |
-| Límite de mensajes (Fase 4) | El mismo `curl` 11 veces seguidas con el mismo `X-Usuario-Id` | Las 10 primeras pasan (hoy, 503 sin proveedor) y la 11.ª da 429 `DEMASIADAS_SOLICITUDES` |
+| Límite de mensajes (Fase 4) | El mismo `curl` 11 veces seguidas con el mismo `X-Usuario-Id` | Las 10 primeras pasan y la 11.ª da 429 `DEMASIADAS_SOLICITUDES` |
 
 La conversación completa (respuesta, fila en `recomendacion_log` y sesión que recuerda el contexto) se verifica con `tests/integration/test_chat_integracion.py`, que usa PostgreSQL, Valkey y el mock reales con un modelo con guion.
 
@@ -55,6 +55,16 @@ Las de integración necesitan `docker compose up -d postgres valkey mock-platafo
 Las tools se prueban de dos formas: las unitarias (`tests/unit/test_herramientas.py`) corren contra el mock en el mismo proceso y simulan las fallas de red con `httpx.MockTransport`, sin necesitar contenedores; las de integración (`tests/integration/test_herramientas_integracion.py`) llaman al contenedor `mock-plataforma` por HTTP real. Además, `tests/unit/test_mock_contratos.py` valida el mock contra los contratos de catalog, booking y review.
 
 En Windows, `tests/conftest.py` cambia el bucle de eventos de asyncio porque `psycopg` asíncrono no funciona con el bucle por defecto; en el contenedor no aplica.
+
+### Pruebas con Groq real (Fase 5)
+
+`tests/integration/test_groq_real.py` llama a la API real de Groq y **consume cuota**, así que `pytest` a secas no las corre (`-m 'not groq'` en `pyproject.toml`). Para correrlas, con `LLM_API_KEY` en `.env` y el compose arriba:
+
+```bash
+uv run pytest -m groq -s    # 2 conversaciones reales (es/en) y una con clave inválida
+```
+
+Son 2 conversaciones a propósito: con el plan gratuito (8000 tokens por minuto) no conviene correrlas seguidas varias veces. La prueba de la clave inválida no consume cuota, porque Groq rechaza la petición antes de procesarla. Las pruebas unitarias del adaptador (`tests/unit/test_modelo_groq.py`) usan el SDK real con la red simulada y no gastan nada.
 
 La prueba de contrato (`tests/unit/test_contrato.py`) comprueba que el código no exponga ninguna ruta que `contracts/openapi/recommendation.yaml` no declare. El contrato manda: se cambia primero, y el código lo sigue.
 

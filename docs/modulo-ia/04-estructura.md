@@ -29,7 +29,7 @@ services/recommendation-service/
     └── integration/
 ```
 
-Las carpetas `llm/` y `tools/` son nuevas respecto a la plantilla; la plantilla trae `messaging/`, que se quitó porque este módulo no usa RabbitMQ. Desde la Fase 1, `domain/`, `application/ports/` y `persistence/` tienen código; además se agregó `db/` con el script SQL de la tabla y `src/config.py` con la configuración. En la Fase 2 se llenaron `tools/` y `mocks/`, y se agregó el puerto `application/ports/herramientas.py`. En la Fase 3 se agregaron el puerto `modelo_de_lenguaje.py`, el caso de uso `responder_mensaje.py`, el endpoint `http/chat.py` y los dobles de prueba `tests/fakes.py`. En la Fase 4, `domain/privacidad.py`, los puertos `limite_de_tasa.py` y `errores.py`, y el limitador `LimiteValkey`.
+Las carpetas `llm/` y `tools/` son nuevas respecto a la plantilla; la plantilla trae `messaging/`, que se quitó porque este módulo no usa RabbitMQ. Desde la Fase 1, `domain/`, `application/ports/` y `persistence/` tienen código; además se agregó `db/` con el script SQL de la tabla y `src/config.py` con la configuración. En la Fase 2 se llenaron `tools/` y `mocks/`, y se agregó el puerto `application/ports/herramientas.py`. En la Fase 3 se agregaron el puerto `modelo_de_lenguaje.py`, el caso de uso `responder_mensaje.py`, el endpoint `http/chat.py` y los dobles de prueba `tests/fakes.py`. En la Fase 4, `domain/privacidad.py`, los puertos `limite_de_tasa.py` y `errores.py`, y el limitador `LimiteValkey`. En la Fase 5, el adaptador `llm/modelo_groq.py`.
 
 ---
 [← Stack elegido](./03-stack.md) · [Dockerfile (explicado) →](./05-dockerfile.md)

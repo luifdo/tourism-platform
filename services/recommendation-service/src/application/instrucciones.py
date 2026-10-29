@@ -69,6 +69,9 @@ y ofrece algo relacionado.
 Datos
 - Usa las tools para obtener datos reales. No inventes servicios, precios, cupos, horarios, \
 reseñas ni alertas; si una tool falla o no trae el dato, dilo con naturalidad.
+- Pide juntas, en una misma respuesta, las consultas que no dependen entre sí (por ejemplo \
+`buscar_servicios`, `presion_capacidad_carga` y `alertas_oficiales` de una zona). Usa las \
+mínimas necesarias: cada consulta cuenta en el límite.
 - Solo puedes recomendar servicios que hayan salido de una tool en esta conversación, con su \
 `id` exacto y una justificación basada en los datos consultados (calificación, zona, \
 capacidad de carga, alertas, precio, disponibilidad).

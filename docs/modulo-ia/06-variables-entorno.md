@@ -23,7 +23,9 @@ HERRAMIENTAS_TIMEOUT_SEGUNDOS=5
 # Proveedor de IA (Fase 5); ver 08-simulacion.md
 LLM_PROVIDER=groq
 LLM_API_KEY=
-LLM_MODEL=
+LLM_MODEL=openai/gpt-oss-120b
+# Esfuerzo de razonamiento (modelos gpt-oss): low gasta menos tokens; vacío = no se envía
+LLM_REASONING_EFFORT=low
 # Tiempo máximo de una consulta completa al chat (modelo + tools), en segundos
 CHAT_TIMEOUT_SEGUNDOS=45
 # Mensajes que puede enviar cada turista por ventana (cuida la cuota del proveedor)
@@ -31,7 +33,7 @@ CHAT_LIMITE_MENSAJES=10
 CHAT_LIMITE_VENTANA_SEGUNDOS=300
 ```
 
-Las variables del proveedor de IA son genéricas (`LLM_*`). `LLM_PROVIDER=groq` elige el adaptador de Groq; `LLM_API_KEY` es la clave de Groq (queda vacía hasta la Fase 5) y `LLM_MODEL` el modelo de Groq que se use, que debe admitir llamada a funciones (tools). En Kubernetes la clave será un `Secret` y el modelo un `ConfigMap`.
+Las variables del proveedor de IA son genéricas (`LLM_*`). `LLM_PROVIDER=groq` elige el adaptador de Groq; `LLM_API_KEY` es la clave de Groq (solo en el `.env` local, nunca en el repositorio) y `LLM_MODEL` el modelo de Groq que se use, que debe admitir llamada a funciones (tools); si queda vacío se usa `openai/gpt-oss-120b`. `LLM_REASONING_EFFORT` (`low` por defecto) reduce los tokens de razonamiento de los modelos gpt-oss; vacío, no se envía. En Kubernetes la clave será un `Secret` y el modelo un `ConfigMap`.
 
 > **Decisión del equipo:** se usan variables genéricas `LLM_*` y no `GEMINI_*` ni `GROQ_*`, para que cambiar de proveedor no obligue a renombrar variables. El SRS y el Plan todavía nombran `GEMINI_API_KEY` y `GEMINI_MODEL`, de cuando el proveedor previsto era Gemini.
 

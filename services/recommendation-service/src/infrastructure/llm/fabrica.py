@@ -9,6 +9,7 @@ from src.application.ports.modelo_de_lenguaje import (
     RespuestaModelo,
 )
 from src.config import Configuracion
+from src.infrastructure.llm.modelo_groq import crear_modelo_groq
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +32,20 @@ class SinProveedor:
 
 
 def crear_modelo(config: Configuracion) -> ModeloDeLenguaje:
-    """Elige el adaptador según LLM_PROVIDER. El de Groq se agrega en la Fase 5."""
-    if config.llm_provider:
-        logger.warning(
-            "LLM_PROVIDER=%s todavía no tiene adaptador; el chat responderá 503",
-            config.llm_provider,
+    """Elige el adaptador según LLM_PROVIDER. Agregar un proveedor es agregar una rama aquí."""
+    proveedor = config.llm_provider.strip().lower()
+    clave = config.llm_api_key.get_secret_value().strip()
+    if proveedor == "groq":
+        if not clave:
+            logger.warning("LLM_PROVIDER=groq sin LLM_API_KEY; el chat responderá 503")
+            return SinProveedor()
+        return crear_modelo_groq(
+            clave,
+            config.llm_model,
+            config.llm_reasoning_effort,
+            # El modelo nunca puede tardar más que la consulta completa.
+            timeout_segundos=config.chat_timeout_segundos,
         )
+    if proveedor:
+        logger.warning("LLM_PROVIDER=%s no tiene adaptador; el chat responderá 503", proveedor)
     return SinProveedor()

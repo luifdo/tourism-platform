@@ -22,6 +22,8 @@ class Configuracion(BaseSettings):
     llm_provider: str = ""
     llm_api_key: SecretStr = SecretStr("")
     llm_model: str = ""
+    # `low` gasta menos tokens en los modelos de razonamiento (gpt-oss); vacío = no se envía.
+    llm_reasoning_effort: str = "low"
     # Tiempo máximo de una consulta completa al chat (modelo + tools).
     chat_timeout_segundos: float = 45.0
     # Límite de mensajes por turista: cuida la cuota del proveedor y evita abusos.

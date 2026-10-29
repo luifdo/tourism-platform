@@ -211,3 +211,76 @@ def test_la_clave_no_aparece_al_imprimir_la_configuracion():
 
     assert CLAVE not in repr(config)
     assert CLAVE not in str(config.model_dump())
+
+
+class GroqEnSecuencia(Groq):
+    """Responde en orden, una respuesta por petición."""
+
+    def __init__(self, *respuestas: httpx.Response) -> None:
+        super().__init__(httpx.Response(500))
+        self._respuestas = list(respuestas)
+
+    def __call__(self, peticion: httpx.Request) -> httpx.Response:
+        self.cuerpos.append(json.loads(peticion.content))
+        return self._respuestas.pop(0)
+
+
+TOOL_USE_FAILED = httpx.Response(
+    400,
+    json={
+        "error": {
+            "message": "Failed to call a function.",
+            "type": "invalid_request_error",
+            "code": "tool_use_failed",
+            "failed_generation": '<|call|>buscar_servicios {"zona": minca}',
+        }
+    },
+)
+
+
+async def test_tool_use_failed_se_reintenta_una_vez(caplog):
+    groq = GroqEnSecuencia(TOOL_USE_FAILED, httpx.Response(200, json=_completion("Listo")))
+
+    respuesta = await _modelo(groq).generar("x", [MensajeTurista("hola")], [])
+
+    assert respuesta.texto == "Listo"
+    assert len(groq.cuerpos) == 2
+    assert "buscar_servicios" in caplog.text
+
+
+async def test_tool_use_failed_dos_veces_es_modelo_no_disponible():
+    groq = GroqEnSecuencia(TOOL_USE_FAILED, TOOL_USE_FAILED)
+
+    with pytest.raises(ModeloNoDisponibleError):
+        await _modelo(groq).generar("x", [MensajeTurista("hola")], [])
+
+    assert len(groq.cuerpos) == 2
+
+
+async def test_otros_errores_no_se_reintentan():
+    groq = GroqEnSecuencia(httpx.Response(401, json={"error": {"code": "invalid_api_key"}}))
+
+    with pytest.raises(ModeloNoDisponibleError):
+        await _modelo(groq).generar("x", [MensajeTurista("hola")], [])
+
+    assert len(groq.cuerpos) == 1
+
+
+async def test_groq_no_valida_por_su_cuenta_los_nombres_de_tools():
+    groq = Groq(httpx.Response(200, json=_completion("Hola")))
+
+    await _modelo(groq).generar("x", [MensajeTurista("hola")], [])
+
+    assert groq.cuerpos[0]["disable_tool_validation"] is True
+
+
+async def test_output_parse_failed_tambien_se_reintenta_una_vez():
+    falla = httpx.Response(
+        400, json={"error": {"message": "Parsing failed", "code": "output_parse_failed"}}
+    )
+    groq = GroqEnSecuencia(falla, httpx.Response(200, json=_completion("Listo")))
+
+    respuesta = await _modelo(groq).generar("x", [MensajeTurista("hola")], [])
+
+    assert respuesta.texto == "Listo"
+    assert len(groq.cuerpos) == 2

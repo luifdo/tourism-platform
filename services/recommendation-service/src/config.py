@@ -9,6 +9,8 @@ class Configuracion(BaseSettings):
     puertos que publica docker-compose.yml.
     """
 
+    log_level: str = "INFO"
+
     db_url: str = "postgresql+psycopg://turismo:turismo@localhost:5434/recommendation_db"
     valkey_url: str = "redis://localhost:6380/0"
 

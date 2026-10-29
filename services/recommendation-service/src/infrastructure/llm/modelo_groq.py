@@ -22,6 +22,10 @@ from src.application.ports.modelo_de_lenguaje import (
 logger = logging.getLogger(__name__)
 
 MODELO_POR_DEFECTO = "openai/gpt-oss-120b"
+# Groq responde 400 con estos códigos cuando no logra leer lo que generó el modelo (la
+# llamada a tool o la salida). La generación varía, así que un reintento suele salir bien.
+FALLAS_DE_LECTURA = {"tool_use_failed", "output_parse_failed"}
+REINTENTOS_FALLA_DE_LECTURA = 1
 
 
 class ModeloGroq:
@@ -32,7 +36,9 @@ class ModeloGroq:
         cliente: AsyncGroq,
         modelo: str = MODELO_POR_DEFECTO,
         esfuerzo_razonamiento: str = "",
-        max_tokens: int = 2048,
+        # Groq descuenta este máximo de la cuota por minuto al recibir la petición, aunque
+        # no se use: las respuestas reales rondan 50-250 tokens.
+        max_tokens: int = 1024,
     ) -> None:
         self._cliente = cliente
         self._modelo = modelo
@@ -49,28 +55,43 @@ class ModeloGroq:
         mensajes: Sequence[MensajeModelo],
         herramientas: Sequence[DeclaracionHerramienta],
     ) -> RespuestaModelo:
-        opciones: dict[str, Any] = {}
+        peticion: dict[str, Any] = {
+            "model": self._modelo,
+            "messages": [{"role": "system", "content": instrucciones}, *map(_mensaje, mensajes)],
+            "tools": [_tool(h) for h in herramientas],
+            "tool_choice": "auto",
+            # Una tool desconocida no corta la petición: la rechaza nuestro servicio y el
+            # modelo recibe HERRAMIENTA_DESCONOCIDA para corregirse.
+            "disable_tool_validation": True,
+            "temperature": 0.2,
+            "max_completion_tokens": self._max_tokens,
+        }
         if self._esfuerzo_razonamiento:
             # Menos razonamiento = menos tokens y menos latencia (solo modelos que lo admiten).
-            opciones["reasoning_effort"] = self._esfuerzo_razonamiento
-        try:
-            respuesta = await self._cliente.chat.completions.create(
-                model=self._modelo,
-                messages=[{"role": "system", "content": instrucciones}, *map(_mensaje, mensajes)],
-                tools=[_tool(h) for h in herramientas],
-                tool_choice="auto",
-                temperature=0.2,
-                max_completion_tokens=self._max_tokens,
-                **opciones,
-            )
-        except groq.APIStatusError as exc:
-            # 401 clave inválida, 429 límite, 5xx caído, 400 tool_use_failed: para el turista,
-            # todo es "el asistente no está disponible". El cuerpo no lleva la clave.
-            logger.warning("Groq respondió %s: %s", exc.status_code, _codigo(exc))
-            raise ModeloNoDisponibleError(f"Groq respondió {exc.status_code}") from exc
-        except (groq.APIConnectionError, groq.APIError) as exc:
-            logger.warning("No se pudo hablar con Groq: %s", type(exc).__name__)
-            raise ModeloNoDisponibleError("Groq no responde") from exc
+            peticion["reasoning_effort"] = self._esfuerzo_razonamiento
+
+        for intento in range(1 + REINTENTOS_FALLA_DE_LECTURA):
+            try:
+                respuesta = await self._cliente.chat.completions.create(**peticion)
+                break
+            except groq.APIStatusError as exc:
+                codigo = _codigo(exc)
+                if codigo in FALLAS_DE_LECTURA and intento < REINTENTOS_FALLA_DE_LECTURA:
+                    # La generación varía: un nuevo intento suele producir una llamada válida.
+                    logger.warning(
+                        "Groq no pudo leer lo que generó el modelo (%s); se reintenta. "
+                        "Generado: %.300r",
+                        codigo,
+                        _generacion_fallida(exc),
+                    )
+                    continue
+                # 401 clave inválida, 429 límite, 5xx caído: para el turista, todo es
+                # "el asistente no está disponible". El cuerpo no lleva la clave.
+                logger.warning("Groq respondió %s: %s", exc.status_code, codigo)
+                raise ModeloNoDisponibleError(f"Groq respondió {exc.status_code}") from exc
+            except (groq.APIConnectionError, groq.APIError) as exc:
+                logger.warning("No se pudo hablar con Groq: %s", type(exc).__name__)
+                raise ModeloNoDisponibleError("Groq no responde") from exc
 
         if respuesta.usage is not None:
             # Para vigilar la cuota (el plan gratuito limita los tokens por minuto).
@@ -159,7 +180,16 @@ def _argumentos(crudos: str | None) -> dict[str, Any]:
     return argumentos if isinstance(argumentos, dict) else {}
 
 
-def _codigo(exc: groq.APIStatusError) -> str:
+def _error(exc: groq.APIStatusError) -> dict[str, Any]:
     cuerpo = exc.body if isinstance(exc.body, dict) else {}
     error = cuerpo.get("error", cuerpo)
-    return str(error.get("code") or error.get("type") or "") if isinstance(error, dict) else ""
+    return error if isinstance(error, dict) else {}
+
+
+def _codigo(exc: groq.APIStatusError) -> str:
+    error = _error(exc)
+    return str(error.get("code") or error.get("type") or "")
+
+
+def _generacion_fallida(exc: groq.APIStatusError) -> str:
+    return str(_error(exc).get("failed_generation") or "")

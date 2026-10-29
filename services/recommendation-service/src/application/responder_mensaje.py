@@ -10,6 +10,7 @@ from uuid import UUID
 
 from src.application.instrucciones import (
     DECLARACION_RESPONDER,
+    HORA_COLOMBIA,
     MENSAJE_LIMITE,
     MENSAJE_VACIO,
     ORIGEN_DATOS,
@@ -20,6 +21,7 @@ from src.application.instrucciones import (
 from src.application.ports.herramientas import ContextoTurista, Herramientas, ResultadoHerramienta
 from src.application.ports.limite_de_tasa import LimiteDeTasa
 from src.application.ports.modelo_de_lenguaje import (
+    LlamadaHerramienta,
     MensajeAsistente,
     MensajeModelo,
     MensajeTurista,
@@ -142,11 +144,16 @@ class ResponderMensaje:
     async def _conversar(self, conversacion: Conversacion, mensaje: str, idioma: Idioma) -> _Turno:
         # La identidad va solo al contexto de las tools; nunca en lo que se envía al modelo.
         contexto = ContextoTurista(turista_id=conversacion.turista_id, idioma=idioma)
-        declaraciones = [*self._herramientas.declaraciones(), DECLARACION_RESPONDER]
+        de_la_plataforma = [*self._herramientas.declaraciones()]
+        conocidas = {d.nombre for d in de_la_plataforma}
+        declaraciones = [*de_la_plataforma, DECLARACION_RESPONDER]
         mensajes: list[MensajeModelo] = [_del_historial(m) for m in conversacion.mensajes]
         mensajes.append(MensajeTurista(mensaje))
+        llamadas_hechas = 0
+        # Solo tools que existen: van a `recomendacion_log.herramientas_usadas`.
         usadas: list[str] = []
         vistos = set(conversacion.servicios_vistos)
+        texto_sistema = instrucciones(idioma, self._reloj().astimezone(HORA_COLOMBIA).date())
 
         def turno(texto: str, recomendaciones: tuple[Recomendacion, ...] = ()) -> _Turno:
             # Tools sin repetidos y en el orden en que se usaron.
@@ -154,14 +161,14 @@ class ResponderMensaje:
 
         # Termina siempre: cada vuelta responde o ejecuta al menos una tool de las 6 permitidas.
         while True:
-            respuesta = await self._modelo.generar(instrucciones(idioma), mensajes, declaraciones)
-            final = next((ll for ll in respuesta.llamadas if ll.nombre == RESPONDER), None)
+            respuesta = await self._modelo.generar(texto_sistema, mensajes, declaraciones)
+            final = next((ll for ll in respuesta.llamadas if _es_final(ll, conocidas)), None)
             if final is not None:
                 texto, propuestas = _leer_final(final.argumentos, respuesta.texto)
                 return turno(texto or MENSAJE_VACIO[idioma], _validar(propuestas, vistos))
             if not respuesta.llamadas:
                 return turno(respuesta.texto.strip() or MENSAJE_VACIO[idioma])
-            if len(usadas) + len(respuesta.llamadas) > self._max_llamadas:
+            if llamadas_hechas + len(respuesta.llamadas) > self._max_llamadas:
                 logger.info("Se alcanzó el límite de %s tools en un mensaje", self._max_llamadas)
                 return turno(MENSAJE_LIMITE[idioma])
 
@@ -173,9 +180,19 @@ class ResponderMensaje:
             )
             mensajes.append(MensajeAsistente(respuesta.texto, respuesta.llamadas))
             for llamada, resultado in zip(respuesta.llamadas, resultados, strict=True):
-                usadas.append(llamada.nombre)
+                llamadas_hechas += 1
+                if llamada.nombre in conocidas:
+                    usadas.append(llamada.nombre)
                 vistos |= resultado.servicios_vistos
                 mensajes.append(ResultadoLlamada(llamada.id, llamada.nombre, _contenido(resultado)))
+
+
+def _es_final(llamada: LlamadaHerramienta, conocidas: set[str]) -> bool:
+    """La tool final, o una desconocida que trae su forma: algunos modelos (gpt-oss) la
+    llaman `json` u otro nombre. Tomarla como final ahorra una vuelta al proveedor."""
+    if llamada.nombre == RESPONDER:
+        return True
+    return llamada.nombre not in conocidas and "respuesta" in llamada.argumentos
 
 
 def _del_historial(mensaje: Mensaje) -> MensajeModelo:

@@ -5,19 +5,46 @@ modelo y la validación nunca se separan. Los argumentos que el modelo agregue d
 (por ejemplo un `turista_id`) se descartan.
 """
 
+import re
+import unicodedata
 from datetime import date, timedelta
 from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
-Zona = Annotated[str, StringConstraints(pattern=r"^[a-z0-9-]{2,40}$")]
+
+def _normalizar_zona(valor: Any) -> Any:
+    """`"Centro Histórico"` → `centro-historico`: el modelo a veces escribe el nombre."""
+    if not isinstance(valor, str):
+        return valor
+    sin_tildes = "".join(
+        c for c in unicodedata.normalize("NFD", valor) if unicodedata.category(c) != "Mn"
+    )
+    return re.sub(r"[\s_]+", "-", sin_tildes.strip().lower())
+
+
+Zona = Annotated[
+    str,
+    BeforeValidator(_normalizar_zona),
+    StringConstraints(pattern=r"^[a-z0-9-]{2,40}$"),
+]
 Categoria = Literal[
     "PLAYA", "NATURALEZA", "CULTURA", "GASTRONOMIA", "AVENTURA", "ALOJAMIENTO", "TRANSPORTE"
 ]
 MAX_DIAS_DISPONIBILIDAD = 62
 
-_DESCRIPCION_ZONA = "Código de la zona en minúsculas, por ejemplo `minca`, `taganga` o `tayrona`."
+_DESCRIPCION_ZONA = (
+    "Código de la zona, tal como aparece en `zona_codigo` de otras tools (por ejemplo "
+    "`minca` o `tayrona`). Si no lo conoces, llama a `presion_capacidad_carga` sin zona."
+)
 
 
 class _Argumentos(BaseModel):
@@ -95,8 +122,16 @@ class AlertasOficiales(_Argumentos):
 
 
 def esquema(modelo: type[BaseModel]) -> dict[str, Any]:
-    """JSON Schema plano: sin títulos, sin `default: null` y sin `anyOf` con null."""
+    """JSON Schema plano: sin títulos, sin `default: null` y sin `anyOf` con null.
+
+    Tampoco lleva `pattern`: algunos proveedores (Groq) validan los argumentos con el esquema
+    y, si no cumplen, cortan toda la petición (`tool_use_failed`). La validación la hace
+    `ejecutar`, que le devuelve al modelo un error que puede corregir.
+    """
     return _simplificar(modelo.model_json_schema())
+
+
+_FUERA_DEL_ESQUEMA = {"title", "pattern"}
 
 
 def _simplificar(nodo: Any) -> Any:
@@ -104,7 +139,11 @@ def _simplificar(nodo: Any) -> Any:
         return [_simplificar(n) for n in nodo]
     if not isinstance(nodo, dict):
         return nodo
-    nodo = {k: v for k, v in nodo.items() if k != "title" and not (k == "default" and v is None)}
+    nodo = {
+        k: v
+        for k, v in nodo.items()
+        if k not in _FUERA_DEL_ESQUEMA and not (k == "default" and v is None)
+    }
     opciones = nodo.get("anyOf")
     if opciones is not None:
         sin_nulo = [o for o in opciones if o != {"type": "null"}]

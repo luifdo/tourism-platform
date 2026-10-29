@@ -6,6 +6,8 @@ Estas son las variables de `services/recommendation-service/.env.example`. El ar
 
 ```
 SERVICE_PORT=8005
+# Nivel de los logs del servicio (DEBUG, INFO, WARNING)
+LOG_LEVEL=INFO
 
 # Base de datos propia (Fase 1)
 DB_URL=postgresql+psycopg://turismo:turismo@postgres:5432/recommendation_db

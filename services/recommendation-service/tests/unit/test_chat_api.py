@@ -277,3 +277,32 @@ def test_un_mensaje_con_solo_espacios(chat_con, mensaje):
 
     assert respuesta.status_code == 400
     _cumple_el_contrato(respuesta)
+
+
+@pytest.mark.parametrize(
+    "cuerpo",
+    [b'{"mensaje": "hola"', b"no es json", '{"mensaje": "¿Qué hago?"}'.encode("cp1252")],
+)
+def test_un_cuerpo_que_no_es_json_valido_usa_el_formato_comun(chat_con, cuerpo):
+    cliente, _ = chat_con(ModeloGuionado())
+
+    respuesta = cliente.post(
+        CHAT, content=cuerpo, headers=IDENTIDAD | {"Content-Type": "application/json"}
+    )
+
+    assert respuesta.status_code == 400
+    assert respuesta.json()["error"] == "VALIDACION"
+    _cumple_el_contrato(respuesta)
+
+
+def test_ruta_y_metodo_inexistentes_usan_el_formato_comun():
+    cliente = TestClient(app)
+
+    ruta = cliente.get("/api/recommendations/no-existe")
+    metodo = cliente.get(CHAT)
+
+    assert ruta.status_code == 404
+    assert ruta.json()["error"] == "RUTA_NO_ENCONTRADA"
+    assert metodo.status_code == 405
+    assert metodo.json()["error"] == "METODO_NO_PERMITIDO"
+    assert "detail" not in ruta.json() | metodo.json()

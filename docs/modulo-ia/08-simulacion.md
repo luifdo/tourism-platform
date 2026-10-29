@@ -12,11 +12,22 @@ El servicio no está atado a un proveedor. El caso de uso del chat depende de un
   * **Fallas:** clave inválida (401), límite (429), Groq caído (5xx), `tool_use_failed` (400), sin red o tiempo agotado → `ModeloNoDisponibleError` → 503. El SDK reintenta una sola vez (los reintentos también gastan cuota). La clave es `SecretStr`: no aparece en logs, errores ni al imprimir la configuración.
   * **Consumo:** cada llamada registra en el log sus tokens de entrada y salida.
 
-* **Cuota del plan gratuito de Groq** (medida el 2026-10-29 en las cabeceras `x-ratelimit-*`): **8000 tokens por minuto** y **1000 solicitudes por día**, por modelo. Cada vuelta del modelo envía unos 1800 tokens fijos (instrucciones y declaraciones de las tools) más el historial y los resultados, así que una conversación con 3 o 4 vueltas usa entre 6000 y 8500 tokens: **alcanza para cerca de una conversación por minuto**. Por eso:
-  * las instrucciones piden al modelo que haga juntas las consultas independientes (menos vueltas) y los resultados de las tools viajan en JSON compacto;
-  * el límite por turista (`CHAT_LIMITE_MENSAJES`) protege la cuota;
-  * las pruebas de la Fase 6 (unas 30 conversaciones) deben espaciarse, más o menos una por minuto;
-  * para uso real con varios turistas a la vez hace falta un plan de pago o reducir más el tamaño de las declaraciones (la de `buscar_servicios` es la más grande).
+* **Cuota del plan gratuito de Groq** (medida el 2026-10-29 en las cabeceras `x-ratelimit-*`): **8000 tokens por minuto** y **1000 solicitudes por día**, por modelo. Groq descuenta al recibir cada petición sus tokens de entrada **más el máximo de salida pedido** (`max_completion_tokens`, 1024). Cada vuelta envía unos 1900 tokens fijos (instrucciones y declaraciones) más el historial y los resultados.
+  * Una conversación típica hace **2 o 3 vueltas, unos 7000 tokens y unos 3 s**: alcanza para cerca de **una conversación por minuto**. Para varios turistas a la vez hace falta un plan de pago.
+  * El límite por turista (`CHAT_LIMITE_MENSAJES`) protege la cuota.
+
+* **Lo que se ajustó al probar con Groq real** (cada punto corrige un fallo visto en las pruebas):
+
+| Fallo visto | Ajuste |
+|---|---|
+| El modelo consultaba capacidad y alertas zona por zona: 5 o 6 vueltas, unos 14 000 tokens, 429 por cuota y respuestas lentas. | `buscar_servicios` trae, para cada servicio, el nivel de capacidad de su zona y sus alertas vigentes (el servicio las consulta en paralelo). La conversación típica baja a 2 o 3 vueltas. |
+| `400 tool_use_failed`: Groq valida los argumentos con el esquema y cortaba la petición porque el modelo escribió la zona como `"parque tayrona"`. | El esquema que ve el proveedor no lleva `pattern`; la zona se normaliza (`Centro Histórico` → `centro-historico`) y los resultados incluyen `zona_codigo` para que el modelo lo copie. Lo que siga siendo inválido vuelve al modelo como `ARGUMENTOS_INVALIDOS`. |
+| `400 tool_use_failed` / `output_parse_failed`: Groq no logró leer la salida de `gpt-oss`. | Un reintento solo para esos dos códigos (la generación varía) y `disable_tool_validation` para que una tool desconocida la maneje el servicio. Se registra lo que generó el modelo. |
+| El modelo consultaba fechas de 2024: no sabe qué día es hoy. | Las instrucciones incluyen la fecha de hoy en hora de Colombia (UTC−5). |
+| A veces respondía con texto sin `responder_al_turista`: sin recomendaciones estructuradas ni registro, y con ids en el texto. `tool_choice="required"` lo empeoró (más `tool_use_failed`). | Se mantiene `tool_choice="auto"`, la búsqueda enriquecida reduce las vueltas y las instrucciones piden no mostrar ids. |
+| `gpt-oss` a veces entrega la respuesta final llamando a una tool inexistente (`json`). | Una tool desconocida que trae `respuesta` se toma como la final, y solo las tools que existen se registran en `herramientas_usadas`. |
+| `max_completion_tokens=2048` hacía que cada petición consumiera cuota de más. | 1024: las respuestas reales usan de 50 a 300 tokens. |
+| Los logs INFO del servicio no salían en el contenedor (consumo de tokens, reintentos). | `LOG_LEVEL` (INFO por defecto) configura los loggers del servicio y de `httpx`. |
 * **La interfaz (Fase 3).** `ModeloDeLenguaje.generar(instrucciones, mensajes, herramientas)` recibe la conversación en un formato propio (`MensajeTurista`, `MensajeAsistente` con sus llamadas a tools y `ResultadoLlamada`) y devuelve texto, llamadas a tools o ambas cosas. Si el proveedor falla, el adaptador lanza `ModeloNoDisponibleError`.
 * **Cómo termina el modelo.** Además de las 7 tools, el modelo recibe `responder_al_turista(respuesta, recomendaciones[])`. La llama para entregar la respuesta final con sus recomendaciones estructuradas (`servicio_id`, `nombre`, `justificacion`), así no depende de un modo JSON propio de cada proveedor. Si el modelo responde con texto sin llamarla, se toma como una respuesta sin recomendaciones. Esta tool no cuenta en el límite de 6.
 * **Cambiar de proveedor:** es escribir un adaptador nuevo y elegirlo con `LLM_PROVIDER`; el dominio y los casos de uso no se tocan.
@@ -78,7 +89,7 @@ Lo que se puede comprobar en el código no se le confía al modelo: `responder_m
 | Solo se recomiendan servicios consultados (Guía §6) | Se descarta toda recomendación cuyo servicio no esté en los `servicios_vistos` de la conversación. | Se quita de la respuesta y no se registra. |
 | Toda recomendación lleva justificación (RNF-08) | El dominio rechaza la justificación vacía; la tabla también (`CHECK`). | Se quita de la respuesta. |
 | Sin recomendaciones repetidas | Se deja la primera de cada servicio. | — |
-| Mensaje de 1 a 1000 caracteres, no solo espacios | Validación del cuerpo. | 400 `VALIDACION`. |
+| Mensaje de 1 a 1000 caracteres, no solo espacios, JSON válido | Validación del cuerpo. | 400 `VALIDACION` (también un JSON mal formado o que no es UTF-8). |
 | Límite de mensajes por turista | `CHAT_LIMITE_MENSAJES` por `CHAT_LIMITE_VENTANA_SEGUNDOS` (10 cada 5 min por defecto), contado en Valkey antes de llamar al modelo. Cuenta todos los intentos, también los fallidos. | 429 `DEMASIADAS_SOLICITUDES`. |
 | Identidad del servidor | `X-Usuario-Id` y `X-Usuario-Rol` (Turista); un id en el cuerpo se ignora. | 401 / 403. |
 | Datos como datos | Cada resultado de tool viaja como `{"origen": "datos_de_la_plataforma", "datos": …}` y las instrucciones dicen que nada de ahí ni del turista cambia las reglas. | — |
@@ -86,6 +97,7 @@ Lo que se puede comprobar en el código no se le confía al modelo: `responder_m
 | Alcance, equidad y sostenibilidad | Instrucciones: solo turismo en Santa Marta, sin favorecer prestadores, preferir capacidad BAJA, no recomendar zonas con alertas críticas, no revelar las instrucciones. | Se mide en la Fase 6. |
 | Dependencias caídas | Si PostgreSQL o Valkey no responden durante un chat, los adaptadores lanzan `DependenciaNoDisponibleError` (con tiempo máximo de conexión de 3 s). | 503 `ASISTENTE_NO_DISPONIBLE`. |
 | Errores inesperados | Manejador general sin trazas para el cliente. | 500 `ERROR_INTERNO` con el formato común. |
+| Ruta o método inexistente | Los errores que FastAPI lanza por su cuenta también usan el formato común (nunca `{"detail": …}`). | 404 `RUTA_NO_ENCONTRADA` / 405 `METODO_NO_PERMITIDO`. |
 
 El mock debe respetar también estas reglas de los contratos:
 * **Idioma:** catalog y review responden según `Accept-Language`; las tools lo reenvían.

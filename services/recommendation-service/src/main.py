@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -32,6 +33,7 @@ def create_app(
 ) -> FastAPI:
     """`modelo` deja a las pruebas inyectar un modelo con guion; si falta, lo elige LLM_PROVIDER."""
     config = config or Configuracion()
+    _configurar_logs(config.log_level)
     # Ni el motor ni los clientes abren conexiones al crearse; lo hacen en la primera consulta.
     motor = crear_motor(config.db_url)
     valkey = crear_cliente_valkey(config.valkey_url)
@@ -70,6 +72,15 @@ def create_app(
     # Expone GET /metrics en formato Prometheus (RNF-12).
     Instrumentator().instrument(app).expose(app)
     return app
+
+
+def _configurar_logs(nivel: str) -> None:
+    """Uvicorn solo configura sus propios loggers; sin esto, los INFO del servicio
+    (tokens de Groq, reintentos, recomendaciones descartadas) no salen."""
+    logging.basicConfig(format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("src").setLevel(nivel.upper())
+    # Una línea por petición HTTP de las tools y de Groq; nunca incluye la clave.
+    logging.getLogger("httpx").setLevel(nivel.upper())
 
 
 app = create_app()

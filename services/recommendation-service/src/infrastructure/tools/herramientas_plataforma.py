@@ -59,7 +59,8 @@ class HerramientasPlataforma:
                 "Busca servicios turísticos de Santa Marta en el catálogo de la plataforma "
                 "(atractivos, actividades, alojamiento, gastronomía, transporte). Úsala cuando el "
                 f"turista pida opciones o ideas. Devuelve hasta {TAMANO_BUSQUEDA} servicios con "
-                "su `id`; solo puedes recomendar servicios que hayan salido de una tool.",
+                "su `id`, el nivel de capacidad de carga de su zona y sus alertas oficiales "
+                "vigentes, así que no hace falta consultarlos aparte para estos servicios.",
                 self._buscar_servicios,
             ),
             "detalle_servicio": _Definicion(
@@ -163,22 +164,45 @@ class HerramientasPlataforma:
     async def _buscar_servicios(
         self, args: argumentos.BuscarServicios, contexto: ContextoTurista
     ) -> _Salida:
-        cuerpo = await self._get(
-            f"{self._catalog}/buscar",
-            contexto,
-            params={
-                "texto": args.texto,
-                "categoria": ",".join(args.categorias) if args.categorias else None,
-                "zona": args.zona,
-                "precio_max": args.precio_max,
-                "fecha": args.fecha,
-                "personas": args.personas,
-                "lat": args.lat,
-                "lon": args.lon,
-                "tamano": TAMANO_BUSQUEDA,
-            },
+        # La capacidad y las alertas viajan con la búsqueda: el modelo tiene en una sola vuelta
+        # todo lo que necesita para recomendar (menos llamadas, menos tokens de cuota).
+        cuerpo, capacidad, alertas = await asyncio.gather(
+            self._get(
+                f"{self._catalog}/buscar",
+                contexto,
+                params={
+                    "texto": args.texto,
+                    "categoria": ",".join(args.categorias) if args.categorias else None,
+                    "zona": args.zona,
+                    "precio_max": args.precio_max,
+                    "fecha": args.fecha,
+                    "personas": args.personas,
+                    "lat": args.lat,
+                    "lon": args.lon,
+                    "tamano": TAMANO_BUSQUEDA,
+                },
+            ),
+            self._opcional(
+                self._get(
+                    f"{self._catalog}/analitica/capacidad",
+                    contexto,
+                    params={"fecha": args.fecha},
+                    con_identidad=True,
+                )
+            ),
+            self._opcional(self._get(f"{self._catalog}/alertas", contexto)),
         )
-        return _Salida(recortes.busqueda(cuerpo), _ids(i["id"] for i in cuerpo["items"]))
+        datos = recortes.busqueda(cuerpo, capacidad, alertas)
+        return _Salida(datos, _ids(i["id"] for i in cuerpo["items"]))
+
+    @staticmethod
+    async def _opcional(consulta: Awaitable[Any]) -> Any:
+        """Un dato complementario que falla no tumba la búsqueda: se omite."""
+        try:
+            return await consulta
+        except (_FallaHerramientaError, httpx.HTTPError, ValueError) as exc:
+            logger.info("Se omite un dato complementario de la búsqueda: %s", exc)
+            return None
 
     async def _detalle_servicio(
         self, args: argumentos.DetalleServicio, contexto: ContextoTurista

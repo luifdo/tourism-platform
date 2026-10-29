@@ -194,7 +194,7 @@ async def test_presion_capacidad_carga(herramientas):
     resultado = await herramientas.ejecutar("presion_capacidad_carga", {}, CONTEXTO)
 
     assert resultado.ok
-    niveles = {z["zona"]: z["nivel"] for z in resultado.datos["zonas"]}
+    niveles = {z["zona_codigo"]: z["nivel"] for z in resultado.datos["zonas"]}
     assert niveles["tayrona"] == "ALTO"
     assert niveles["minca"] == "BAJO"
     # Para el rol Turista no viajan cifras.
@@ -267,7 +267,8 @@ async def test_buscar_traduce_los_argumentos_a_los_parametros_del_contrato():
         CONTEXTO,
     )
 
-    params = grabadora.peticiones[0].url.params
+    [busqueda] = [p for p in grabadora.peticiones if p.url.path.endswith("/buscar")]
+    params = busqueda.url.params
     assert params["categoria"] == "PLAYA,AVENTURA"
     assert params["lat"] == "11.24"
     assert params["tamano"] == "8"
@@ -391,3 +392,87 @@ async def test_resenas_falla_si_falla_cualquiera_de_sus_dos_consultas():
     )
 
     assert resultado.error == "SERVICIO_NO_DISPONIBLE"
+
+
+# ---------- zonas: el modelo no conoce los códigos de antemano ----------
+
+
+@pytest.mark.parametrize(
+    ("escrita", "codigo"),
+    [("Minca", "minca"), (" minca ", "minca"), ("Centro Histórico", "centro-historico")],
+)
+async def test_la_zona_se_normaliza_antes_de_consultar(escrita, codigo):
+    grabadora = Grabadora(httpx.Response(200, json=[]))
+
+    resultado = await _con(grabadora).ejecutar("alertas_oficiales", {"zona": escrita}, CONTEXTO)
+
+    assert resultado.ok
+    assert grabadora.peticiones[0].url.params["zona"] == codigo
+
+
+async def test_una_zona_imposible_es_un_error_que_el_modelo_puede_corregir():
+    grabadora = Grabadora()
+
+    resultado = await _con(grabadora).ejecutar("presion_capacidad_carga", {"zona": "¿?"}, CONTEXTO)
+
+    assert resultado.error == "ARGUMENTOS_INVALIDOS"
+    assert grabadora.peticiones == []
+
+
+def test_el_esquema_que_ve_el_proveedor_no_lleva_pattern():
+    # Groq valida con el esquema y corta la petición si no se cumple (tool_use_failed).
+    for declaracion in _con(Grabadora()).declaraciones():
+        assert '"pattern"' not in json.dumps(declaracion.parametros), declaracion.nombre
+
+
+async def test_los_resultados_traen_el_codigo_de_zona(herramientas):
+    busqueda = await herramientas.ejecutar("buscar_servicios", {"zona": "minca"}, CONTEXTO)
+    alertas = await herramientas.ejecutar("alertas_oficiales", {}, CONTEXTO)
+    capacidad = await herramientas.ejecutar("presion_capacidad_carga", {}, CONTEXTO)
+
+    assert {s["zona_codigo"] for s in busqueda.datos["servicios"]} == {"minca"}
+    assert {a["zona_codigo"] for a in alertas.datos["alertas"]} == {"tayrona", "minca"}
+    assert "tayrona" in {z["zona_codigo"] for z in capacidad.datos["zonas"]}
+
+
+# ---------- la búsqueda trae capacidad y alertas (menos vueltas del modelo) ----------
+
+
+async def test_la_busqueda_trae_capacidad_y_alertas_de_cada_servicio(herramientas):
+    resultado = await herramientas.ejecutar(
+        "buscar_servicios", {"categorias": ["NATURALEZA"]}, CONTEXTO
+    )
+
+    por_nombre = {s["nombre"]: s for s in resultado.datos["servicios"]}
+    aves = por_nombre["Avistamiento de aves en Minca"]
+    tayrona = por_nombre["Entrada al Parque Tayrona"]
+    assert aves["nivel_capacidad_zona"] == "BAJO"
+    assert [a["nivel"] for a in aves["alertas"]] == ["INFORMATIVA"]
+    assert tayrona["nivel_capacidad_zona"] == "ALTO"
+    assert [a["nivel"] for a in tayrona["alertas"]] == ["CRITICA"]
+
+
+async def test_si_la_capacidad_o_las_alertas_fallan_la_busqueda_sale_igual():
+    async def manejador(peticion: httpx.Request) -> httpx.Response:
+        if peticion.url.path.endswith("/buscar"):
+            return await httpx.ASGITransport(app=mock_plataforma).handle_async_request(peticion)
+        return httpx.Response(503)
+
+    resultado = await _herramientas(httpx.MockTransport(manejador)).ejecutar(
+        "buscar_servicios", {"zona": "minca"}, CONTEXTO
+    )
+
+    assert resultado.ok
+    servicio = resultado.datos["servicios"][0]
+    assert "nivel_capacidad_zona" not in servicio
+    assert "alertas" not in servicio
+
+
+async def test_la_capacidad_de_la_busqueda_se_pide_con_la_identidad_del_turista():
+    grabadora = Grabadora(httpx.Response(200, json={"items": [], "total": 0}))
+
+    await _con(grabadora).ejecutar("buscar_servicios", {"fecha": "2026-11-20"}, CONTEXTO)
+
+    [capacidad] = [p for p in grabadora.peticiones if p.url.path.endswith("/capacidad")]
+    assert capacidad.headers["X-Usuario-Id"] == str(TURISTA_CON_HISTORIAL)
+    assert capacidad.url.params["fecha"] == "2026-11-20"

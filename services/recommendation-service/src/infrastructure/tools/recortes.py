@@ -21,6 +21,11 @@ def _zona(zona: dict[str, Any] | None) -> str | None:
     return zona["nombre"] if zona else None
 
 
+def _zona_codigo(zona: dict[str, Any] | None) -> str | None:
+    # El modelo lo copia en el argumento `zona` de las demás tools.
+    return zona["codigo"] if zona else None
+
+
 def _servicio(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": item["id"],
@@ -28,6 +33,7 @@ def _servicio(item: dict[str, Any]) -> dict[str, Any]:
         "categoria": item["categoria"],
         "tipo": item["tipo"],
         "zona": _zona(item.get("zona")),
+        "zona_codigo": _zona_codigo(item.get("zona")),
         "tarifa_base": item["tarifa_base"],
         "unidad_tarifa": item.get("unidad_tarifa_etiqueta") or item["unidad_tarifa"],
         "calificacion_promedio": item.get("calificacion_promedio"),
@@ -35,7 +41,10 @@ def _servicio(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def busqueda(cuerpo: dict[str, Any]) -> dict[str, Any]:
+def busqueda(cuerpo: dict[str, Any], capacidad: Any = None, alertas: Any = None) -> dict[str, Any]:
+    """`capacidad` y `alertas` son opcionales: si faltan o vienen mal, se omiten."""
+    niveles = _niveles_por_zona(capacidad)
+    vigentes = alertas if isinstance(alertas, list) else None
     servicios = []
     for item in cuerpo["items"]:
         servicio = _servicio(item)
@@ -43,8 +52,27 @@ def busqueda(cuerpo: dict[str, Any]) -> dict[str, Any]:
             servicio["cupos_disponibles"] = item["cupos_disponibles"]
         if item.get("disponibilidad_confirmada") is False:
             servicio["disponibilidad_confirmada"] = False
+        zona = servicio["zona_codigo"]
+        if zona in niveles:
+            servicio["nivel_capacidad_zona"] = niveles[zona]
+        if vigentes is not None:
+            servicio["alertas"] = [
+                {"nivel": a["nivel"], "mensaje": a["mensaje"]}
+                for a in vigentes
+                if a.get("servicio_id") == item["id"]
+                or (zona is not None and _zona_codigo(a.get("zona")) == zona)
+            ]
         servicios.append(servicio)
     return {"total": cuerpo["total"], "servicios": servicios}
+
+
+def _niveles_por_zona(capacidad: Any) -> dict[str, str]:
+    if not isinstance(capacidad, list):
+        return {}
+    try:
+        return {c["zona"]["codigo"]: c["nivel"] for c in capacidad}
+    except (KeyError, TypeError):
+        return {}
 
 
 def detalle(cuerpo: dict[str, Any]) -> dict[str, Any]:
@@ -107,7 +135,7 @@ def capacidad(cuerpo: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "zonas": [
             {
-                "zona": c["zona"]["codigo"],
+                "zona_codigo": c["zona"]["codigo"],
                 "nombre": c["zona"]["nombre"],
                 "fecha": c["fecha"],
                 "nivel": c["nivel"],
@@ -124,6 +152,7 @@ def alertas(cuerpo: list[dict[str, Any]]) -> dict[str, Any]:
                 "nivel": a["nivel"],
                 "mensaje": a["mensaje"],
                 "zona": _zona(a.get("zona")),
+                "zona_codigo": _zona_codigo(a.get("zona")),
                 "servicio_id": a.get("servicio_id"),
                 "vence": a["fecha_expiracion"],
             }

@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.application.instrucciones import Idioma
 from src.application.ports.errores import DependenciaNoDisponibleError
@@ -42,10 +43,25 @@ MENSAJES: dict[str, dict[Idioma, str]] = {
         "es": "El asistente no está disponible en este momento. Puedes seguir usando el catálogo.",
         "en": "The assistant is not available right now. You can keep using the catalog.",
     },
+    "RUTA_NO_ENCONTRADA": {
+        "es": "La ruta solicitada no existe.",
+        "en": "The requested path does not exist.",
+    },
+    "METODO_NO_PERMITIDO": {
+        "es": "El método HTTP no está permitido en esta ruta.",
+        "en": "The HTTP method is not allowed on this path.",
+    },
     "ERROR_INTERNO": {
         "es": "Ocurrió un error inesperado. Intenta de nuevo más tarde.",
         "en": "An unexpected error occurred. Please try again later.",
     },
+}
+
+
+_CODIGOS_HTTP = {
+    status.HTTP_400_BAD_REQUEST: "VALIDACION",
+    status.HTTP_404_NOT_FOUND: "RUTA_NO_ENCONTRADA",
+    status.HTTP_405_METHOD_NOT_ALLOWED: "METODO_NO_PERMITIDO",
 }
 
 
@@ -75,6 +91,13 @@ def registrar_manejadores(app: FastAPI) -> None:
     async def _validacion(request: Request, _: RequestValidationError) -> JSONResponse:
         # El contrato responde 400 VALIDACION, no el 422 de FastAPI.
         return respuesta_de_error(request, status.HTTP_400_BAD_REQUEST, "VALIDACION")
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        # Errores que FastAPI lanza por su cuenta (JSON mal formado, ruta o método
+        # inexistentes): también con el formato común, nunca `{"detail": ...}`.
+        codigo = _CODIGOS_HTTP.get(exc.status_code, "ERROR_INTERNO")
+        return respuesta_de_error(request, exc.status_code, codigo)
 
     @app.exception_handler(PeticionRechazadaError)
     async def _rechazada(request: Request, exc: PeticionRechazadaError) -> JSONResponse:

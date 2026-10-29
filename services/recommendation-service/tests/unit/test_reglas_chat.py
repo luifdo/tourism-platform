@@ -11,6 +11,7 @@ import pytest
 from mocks.app import app as mock_plataforma
 from mocks.datos import SERVICIOS, TURISTA_CON_HISTORIAL
 from src.application.instrucciones import ORIGEN_DATOS, instrucciones
+from src.application.ports.modelo_de_lenguaje import RespuestaModelo
 from src.application.responder_mensaje import (
     DemasiadasSolicitudesError,
     PeticionChat,
@@ -327,3 +328,57 @@ async def test_el_markdown_del_modelo_llega_como_texto_plano():
 
     assert resultado.respuesta == "• Servicio: Tour de café · Estado: Confirmada"
     assert resultado.recomendaciones[0].justificacion == "Zona con capacidad baja."
+
+
+# ---------- la respuesta final escrita como texto (gpt-oss) ----------
+
+FRASE = "Tu reserva confirmada es para Buceo en Taganga el 8 de noviembre."
+JSON_FINAL = (
+    '{\n  "recomendaciones": [],\n  "respuesta": "Tu reserva confirmada es para Buceo en Taganga '
+    'el 8 de noviembre."\n}'
+)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        f"{FRASE}\n\n{JSON_FINAL}",
+        f"{FRASE}\n```json\n{JSON_FINAL}\n```",
+        JSON_FINAL,
+    ],
+)
+async def test_el_json_de_la_respuesta_final_escrito_como_texto_no_llega_al_turista(texto):
+    modelo = ModeloGuionado(RespuestaModelo(texto=texto))
+
+    resultado = await _preguntar(_caso_de_uso(modelo), "¿Qué tengo reservado?")
+
+    assert resultado.respuesta == FRASE
+    assert "{" not in resultado.respuesta
+
+
+async def test_las_recomendaciones_del_json_escrito_como_texto_se_validan():
+    escrito = json.dumps(
+        {
+            "respuesta": "Te recomiendo el tour.",
+            "recomendaciones": [
+                recomendacion(CAFE, "Tour de café", "Zona BAJO."),
+                recomendacion(INVENTADO, "Inventado", "No salió de ninguna tool."),
+            ],
+        },
+        ensure_ascii=False,
+    )
+    modelo = ModeloGuionado(pedir(("buscar_servicios", {})), RespuestaModelo(texto=escrito))
+
+    resultado = await _preguntar(_caso_de_uso(modelo))
+
+    assert resultado.respuesta == "Te recomiendo el tour."
+    assert [r.servicio_id for r in resultado.recomendaciones] == [CAFE]
+
+
+async def test_un_texto_con_llaves_que_no_es_la_respuesta_final_no_cambia():
+    texto = 'Usa la fórmula {precio} x personas; el JSON {"a": 1} es un ejemplo.'
+    modelo = ModeloGuionado(RespuestaModelo(texto=texto))
+
+    resultado = await _preguntar(_caso_de_uso(modelo))
+
+    assert resultado.respuesta == texto

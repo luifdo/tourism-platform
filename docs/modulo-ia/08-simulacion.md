@@ -96,7 +96,7 @@ Lo que se puede comprobar en el código no se le confía al modelo: `responder_m
 | Privacidad (Ley 1581) | Al modelo nunca llega el `turista_id` (lo usan solo las tools). Correos y celulares que el turista escriba se reemplazan por `[dato personal oculto]` antes de guardarlos o enviarlos. | — |
 | Alcance, equidad y sostenibilidad | Instrucciones: solo turismo en Santa Marta, sin favorecer prestadores, preferir capacidad BAJA, no recomendar zonas con alertas críticas, no revelar las instrucciones. | Se mide en la Fase 6. |
 | Dependencias caídas | Si PostgreSQL o Valkey no responden durante un chat, los adaptadores lanzan `DependenciaNoDisponibleError` (con tiempo máximo de conexión de 3 s). | 503 `ASISTENTE_NO_DISPONIBLE`. |
-| Respuesta en texto plano | Las instrucciones piden no usar Markdown y `domain/texto_plano.py` convierte lo que llegue (tablas a frases por fila; quita negritas, títulos, viñetas, código y enlaces). | — |
+| Respuesta en texto plano | Las instrucciones piden no usar Markdown y `domain/texto_plano.py` convierte lo que llegue (tablas a frases por fila; quita negritas, títulos, viñetas, código y enlaces). Si el modelo escribe en el texto el JSON de la respuesta final en vez de llamar a la tool (pasa con gpt-oss), el servicio lo separa y lo usa como la llamada. | — |
 | Errores inesperados | Manejador general sin trazas para el cliente. | 500 `ERROR_INTERNO` con el formato común. |
 | Ruta o método inexistente | Los errores que FastAPI lanza por su cuenta también usan el formato común (nunca `{"detail": …}`). | 404 `RUTA_NO_ENCONTRADA` / 405 `METODO_NO_PERMITIDO`. |
 

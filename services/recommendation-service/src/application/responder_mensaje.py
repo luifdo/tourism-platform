@@ -1,7 +1,9 @@
 """Caso de uso del chat (UC14, flujo 6 del Plan de Implementación)."""
 
 import asyncio
+import json
 import logging
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -168,7 +170,11 @@ class ResponderMensaje:
                 texto, propuestas = _leer_final(final.argumentos, respuesta.texto)
                 return turno(texto or MENSAJE_VACIO[idioma], _validar(propuestas, vistos))
             if not respuesta.llamadas:
-                return turno(a_texto_plano(respuesta.texto) or MENSAJE_VACIO[idioma])
+                texto, incrustada = _separar_final_del_texto(respuesta.texto)
+                if incrustada is not None:
+                    texto, propuestas = _leer_final(incrustada, texto)
+                    return turno(texto or MENSAJE_VACIO[idioma], _validar(propuestas, vistos))
+                return turno(a_texto_plano(texto) or MENSAJE_VACIO[idioma])
             if llamadas_hechas + len(respuesta.llamadas) > self._max_llamadas:
                 logger.info("Se alcanzó el límite de %s tools en un mensaje", self._max_llamadas)
                 return turno(MENSAJE_LIMITE[idioma])
@@ -208,6 +214,25 @@ def _contenido(resultado: ResultadoHerramienta) -> dict[str, Any]:
     if not resultado.ok:
         contenido["error"] = resultado.error
     return contenido
+
+
+_BLOQUE_DE_CODIGO = re.compile(r"```(?:json)?\s*|```")
+
+
+def _separar_final_del_texto(texto: str) -> tuple[str, dict[str, Any] | None]:
+    """Algunos modelos (gpt-oss) escriben en el texto el JSON que debían enviar como llamada a
+    `responder_al_turista`. Si aparece, se separa: el turista nunca debe ver ese JSON."""
+    limpio = _BLOQUE_DE_CODIGO.sub("", texto)
+    decodificador = json.JSONDecoder()
+    for inicio in (i for i, c in enumerate(limpio) if c == "{"):
+        try:
+            objeto, fin = decodificador.raw_decode(limpio, inicio)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(objeto, dict) and "respuesta" in objeto:
+            logger.info("El modelo escribió la respuesta final como texto; se usa como llamada")
+            return (limpio[:inicio] + limpio[fin:]).strip(), objeto
+    return texto, None
 
 
 def _leer_final(argumentos: Mapping[str, Any], texto: str) -> tuple[str, list[Recomendacion]]:

@@ -46,4 +46,12 @@ tests/
 
 ## Ejecución
 
-Servicio en Python 3.12 + FastAPI, empaquetado como contenedor y desplegado en Kubernetes (k3s) según el [Plan de Implementación](../../Documents/Pages/Plan_de_Implementacion.md) §7. El código, el `Dockerfile` y los manifiestos se agregan en la Fase 4.
+Servicio en Python 3.12 + FastAPI, empaquetado como contenedor y desplegado en Kubernetes (k3s) según el [Plan de Implementación](../../Documents/Pages/Plan_de_Implementacion.md) §7.
+
+Cómo levantarlo, llamar al chat, manejar los errores e integrarlo con el frontend y el gateway: **[Guía de uso](../../docs/modulo-ia/11-guia-de-uso.md)**. En resumen:
+
+```bash
+cp .env.example .env          # y poner LLM_API_KEY (clave de Groq)
+docker compose up --build -d  # servicio, PostgreSQL, Valkey y mock de la plataforma
+curl localhost:8005/health
+```

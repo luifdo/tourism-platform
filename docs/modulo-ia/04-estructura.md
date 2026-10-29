@@ -22,14 +22,14 @@ services/recommendation-service/
 │       ├── http/             # endpoints (health ahora; chat en la Fase 3)
 │       ├── persistence/      # PostgreSQL y Valkey
 │       ├── llm/              # adaptadores del proveedor de IA (uno por proveedor)
-│       └── tools/            # clientes HTTP hacia catalog, booking y review
-├── mocks/                    # contenedor mock-plataforma
+│       └── tools/            # las 7 tools: argumentos, recortes y cliente HTTP (httpx)
+├── mocks/                    # contenedor mock-plataforma (app.py, datos.py, Dockerfile)
 └── tests/
     ├── unit/
     └── integration/
 ```
 
-Las carpetas `llm/` y `tools/` son nuevas respecto a la plantilla; la plantilla trae `messaging/`, que se quitó porque este módulo no usa RabbitMQ. Desde la Fase 1, `domain/`, `application/ports/` y `persistence/` tienen código; además se agregó `db/` con el script SQL de la tabla y `src/config.py` con la configuración.
+Las carpetas `llm/` y `tools/` son nuevas respecto a la plantilla; la plantilla trae `messaging/`, que se quitó porque este módulo no usa RabbitMQ. Desde la Fase 1, `domain/`, `application/ports/` y `persistence/` tienen código; además se agregó `db/` con el script SQL de la tabla y `src/config.py` con la configuración. En la Fase 2 se llenaron `tools/` y `mocks/`, y se agregó el puerto `application/ports/herramientas.py`.
 
 ---
 [← Stack elegido](./03-stack.md) · [Dockerfile (explicado) →](./05-dockerfile.md)

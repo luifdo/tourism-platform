@@ -12,6 +12,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "redis>=5.2",
     "pydantic-settings>=2.6",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
@@ -19,9 +20,9 @@ dev = [
     "ruff>=0.8",
     "pytest>=8.3",
     "pytest-cov>=7.1.0",
-    "httpx>=0.28",
     "pyyaml>=6.0",
     "pytest-asyncio>=0.24",
+    "openapi-schema-validator>=0.6",
 ]
 
 [tool.uv]
@@ -34,6 +35,10 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# Datos fijos del mock: frases largas que se leen mejor sin partir.
+"mocks/datos.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

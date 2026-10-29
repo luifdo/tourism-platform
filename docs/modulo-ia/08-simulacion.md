@@ -18,15 +18,45 @@ Se simulan sin cambiar el código del servicio. Un único contenedor `mock-plata
 
 | Tool | Ruta | Contrato |
 |---|---|---|
-| `buscar_servicios` | `GET /api/catalog/buscar` (filtros: `texto`, `categoria`, `zona`, `precio_min`, `precio_max`, `lat`, `lon`, `radio_m`, `tipo`, `fecha`, `personas`, entre otros) | `catalog.yaml` |
-| `detalle_servicio` | `GET /api/catalog/servicios/{servicio_id}` | `catalog.yaml` |
-| `presion_capacidad_carga` | `GET /api/catalog/analitica/capacidad?zona=&fecha=` | `catalog.yaml` |
-| `alertas_oficiales` | `GET /api/catalog/alertas?zona=&servicio_id=` | `catalog.yaml` |
+| `buscar_servicios` | `GET /api/catalog/buscar` (filtros: `texto`, `categoria`, `zona`, `precio_min`, `precio_max`, `lat`, `lon`, `radio_m`, `tipo`, `fecha`, `personas`, entre otros) | [`catalog.yaml`](../../contracts/openapi/catalog.yaml) |
+| `detalle_servicio` | `GET /api/catalog/servicios/{servicio_id}` | [`catalog.yaml`](../../contracts/openapi/catalog.yaml) |
+| `presion_capacidad_carga` | `GET /api/catalog/analitica/capacidad?zona=&fecha=` | [`catalog.yaml`](../../contracts/openapi/catalog.yaml) |
+| `alertas_oficiales` | `GET /api/catalog/alertas?zona=&servicio_id=` | [`catalog.yaml`](../../contracts/openapi/catalog.yaml) |
 | `consultar_disponibilidad` | `GET /api/bookings/disponibilidad?servicio_id=&desde=&hasta=` | [`booking.yaml`](../../contracts/openapi/booking.yaml) |
 | `historial_turista` | `GET /api/bookings/mis-reservas` | [`booking.yaml`](../../contracts/openapi/booking.yaml) |
-| `resenas_servicio` | `GET /api/reviews/servicios/{servicio_id}/resenas` y `/resumen` | `review.yaml` |
+| `resenas_servicio` | `GET /api/reviews/servicios/{servicio_id}/resenas` y `/resumen` | [`review.yaml`](../../contracts/openapi/review.yaml) |
 
-> `catalog.yaml` y `review.yaml` están en las ramas `feature/catalog-service` y `feature/review-service`, todavía no en `develop`. Ya definen todo lo anterior, así que el mock no inventa rutas. Cuando lleguen a `develop`, estos enlaces apuntarán a `contracts/openapi/`. Ojo: el Plan §4.1 dice `GET /api/reviews/servicios/{id}`, pero el contrato real de review usa `/resenas` y `/resumen`.
+> `catalog.yaml` llegó a `develop` y entró en esta rama con el merge de `develop`. `review.yaml` todavía está solo en `feature/review-service`; se copió tal cual a `contracts/openapi/` de esta rama para validar el mock, y como es idéntico no debería dar conflicto cuando llegue a `develop` (si review lo cambia antes, se toma su versión). Ojo: el Plan §4.1 dice `GET /api/reviews/servicios/{id}`, pero el contrato real de review usa `/resenas` y `/resumen`.
+
+### Qué datos tiene el mock
+
+[`mocks/datos.py`](../../services/recommendation-service/mocks/datos.py) trae 7 servicios en 5 zonas (Taganga, Minca, Parque Tayrona, Palomino y Centro Histórico), pensados para ejercitar las reglas del chatbot:
+* **Capacidad de carga:** Tayrona en nivel `ALTO`; Taganga y el Centro Histórico en `MEDIO`; Minca y Palomino en `BAJO`.
+* **Alertas:** una `CRITICA` en Tayrona (Cabo San Juan saturado) y una `INFORMATIVA` en Minca (lluvias).
+* **Reseñas:** la calificación del catálogo se calcula a partir de las reseñas del mock, así catalog y review siempre coinciden. Hay servicios sin reseñas.
+* **Historial:** el turista `7c0e7a52-6f4b-4d65-9a3e-2f1d8b0c4e11` tiene dos reservas (una finalizada en Minca y una confirmada en Taganga); cualquier otro turista tiene el historial vacío.
+* **Disponibilidad:** los cupos se calculan a partir de la fecha, así que son siempre los mismos para un mismo día y algunos días quedan sin cupo.
+
+`tests/unit/test_mock_contratos.py` valida las respuestas del mock contra `catalog.yaml`, `booking.yaml` y `review.yaml`. Si un contrato cambia, esas pruebas avisan que el mock quedó atrás.
+
+## Cómo responden las tools
+
+Las tools están en [`src/infrastructure/tools/`](../../services/recommendation-service/src/infrastructure/tools/):
+* **Declaraciones propias.** Cada tool tiene un modelo de Pydantic (`argumentos.py`) que valida lo que pide el modelo de IA y genera el JSON Schema de su declaración, así la declaración y la validación nunca se separan. El adaptador del proveedor (Fase 5) solo traduce ese formato.
+* **Respuestas recortadas** (`recortes.py`). Al modelo solo le llega lo necesario para recomendar. No van coordenadas, imágenes, teléfonos, ids de reservas o de prestadores, ni el autor de las reseñas (Ley 1581).
+* **Servicios recomendables.** Cada resultado lleva `servicios_vistos`: los servicios que salieron de `buscar_servicios`, `detalle_servicio` o `historial_turista`. En la Fase 4, el chatbot solo podrá recomendar esos. Consultar disponibilidad o reseñas de un id no lo vuelve recomendable.
+* **Solo `GET`.** Ninguna tool crea, cambia ni cancela nada.
+* **Nunca lanzan excepciones.** Cuando algo falla, devuelven un error con código, para que el modelo diga que no pudo consultar en lugar de inventar:
+
+| Código | Cuándo |
+|---|---|
+| `HERRAMIENTA_DESCONOCIDA` | El modelo pidió una tool que no existe. |
+| `ARGUMENTOS_INVALIDOS` | Argumentos mal formados (zona con caracteres raros, id que no es UUID, rango de más de 62 días…); no se llega a llamar a la plataforma. |
+| `NO_ENCONTRADO` | La plataforma respondió 404. |
+| `SOLICITUD_RECHAZADA` | La plataforma respondió 400; se devuelve su mensaje. |
+| `SERVICIO_NO_DISPONIBLE` | No se pudo conectar (incluido no conectar a tiempo) o la plataforma respondió 5xx. |
+| `TIEMPO_AGOTADO` | Se conectó, pero no respondió dentro del tiempo máximo (`HERRAMIENTAS_TIMEOUT_SEGUNDOS`, 5 s por defecto). |
+| `RESPUESTA_INESPERADA` | La respuesta no es JSON o no tiene la forma del contrato. |
 
 El mock debe respetar también estas reglas de los contratos:
 * **Idioma:** catalog y review responden según `Accept-Language`; las tools lo reenvían.

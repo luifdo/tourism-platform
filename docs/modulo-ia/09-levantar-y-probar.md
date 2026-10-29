@@ -13,9 +13,9 @@ docker compose down            # apaga los contenedores
 docker compose down -v         # además borra los datos (reinicia la base y las sesiones)
 ```
 
-El compose levanta el servicio, PostgreSQL (`localhost:5434`) y Valkey (`localhost:6380`). Los puertos se publican para las pruebas de integración y no chocan con los de iam-service. El mock de la plataforma se agrega en la Fase 2.
+El compose levanta el servicio, PostgreSQL (`localhost:5434`), Valkey (`localhost:6380`) y el `mock-plataforma` (`localhost:9000`). Los puertos se publican para las pruebas de integración y no chocan con los de iam-service.
 
-## Verificación (fases 0 y 1)
+## Verificación (fases 0 a 2)
 
 | Comprobación | Comando | Resultado esperado |
 |---|---|---|
@@ -24,6 +24,8 @@ El compose levanta el servicio, PostgreSQL (`localhost:5434`) y Valkey (`localho
 | Estado | `docker compose ps` | `Up ... (healthy)` |
 | Usuario | `docker compose exec recommendation-service id` | `uid=1000(recommendation)`, sin privilegios |
 | Tabla | `docker compose exec postgres psql -U turismo -d recommendation_db -c '\d recomendacion_log'` | Las 8 columnas de [07-base-de-datos.md](./07-base-de-datos.md) |
+| Mock (Fase 2) | `curl "localhost:9000/api/catalog/buscar?zona=minca"` | Dos servicios de Minca con el formato de `catalog.yaml` |
+| Mock con identidad | `curl localhost:9000/api/catalog/analitica/capacidad -H "X-Usuario-Id: 7c0e7a52-6f4b-4d65-9a3e-2f1d8b0c4e11" -H "X-Usuario-Rol: Turista"` | Las 5 zonas con su nivel, sin cifras; 401 sin los encabezados |
 
 Verificaciones de fases posteriores:
 
@@ -45,7 +47,9 @@ uv run ruff check .      # revisión de estilo
 
 `pytest` cubre las pruebas unitarias (dominio y casos de uso con los puertos simulados), la de contrato y, desde la Fase 1, las de integración (PostgreSQL y Valkey reales).
 
-Las de integración necesitan `docker compose up -d postgres valkey`; si no los encuentran, se **omiten** (`pytest -rs` muestra el motivo), así que revisa que no aparezcan como `skipped` antes de dar una fase por cerrada. Usan la base 15 de Valkey y la vacían al terminar, sin tocar las sesiones de desarrollo. Las direcciones se cambian con `TEST_DB_URL` y `TEST_VALKEY_URL`.
+Las de integración necesitan `docker compose up -d postgres valkey mock-plataforma`; si no los encuentran, se **omiten** (`pytest -rs` muestra el motivo), así que revisa que no aparezcan como `skipped` antes de dar una fase por cerrada. Usan la base 15 de Valkey y la vacían al terminar, sin tocar las sesiones de desarrollo. Las direcciones se cambian con `TEST_DB_URL`, `TEST_VALKEY_URL` y `TEST_MOCK_URL`.
+
+Las tools se prueban de dos formas: las unitarias (`tests/unit/test_herramientas.py`) corren contra el mock en el mismo proceso y simulan las fallas de red con `httpx.MockTransport`, sin necesitar contenedores; las de integración (`tests/integration/test_herramientas_integracion.py`) llaman al contenedor `mock-plataforma` por HTTP real. Además, `tests/unit/test_mock_contratos.py` valida el mock contra los contratos de catalog, booking y review.
 
 En Windows, `tests/conftest.py` cambia el bucle de eventos de asyncio porque `psycopg` asíncrono no funciona con el bucle por defecto; en el contenedor no aplica.
 

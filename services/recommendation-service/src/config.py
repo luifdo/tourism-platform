@@ -10,3 +10,9 @@ class Configuracion(BaseSettings):
 
     db_url: str = "postgresql+psycopg://turismo:turismo@localhost:5434/recommendation_db"
     valkey_url: str = "redis://localhost:6380/0"
+
+    # Servicios que consultan las tools (en el compose, el mock-plataforma).
+    catalog_url: str = "http://localhost:9000/api/catalog"
+    booking_url: str = "http://localhost:9000/api/bookings"
+    review_url: str = "http://localhost:9000/api/reviews"
+    herramientas_timeout_segundos: float = 5.0

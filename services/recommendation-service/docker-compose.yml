@@ -1,7 +1,6 @@
 # Entorno local del Módulo 5. Desde esta carpeta:
 #   cp .env.example .env
 #   docker compose up --build
-# El mock de catalog, booking y review se agrega en la Fase 2.
 
 name: recommendation
 
@@ -13,6 +12,17 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       valkey: { condition: service_healthy }
+      mock-plataforma: { condition: service_healthy }
+
+  # Simula catalog, booking y review (las URLs de .env apuntan aquí).
+  mock-plataforma:
+    build: ./mocks
+    ports: ["9000:9000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   postgres:
     image: postgres:16

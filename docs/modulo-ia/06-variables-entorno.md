@@ -17,6 +17,8 @@ VALKEY_URL=redis://valkey:6379/0
 CATALOG_URL=http://mock-plataforma:9000/api/catalog
 BOOKING_URL=http://mock-plataforma:9000/api/bookings
 REVIEW_URL=http://mock-plataforma:9000/api/reviews
+# Tiempo máximo de cada llamada de una tool, en segundos
+HERRAMIENTAS_TIMEOUT_SEGUNDOS=5
 
 # Proveedor de IA (Fase 5); ver 08-simulacion.md
 LLM_PROVIDER=groq

@@ -1,0 +1,10 @@
+Hola, {{ nombre }}:
+
+El turista modificó su solicitud. Antes: {{ fecha_anterior }}, {{ personas_anterior }} persona(s). Ahora:
+
+Servicio: {{ servicio }}
+Fecha: {{ fecha }}
+Personas: {{ personas }}
+{% if expira %}
+El plazo para responder se reinició: tienes hasta el {{ expira }}.
+{% endif %}

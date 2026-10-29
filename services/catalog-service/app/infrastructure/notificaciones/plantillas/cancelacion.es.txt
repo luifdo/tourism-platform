@@ -1,0 +1,9 @@
+Hola, {{ nombre }}:
+
+{% if cancelada_por_turista %}El turista canceló su reserva.{% else %}El prestador canceló tu reserva.{% endif %}
+
+Servicio: {{ servicio }}
+Fecha: {{ fecha }}
+Personas: {{ personas }}
+{% if motivo %}Motivo: {{ motivo }}
+{% endif %}

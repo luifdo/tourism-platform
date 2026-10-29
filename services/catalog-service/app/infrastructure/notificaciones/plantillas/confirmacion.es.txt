@@ -1,0 +1,17 @@
+Hola, {{ nombre }}:
+
+¡Tu reserva está confirmada!
+
+Servicio: {{ servicio }}
+Fecha: {{ fecha }}
+Personas: {{ personas }}
+{% if aviso_pagos %}
+{{ aviso_pagos }}
+{% endif %}
+Contacto del prestador: {{ prestador }}
+{% if telefono %}Teléfono: {{ telefono }}
+{% endif %}{% if direccion %}Dirección: {{ direccion }}
+{% endif %}{% if politica %}
+Política de cancelación del prestador: {{ politica }}
+{% endif %}
+{{ regla_base }}

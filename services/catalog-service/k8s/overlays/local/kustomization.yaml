@@ -1,0 +1,30 @@
+# Kubernetes de Docker Desktop. La infraestructura (PostgreSQL, Valkey, RabbitMQ, SeaweedFS y
+# Mailpit) es la de infra/docker-compose.yml, a la que los pods llegan por host.docker.internal.
+# Uso (guía completa en el README del servicio):
+#   cp secretos.env.example secretos.env
+#   docker build -t catalog-service:local ../../..
+#   kubectl apply -k .
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# El Secret generado aquí debe quedar en el mismo namespace que la base; si no, Kustomize no
+# pone su nombre con hash en los Deployments.
+namespace: turismo-app
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+images:
+  - name: ghcr.io/turismo-santa-marta/catalog-service # nombre que deja la base
+    newName: catalog-service
+    newTag: local # la imagen construida en tu Docker; con una etiqueta fija no se descarga
+
+patches:
+  - path: configmap-local.yaml
+
+# secretos.env no se sube al repositorio (está en .gitignore); el ejemplo sí.
+secretGenerator:
+  - name: catalog-secretos
+    envs:
+      - secretos.env

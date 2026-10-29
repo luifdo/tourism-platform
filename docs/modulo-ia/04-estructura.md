@@ -29,7 +29,7 @@ services/recommendation-service/
     └── integration/
 ```
 
-Las carpetas `llm/` y `tools/` son nuevas respecto a la plantilla; la plantilla trae `messaging/`, que se quitó porque este módulo no usa RabbitMQ. Las carpetas `domain/`, `application/` y `persistence/` están vacías (`.gitkeep`) hasta las fases 1 a 3.
+Las carpetas `llm/` y `tools/` son nuevas respecto a la plantilla; la plantilla trae `messaging/`, que se quitó porque este módulo no usa RabbitMQ. Desde la Fase 1, `domain/`, `application/ports/` y `persistence/` tienen código; además se agregó `db/` con el script SQL de la tabla y `src/config.py` con la configuración.
 
 ---
 [← Stack elegido](./03-stack.md) · [Dockerfile (explicado) →](./05-dockerfile.md)

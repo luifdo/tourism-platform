@@ -8,6 +8,10 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "prometheus-fastapi-instrumentator>=7.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "psycopg[binary]>=3.2",
+    "redis>=5.2",
+    "pydantic-settings>=2.6",
 ]
 
 [dependency-groups]
@@ -17,6 +21,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "httpx>=0.28",
     "pyyaml>=6.0",
+    "pytest-asyncio>=0.24",
 ]
 
 [tool.uv]
@@ -34,6 +39,8 @@ select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "ASYNC"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 # Cobertura (Plan §8.1: mínimo 70 %): uv run pytest --cov
 [tool.coverage.run]

@@ -1,4 +1,5 @@
 """El código no puede exponer rutas que el contrato acordado no declara."""
+
 from pathlib import Path
 
 import yaml

@@ -17,7 +17,7 @@
 | Dependencias | `uv` (`pyproject.toml` + `uv.lock`) | Es lo que usan catalog e IAM. `uv` instala las dependencias y `uv.lock` fija las versiones exactas, así el contenedor y todo el equipo usan las mismas. |
 | Lint | `ruff` | Igual que catalog, con la misma configuración. |
 
-Las versiones exactas están en `uv.lock`. En la Fase 0 solo se instalan FastAPI, Uvicorn y el instrumentador de Prometheus; SQLAlchemy, el cliente de Valkey, `httpx` y el SDK del proveedor se agregan en las fases que los necesitan.
+Las versiones exactas están en `uv.lock`. La Fase 0 instaló FastAPI, Uvicorn y el instrumentador de Prometheus; la Fase 1, SQLAlchemy asíncrono con `psycopg`, el cliente `redis` para Valkey, `pydantic-settings` para la configuración y `pytest-asyncio`. `httpx` (como dependencia del servicio) y el SDK del proveedor se agregan en las fases que los necesitan.
 
 ---
 [← Arquitectura local](./02-arquitectura-local.md) · [Estructura de carpetas →](./04-estructura.md)

@@ -248,4 +248,4 @@ Detalle en [04-estructura.md](./04-estructura.md).
 **Criterio de cierre.** El servicio se despliega desde los manifiestos, pasa ESC-01 y ESC-05 y está listo para el PR.
 
 ---
-[← Levantar, probar y verificar](./09-levantar-y-probar.md) · [Guía de uso →](./11-guia-de-uso.md)
+[← Levantar, probar y verificar](./09-levantar-y-probar.md) · [Guía de uso →](./guia-de-uso.md)

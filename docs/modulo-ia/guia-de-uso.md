@@ -1,8 +1,8 @@
 # Guía de uso de recommendation-service
 
-> Módulo 5 · [Índice](./README.md)
+> Módulo 5 (IA & Recomendación) · Responsable: Alvaro Ospino (@alvaroospino)
 
-Esta guía explica cómo levantar el chatbot turístico y cómo usarlo desde otras partes de la plataforma. Está pensada para quien integra el frontend (PWA), configura el gateway o necesita probar el servicio. El detalle de diseño está en los documentos 00 a 10 de esta carpeta; el contrato oficial es [`contracts/openapi/recommendation.yaml`](../../contracts/openapi/recommendation.yaml).
+Esta guía explica cómo levantar el chatbot turístico y cómo usarlo desde otras partes de la plataforma. Está pensada para quien integra el frontend (PWA), configura el gateway o necesita probar el servicio. El contrato oficial es [`contracts/openapi/recommendation.yaml`](../../contracts/openapi/recommendation.yaml) y el comportamiento del chatbot está descrito en la [Guía Técnica del Módulo 5](../../Documents/Pages/Guia_Tecnica_Modulo_IA.md).
 
 ## 1. Qué hace
 
@@ -171,7 +171,7 @@ async function enviarAlAsistente(mensaje, conversacionId, idioma, token) {
 
 ## 7. Configuración
 
-Todas las variables están en [`.env.example`](../../services/recommendation-service/.env.example) y explicadas en [06-variables-entorno.md](./06-variables-entorno.md). Las que más se tocan:
+Todas las variables están en [`.env.example`](../../services/recommendation-service/.env.example), con un comentario en cada una. Las que más se tocan:
 
 | Variable | Por defecto | Para qué |
 |---|---|---|
@@ -186,7 +186,9 @@ Todas las variables están en [`.env.example`](../../services/recommendation-ser
 
 ## 8. Cuota de Groq (plan gratuito)
 
-El plan gratuito permite **8000 tokens por minuto y 1000 solicitudes por día**. Una conversación típica hace 2 o 3 llamadas al modelo y usa unos 7000 tokens, así que alcanza para **más o menos una conversación por minuto**. Suficiente para desarrollo, demos y la sustentación. Con varios turistas a la vez empezarán a salir 503: para uso real hace falta un plan de pago. Detalle en [08-simulacion.md](./08-simulacion.md).
+El plan gratuito permite **8000 tokens por minuto y 1000 solicitudes por día**. Una conversación típica hace 2 o 3 llamadas al modelo y usa unos 7000 tokens, así que alcanza para **más o menos una conversación por minuto**. Suficiente para desarrollo, demos y la sustentación. Con varios turistas a la vez empezarán a salir 503: para uso real hace falta un plan de pago.
+
+Cada llamada a Groq queda en el log con sus tokens (`LOG_LEVEL=INFO`), lo que sirve para vigilar el consumo.
 
 ## 9. Operación y pruebas
 
@@ -201,5 +203,3 @@ El plan gratuito permite **8000 tokens por minuto y 1000 solicitudes por día**.
 
 La tabla `recomendacion_log` guarda qué se recomendó, a quién, con qué justificación, qué tools se usaron y con qué modelo, pero **nunca el texto de la conversación** (Ley 1581). Los correos y celulares que el turista escriba se ocultan antes de guardarse o enviarse a Groq.
 
----
-[← Plan por fases](./10-plan-por-fases.md)

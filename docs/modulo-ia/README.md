@@ -15,4 +15,4 @@ Documentos de trabajo del equipo del Módulo 5. Explican cómo se empaqueta y se
 8. [Simulación y proveedor de IA](./08-simulacion.md)
 9. [Levantar, probar y verificar](./09-levantar-y-probar.md)
 10. [Plan de implementación por fases](./10-plan-por-fases.md)
-11. [Guía de uso](./11-guia-de-uso.md): cómo levantar el servicio, llamar al chat, manejar los errores e integrarlo (frontend y gateway)
+11. [Guía de uso](./guia-de-uso.md): cómo levantar el servicio, llamar al chat, manejar los errores e integrarlo (frontend y gateway)

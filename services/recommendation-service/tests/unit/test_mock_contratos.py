@@ -3,40 +3,19 @@
 Si un contrato cambia, estas pruebas avisan que el mock (y quizá las tools) quedaron atrás.
 """
 
-from functools import cache
-from pathlib import Path
-
 import pytest
-import yaml
 from fastapi.testclient import TestClient
-from openapi_schema_validator import OAS30Validator, oas30_format_checker
 
 from mocks.app import app
 from mocks.datos import SERVICIOS, TURISTA_CON_HISTORIAL
+from tests.contratos import validar as _validar
 
-CONTRATOS = Path(__file__).parents[4] / "contracts" / "openapi"
 TURISTA = {"X-Usuario-Id": str(TURISTA_CON_HISTORIAL), "X-Usuario-Rol": "Turista"}
 SERVICIO = str(SERVICIOS[0]["id"])
 SIN_RESENAS = str(SERVICIOS[-1]["id"])
 INEXISTENTE = "00000000-0000-4000-8000-000000000000"
 
 cliente = TestClient(app)
-
-
-@cache
-def _contrato(archivo: str) -> dict:
-    return yaml.safe_load((CONTRATOS / archivo).read_text(encoding="utf-8"))
-
-
-def _validar(archivo: str, ruta: str, estado: int, cuerpo: object) -> None:
-    contrato = _contrato(archivo)
-    respuesta = contrato["paths"][ruta]["get"]["responses"][str(estado)]
-    if "$ref" in respuesta:
-        respuesta = contrato["components"]["responses"][respuesta["$ref"].rsplit("/", 1)[1]]
-    esquema = respuesta["content"]["application/json"]["schema"]
-    # Los $ref del contrato son locales (#/components/...): se resuelven en esta raíz.
-    raiz = {"components": contrato["components"], **esquema}
-    OAS30Validator(raiz, format_checker=oas30_format_checker).validate(cuerpo)
 
 
 CASOS = [

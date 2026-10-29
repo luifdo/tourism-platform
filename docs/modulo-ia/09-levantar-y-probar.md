@@ -27,13 +27,14 @@ El compose levanta el servicio, PostgreSQL (`localhost:5434`), Valkey (`localhos
 | Mock (Fase 2) | `curl "localhost:9000/api/catalog/buscar?zona=minca"` | Dos servicios de Minca con el formato de `catalog.yaml` |
 | Mock con identidad | `curl localhost:9000/api/catalog/analitica/capacidad -H "X-Usuario-Id: 7c0e7a52-6f4b-4d65-9a3e-2f1d8b0c4e11" -H "X-Usuario-Rol: Turista"` | Las 5 zonas con su nivel, sin cifras; 401 sin los encabezados |
 
-Verificaciones de fases posteriores:
+Chat (Fase 3), sin proveedor de IA configurado:
 
 | Comprobación | Comando | Resultado esperado |
 |---|---|---|
-| Chat (Fase 3) | `curl -X POST localhost:8005/api/recommendations/chat -H "X-Usuario-Id: <uuid>" -H "Content-Type: application/json" -d '{"mensaje":"¿Qué puedo hacer en Taganga?"}'` | Respuesta con recomendaciones justificadas |
-| Registro (Fase 3) | Consultar `recomendacion_log` en PostgreSQL tras un chat | Una fila por recomendación |
-| Sesión (Fase 3) | Segunda consulta con el mismo `conversacion_id` | El servicio recuerda el contexto |
+| Chat sin proveedor | `curl -X POST localhost:8005/api/recommendations/chat -H "X-Usuario-Id: 7c0e7a52-6f4b-4d65-9a3e-2f1d8b0c4e11" -H "X-Usuario-Rol: Turista" -H "Content-Type: application/json" -d '{"mensaje":"¿Qué puedo hacer en Taganga?"}'` | 503 `ASISTENTE_NO_DISPONIBLE` hasta la Fase 5 (con Groq: respuesta con recomendaciones justificadas) |
+| Chat sin identidad | El mismo `curl` sin `X-Usuario-Id` | 401 `NO_AUTENTICADO` |
+
+La conversación completa (respuesta, fila en `recomendacion_log` y sesión que recuerda el contexto) se verifica con `tests/integration/test_chat_integracion.py`, que usa PostgreSQL, Valkey y el mock reales con un modelo con guion.
 
 ## Pruebas y calidad
 

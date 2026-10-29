@@ -16,12 +16,12 @@ services/recommendation-service/
 │   ├── __init__.py
 │   ├── main.py               # crea la app FastAPI y conecta los adaptadores
 │   ├── domain/               # reglas de negocio puras
-│   ├── application/          # casos de uso
+│   ├── application/          # casos de uso (responder_mensaje, verificar_salud) e instrucciones del modelo
 │   │   └── ports/            # interfaces: modelo de lenguaje, tools, sesiones, log
 │   └── infrastructure/
-│       ├── http/             # endpoints (health ahora; chat en la Fase 3)
+│       ├── http/             # endpoints (health y chat) y formato común de errores
 │       ├── persistence/      # PostgreSQL y Valkey
-│       ├── llm/              # adaptadores del proveedor de IA (uno por proveedor)
+│       ├── llm/              # fabrica.py elige el adaptador del proveedor (Groq en la Fase 5)
 │       └── tools/            # las 7 tools: argumentos, recortes y cliente HTTP (httpx)
 ├── mocks/                    # contenedor mock-plataforma (app.py, datos.py, Dockerfile)
 └── tests/
@@ -29,7 +29,7 @@ services/recommendation-service/
     └── integration/
 ```
 
-Las carpetas `llm/` y `tools/` son nuevas respecto a la plantilla; la plantilla trae `messaging/`, que se quitó porque este módulo no usa RabbitMQ. Desde la Fase 1, `domain/`, `application/ports/` y `persistence/` tienen código; además se agregó `db/` con el script SQL de la tabla y `src/config.py` con la configuración. En la Fase 2 se llenaron `tools/` y `mocks/`, y se agregó el puerto `application/ports/herramientas.py`.
+Las carpetas `llm/` y `tools/` son nuevas respecto a la plantilla; la plantilla trae `messaging/`, que se quitó porque este módulo no usa RabbitMQ. Desde la Fase 1, `domain/`, `application/ports/` y `persistence/` tienen código; además se agregó `db/` con el script SQL de la tabla y `src/config.py` con la configuración. En la Fase 2 se llenaron `tools/` y `mocks/`, y se agregó el puerto `application/ports/herramientas.py`. En la Fase 3 se agregaron el puerto `modelo_de_lenguaje.py`, el caso de uso `responder_mensaje.py`, el endpoint `http/chat.py` y los dobles de prueba `tests/fakes.py`.
 
 ---
 [← Stack elegido](./03-stack.md) · [Dockerfile (explicado) →](./05-dockerfile.md)

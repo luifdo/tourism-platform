@@ -1,3 +1,4 @@
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
@@ -16,3 +17,10 @@ class Configuracion(BaseSettings):
     booking_url: str = "http://localhost:9000/api/bookings"
     review_url: str = "http://localhost:9000/api/reviews"
     herramientas_timeout_segundos: float = 5.0
+
+    # Proveedor de IA (Fase 5). Sin proveedor, el chat responde 503.
+    llm_provider: str = ""
+    llm_api_key: SecretStr = SecretStr("")
+    llm_model: str = ""
+    # Tiempo máximo de una consulta completa al chat (modelo + tools).
+    chat_timeout_segundos: float = 45.0

@@ -6,4 +6,4 @@ Esta carpeta queda reservada para la documentación técnica del código (guías
 
 ## Contenido
 
-* [`modulo-ia/`](./modulo-ia/README.md): contexto, dockerización, desarrollo local y plan por fases del Módulo 5 (IA & Recomendación).
+* [`modulo-ia/guia-de-uso.md`](./modulo-ia/guia-de-uso.md): cómo levantar y usar `recommendation-service`, el chatbot del Módulo 5 (IA & Recomendación).

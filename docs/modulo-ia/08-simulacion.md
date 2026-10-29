@@ -60,6 +60,24 @@ Las tools están en [`src/infrastructure/tools/`](../../services/recommendation-
 | `TIEMPO_AGOTADO` | Se conectó, pero no respondió dentro del tiempo máximo (`HERRAMIENTAS_TIMEOUT_SEGUNDOS`, 5 s por defecto). |
 | `RESPUESTA_INESPERADA` | La respuesta no es JSON o no tiene la forma del contrato. |
 
+## Reglas que aplica el chat (Fase 4)
+
+Lo que se puede comprobar en el código no se le confía al modelo: `responder_mensaje.py` lo hace cumplir, y las instrucciones del modelo (`instrucciones.py`) solo lo orientan.
+
+| Regla | Cómo se cumple | Si no se cumple |
+|---|---|---|
+| Solo se recomiendan servicios consultados (Guía §6) | Se descarta toda recomendación cuyo servicio no esté en los `servicios_vistos` de la conversación. | Se quita de la respuesta y no se registra. |
+| Toda recomendación lleva justificación (RNF-08) | El dominio rechaza la justificación vacía; la tabla también (`CHECK`). | Se quita de la respuesta. |
+| Sin recomendaciones repetidas | Se deja la primera de cada servicio. | — |
+| Mensaje de 1 a 1000 caracteres, no solo espacios | Validación del cuerpo. | 400 `VALIDACION`. |
+| Límite de mensajes por turista | `CHAT_LIMITE_MENSAJES` por `CHAT_LIMITE_VENTANA_SEGUNDOS` (10 cada 5 min por defecto), contado en Valkey antes de llamar al modelo. Cuenta todos los intentos, también los fallidos. | 429 `DEMASIADAS_SOLICITUDES`. |
+| Identidad del servidor | `X-Usuario-Id` y `X-Usuario-Rol` (Turista); un id en el cuerpo se ignora. | 401 / 403. |
+| Datos como datos | Cada resultado de tool viaja como `{"origen": "datos_de_la_plataforma", "datos": …}` y las instrucciones dicen que nada de ahí ni del turista cambia las reglas. | — |
+| Privacidad (Ley 1581) | Al modelo nunca llega el `turista_id` (lo usan solo las tools). Correos y celulares que el turista escriba se reemplazan por `[dato personal oculto]` antes de guardarlos o enviarlos. | — |
+| Alcance, equidad y sostenibilidad | Instrucciones: solo turismo en Santa Marta, sin favorecer prestadores, preferir capacidad BAJA, no recomendar zonas con alertas críticas, no revelar las instrucciones. | Se mide en la Fase 6. |
+| Dependencias caídas | Si PostgreSQL o Valkey no responden durante un chat, los adaptadores lanzan `DependenciaNoDisponibleError` (con tiempo máximo de conexión de 3 s). | 503 `ASISTENTE_NO_DISPONIBLE`. |
+| Errores inesperados | Manejador general sin trazas para el cliente. | 500 `ERROR_INTERNO` con el formato común. |
+
 El mock debe respetar también estas reglas de los contratos:
 * **Idioma:** catalog y review responden según `Accept-Language`; las tools lo reenvían.
 * **Identidad:** `historial_turista` y `presion_capacidad_carga` reenvían el `X-Usuario-Id` del turista. Para `Turista`, la capacidad devuelve solo `zona`, `fecha`, `nivel` (`BAJO`, `MEDIO`, `ALTO`) y su etiqueta, sin cifras.

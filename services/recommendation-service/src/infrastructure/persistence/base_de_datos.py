@@ -8,8 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 logger = logging.getLogger(__name__)
 
 
-def crear_motor(db_url: str) -> AsyncEngine:
-    return create_async_engine(db_url, pool_pre_ping=True)
+def crear_motor(db_url: str, timeout_conexion_segundos: int = 3) -> AsyncEngine:
+    # Sin connect_timeout, una base caída deja la petición colgada por minutos.
+    return create_async_engine(
+        db_url,
+        pool_pre_ping=True,
+        pool_timeout=timeout_conexion_segundos,
+        connect_args={"connect_timeout": timeout_conexion_segundos},
+    )
 
 
 class SondaPostgres:

@@ -20,6 +20,7 @@ from src.application.responder_mensaje import (
 from src.domain.conversacion import Conversacion, Mensaje, Rol
 from tests.fakes import (
     HerramientasFalsas,
+    LimiteEnMemoria,
     ModeloCaido,
     ModeloGuionado,
     RegistroEnMemoria,
@@ -36,16 +37,18 @@ AVES = uuid4()
 
 
 class Escenario:
-    def __init__(self, modelo: ModeloGuionado, **opciones) -> None:
+    def __init__(self, modelo: ModeloGuionado, limite: int = 1000, **opciones) -> None:
         self.modelo = modelo
         self.herramientas = HerramientasFalsas({"Tour de café": CAFE, "Aves": AVES})
         self.sesiones = SesionesEnMemoria()
         self.registro = RegistroEnMemoria()
+        self.limite = LimiteEnMemoria(limite)
         self.caso_de_uso = ResponderMensaje(
             modelo,
             self.herramientas,
             self.sesiones,
             self.registro,
+            self.limite,
             reloj=lambda: AHORA,
             **opciones,
         )
@@ -99,7 +102,7 @@ async def test_una_tool_y_su_resultado_vuelven_al_modelo():
     assert isinstance(segunda[-2], MensajeAsistente)
     assert isinstance(segunda[-1], ResultadoLlamada)
     assert segunda[-1].llamada_id == segunda[-2].llamadas[0].id
-    assert segunda[-1].contenido["servicios"][0]["nombre"] in {"Tour de café", "Aves"}
+    assert segunda[-1].contenido["datos"]["servicios"][0]["nombre"] in {"Tour de café", "Aves"}
 
 
 async def test_varias_tools_encadenadas_y_en_paralelo():
@@ -216,13 +219,14 @@ async def test_el_modelo_no_responde_a_tiempo():
 
 async def test_las_recomendaciones_mal_formadas_se_descartan():
     modelo = ModeloGuionado(
+        pedir(("buscar_servicios", {})),
         responder(
             "Opciones:",
             recomendacion(CAFE, "Tour de café", "Buenas reseñas."),
             recomendacion("no-es-uuid", "X", "motivo"),
             recomendacion(AVES, "Aves", "   "),
             {"nombre": "sin id", "justificacion": "motivo"},
-        )
+        ),
     )
 
     resultado = await Escenario(modelo).preguntar()

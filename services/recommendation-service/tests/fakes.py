@@ -122,7 +122,10 @@ class SesionesEnMemoria:
 
     async def guardar(self, conversacion: Conversacion) -> None:
         self.guardadas[conversacion.id] = Conversacion(
-            conversacion.id, conversacion.turista_id, list(conversacion.mensajes)
+            conversacion.id,
+            conversacion.turista_id,
+            list(conversacion.mensajes),
+            set(conversacion.servicios_vistos),
         )
 
 
@@ -132,3 +135,13 @@ class RegistroEnMemoria:
 
     async def registrar(self, registros: Sequence[RegistroRecomendacion]) -> None:
         self.registros.extend(registros)
+
+
+class LimiteEnMemoria:
+    def __init__(self, maximo: int = 1000) -> None:
+        self._maximo = maximo
+        self.cuentas: dict[UUID, int] = {}
+
+    async def permitir(self, turista_id: UUID) -> bool:
+        self.cuentas[turista_id] = self.cuentas.get(turista_id, 0) + 1
+        return self.cuentas[turista_id] <= self._maximo

@@ -33,6 +33,8 @@ Chat (Fase 3), sin proveedor de IA configurado:
 |---|---|---|
 | Chat sin proveedor | `curl -X POST localhost:8005/api/recommendations/chat -H "X-Usuario-Id: 7c0e7a52-6f4b-4d65-9a3e-2f1d8b0c4e11" -H "X-Usuario-Rol: Turista" -H "Content-Type: application/json" -d '{"mensaje":"¿Qué puedo hacer en Taganga?"}'` | 503 `ASISTENTE_NO_DISPONIBLE` hasta la Fase 5 (con Groq: respuesta con recomendaciones justificadas) |
 | Chat sin identidad | El mismo `curl` sin `X-Usuario-Id` | 401 `NO_AUTENTICADO` |
+| Mensaje vacío (Fase 4) | El mismo `curl` con `-d '{"mensaje":"   "}'` | 400 `VALIDACION` |
+| Límite de mensajes (Fase 4) | El mismo `curl` 11 veces seguidas con el mismo `X-Usuario-Id` | Las 10 primeras pasan (hoy, 503 sin proveedor) y la 11.ª da 429 `DEMASIADAS_SOLICITUDES` |
 
 La conversación completa (respuesta, fila en `recomendacion_log` y sesión que recuerda el contexto) se verifica con `tests/integration/test_chat_integracion.py`, que usa PostgreSQL, Valkey y el mock reales con un modelo con guion.
 

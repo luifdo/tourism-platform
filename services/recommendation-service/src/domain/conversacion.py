@@ -19,11 +19,16 @@ class Mensaje:
 
 @dataclass
 class Conversacion:
-    """Sesión del chatbot. Pertenece a un solo turista y guarda sus últimos 10 mensajes."""
+    """Sesión del chatbot. Pertenece a un solo turista y guarda sus últimos 10 mensajes.
+
+    `servicios_vistos` son los servicios que salieron de alguna tool en la conversación: los
+    únicos que el chatbot puede recomendar (contrato, `/chat`).
+    """
 
     id: UUID
     turista_id: UUID
     mensajes: list[Mensaje] = field(default_factory=list)
+    servicios_vistos: set[UUID] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self._recortar()

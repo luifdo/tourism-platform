@@ -26,6 +26,9 @@ LLM_API_KEY=
 LLM_MODEL=
 # Tiempo máximo de una consulta completa al chat (modelo + tools), en segundos
 CHAT_TIMEOUT_SEGUNDOS=45
+# Mensajes que puede enviar cada turista por ventana (cuida la cuota del proveedor)
+CHAT_LIMITE_MENSAJES=10
+CHAT_LIMITE_VENTANA_SEGUNDOS=300
 ```
 
 Las variables del proveedor de IA son genéricas (`LLM_*`). `LLM_PROVIDER=groq` elige el adaptador de Groq; `LLM_API_KEY` es la clave de Groq (queda vacía hasta la Fase 5) y `LLM_MODEL` el modelo de Groq que se use, que debe admitir llamada a funciones (tools). En Kubernetes la clave será un `Secret` y el modelo un `ConfigMap`.

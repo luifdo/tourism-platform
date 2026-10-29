@@ -2,7 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.application.responder_mensaje import PeticionChat, ResponderMensaje
 from src.infrastructure.http.dependencias import obtener_responder_mensaje
@@ -17,6 +17,13 @@ class ChatPeticion(BaseModel):
 
     mensaje: str = Field(min_length=1, max_length=1000)
     conversacion_id: UUID | None = None
+
+    @field_validator("mensaje")
+    @classmethod
+    def _no_solo_espacios(cls, mensaje: str) -> str:
+        if not mensaje.strip():
+            raise ValueError("el mensaje no puede tener solo espacios")
+        return mensaje
 
 
 class RecomendacionRespuesta(BaseModel):

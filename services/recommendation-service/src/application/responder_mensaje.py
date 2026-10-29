@@ -12,11 +12,13 @@ from src.application.instrucciones import (
     DECLARACION_RESPONDER,
     MENSAJE_LIMITE,
     MENSAJE_VACIO,
+    ORIGEN_DATOS,
     RESPONDER,
     Idioma,
     instrucciones,
 )
 from src.application.ports.herramientas import ContextoTurista, Herramientas, ResultadoHerramienta
+from src.application.ports.limite_de_tasa import LimiteDeTasa
 from src.application.ports.modelo_de_lenguaje import (
     MensajeAsistente,
     MensajeModelo,
@@ -28,6 +30,7 @@ from src.application.ports.modelo_de_lenguaje import (
 from src.application.ports.registro_recomendaciones import RegistroRecomendaciones
 from src.application.ports.repositorio_sesiones import RepositorioSesiones
 from src.domain.conversacion import Conversacion, Mensaje, Rol
+from src.domain.privacidad import ocultar_datos_personales
 from src.domain.recomendacion import Recomendacion, RegistroRecomendacion
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,10 @@ class ConversacionNoEncontradaError(Exception):
 
 class AsistenteNoDisponibleError(Exception):
     """El proveedor de IA falló o la consulta superó su tiempo máximo (503)."""
+
+
+class DemasiadasSolicitudesError(Exception):
+    """El turista superó el límite de mensajes de la ventana (429)."""
 
 
 @dataclass(frozen=True)
@@ -64,6 +71,7 @@ class _Turno:
     respuesta: str
     recomendaciones: tuple[Recomendacion, ...]
     herramientas_usadas: tuple[str, ...]
+    servicios_vistos: frozenset[UUID]
 
 
 class ResponderMensaje:
@@ -73,6 +81,7 @@ class ResponderMensaje:
         herramientas: Herramientas,
         sesiones: RepositorioSesiones,
         registro: RegistroRecomendaciones,
+        limite: LimiteDeTasa,
         reloj: Callable[[], datetime],
         timeout_segundos: float = 45.0,
         max_llamadas: int = MAX_LLAMADAS,
@@ -81,15 +90,20 @@ class ResponderMensaje:
         self._herramientas = herramientas
         self._sesiones = sesiones
         self._registro = registro
+        self._limite = limite
         self._reloj = reloj
         self._timeout_segundos = timeout_segundos
         self._max_llamadas = max_llamadas
 
     async def ejecutar(self, peticion: PeticionChat) -> ResultadoChat:
+        if not await self._limite.permitir(peticion.turista_id):
+            raise DemasiadasSolicitudesError()
         conversacion = await self._conversacion(peticion)
+        # Lo que el turista escriba de correo o celular no se guarda ni viaja al proveedor.
+        mensaje = ocultar_datos_personales(peticion.mensaje.strip())
         try:
             async with asyncio.timeout(self._timeout_segundos):
-                turno = await self._conversar(conversacion, peticion)
+                turno = await self._conversar(conversacion, mensaje, peticion.idioma)
         except ModeloNoDisponibleError as exc:
             logger.warning("El proveedor de IA no está disponible: %s", exc)
             raise AsistenteNoDisponibleError() from exc
@@ -111,8 +125,9 @@ class ResponderMensaje:
                 for r in turno.recomendaciones
             ]
         )
-        conversacion.agregar(Mensaje(rol=Rol.TURISTA, texto=peticion.mensaje))
+        conversacion.agregar(Mensaje(rol=Rol.TURISTA, texto=mensaje))
         conversacion.agregar(Mensaje(rol=Rol.ASISTENTE, texto=turno.respuesta))
+        conversacion.servicios_vistos |= turno.servicios_vistos
         await self._sesiones.guardar(conversacion)
         return ResultadoChat(conversacion.id, turno.respuesta, turno.recomendaciones)
 
@@ -124,28 +139,31 @@ class ResponderMensaje:
             raise ConversacionNoEncontradaError()
         return conversacion
 
-    async def _conversar(self, conversacion: Conversacion, peticion: PeticionChat) -> _Turno:
-        contexto = ContextoTurista(turista_id=peticion.turista_id, idioma=peticion.idioma)
+    async def _conversar(self, conversacion: Conversacion, mensaje: str, idioma: Idioma) -> _Turno:
+        # La identidad va solo al contexto de las tools; nunca en lo que se envía al modelo.
+        contexto = ContextoTurista(turista_id=conversacion.turista_id, idioma=idioma)
         declaraciones = [*self._herramientas.declaraciones(), DECLARACION_RESPONDER]
         mensajes: list[MensajeModelo] = [_del_historial(m) for m in conversacion.mensajes]
-        mensajes.append(MensajeTurista(peticion.mensaje))
+        mensajes.append(MensajeTurista(mensaje))
         usadas: list[str] = []
+        vistos = set(conversacion.servicios_vistos)
+
+        def turno(texto: str, recomendaciones: tuple[Recomendacion, ...] = ()) -> _Turno:
+            # Tools sin repetidos y en el orden en que se usaron.
+            return _Turno(texto, recomendaciones, tuple(dict.fromkeys(usadas)), frozenset(vistos))
 
         # Termina siempre: cada vuelta responde o ejecuta al menos una tool de las 6 permitidas.
         while True:
-            respuesta = await self._modelo.generar(
-                instrucciones(peticion.idioma), mensajes, declaraciones
-            )
+            respuesta = await self._modelo.generar(instrucciones(idioma), mensajes, declaraciones)
             final = next((ll for ll in respuesta.llamadas if ll.nombre == RESPONDER), None)
             if final is not None:
-                texto, recomendaciones = _leer_final(final.argumentos, respuesta.texto)
-                return _turno(texto or MENSAJE_VACIO[peticion.idioma], recomendaciones, usadas)
+                texto, propuestas = _leer_final(final.argumentos, respuesta.texto)
+                return turno(texto or MENSAJE_VACIO[idioma], _validar(propuestas, vistos))
             if not respuesta.llamadas:
-                texto = respuesta.texto.strip() or MENSAJE_VACIO[peticion.idioma]
-                return _turno(texto, (), usadas)
+                return turno(respuesta.texto.strip() or MENSAJE_VACIO[idioma])
             if len(usadas) + len(respuesta.llamadas) > self._max_llamadas:
                 logger.info("Se alcanzó el límite de %s tools en un mensaje", self._max_llamadas)
-                return _turno(MENSAJE_LIMITE[peticion.idioma], (), usadas)
+                return turno(MENSAJE_LIMITE[idioma])
 
             resultados = await asyncio.gather(
                 *(
@@ -156,6 +174,7 @@ class ResponderMensaje:
             mensajes.append(MensajeAsistente(respuesta.texto, respuesta.llamadas))
             for llamada, resultado in zip(respuesta.llamadas, resultados, strict=True):
                 usadas.append(llamada.nombre)
+                vistos |= resultado.servicios_vistos
                 mensajes.append(ResultadoLlamada(llamada.id, llamada.nombre, _contenido(resultado)))
 
 
@@ -166,17 +185,14 @@ def _del_historial(mensaje: Mensaje) -> MensajeModelo:
 
 
 def _contenido(resultado: ResultadoHerramienta) -> dict[str, Any]:
-    if resultado.ok:
-        return resultado.datos
-    return {"error": resultado.error, **resultado.datos}
+    """Envuelve el resultado para que el modelo lo trate como datos, no como instrucciones."""
+    contenido: dict[str, Any] = {"origen": ORIGEN_DATOS, "datos": resultado.datos}
+    if not resultado.ok:
+        contenido["error"] = resultado.error
+    return contenido
 
 
-def _turno(texto: str, recomendaciones: tuple[Recomendacion, ...], usadas: list[str]) -> _Turno:
-    # Sin repetidos y en el orden en que se usaron.
-    return _Turno(texto, recomendaciones, tuple(dict.fromkeys(usadas)))
-
-
-def _leer_final(argumentos: Mapping[str, Any], texto: str) -> tuple[str, tuple[Recomendacion, ...]]:
+def _leer_final(argumentos: Mapping[str, Any], texto: str) -> tuple[str, list[Recomendacion]]:
     """Lee los argumentos de `responder_al_turista`, descartando lo que venga mal formado."""
     respuesta = argumentos.get("respuesta")
     if not isinstance(respuesta, str) or not respuesta.strip():
@@ -189,9 +205,24 @@ def _leer_final(argumentos: Mapping[str, Any], texto: str) -> tuple[str, tuple[R
                 Recomendacion(
                     servicio_id=UUID(str(item["servicio_id"])),
                     nombre=str(item["nombre"]),
-                    justificacion=str(item["justificacion"]),
+                    justificacion=str(item["justificacion"]).strip(),
                 )
             )
         except (KeyError, TypeError, ValueError):
+            # Incluye la recomendación sin justificación (RNF-08).
             logger.info("Se descartó una recomendación mal formada: %r", item)
-    return respuesta.strip(), tuple(recomendaciones)
+    return respuesta.strip(), recomendaciones
+
+
+def _validar(propuestas: list[Recomendacion], vistos: set[UUID]) -> tuple[Recomendacion, ...]:
+    """Solo pasan servicios que salieron de una tool en la conversación, sin repetir (Guía §6)."""
+    validas: dict[UUID, Recomendacion] = {}
+    for recomendacion in propuestas:
+        if recomendacion.servicio_id not in vistos:
+            logger.warning(
+                "Se descartó un servicio que no salió de ninguna tool: %s",
+                recomendacion.servicio_id,
+            )
+            continue
+        validas.setdefault(recomendacion.servicio_id, recomendacion)
+    return tuple(validas.values())

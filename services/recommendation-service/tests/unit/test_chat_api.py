@@ -4,12 +4,16 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from src.application.ports.errores import DependenciaNoDisponibleError
 from src.application.responder_mensaje import ResponderMensaje
+from src.config import Configuracion
 from src.infrastructure.http.dependencias import obtener_responder_mensaje
+from src.infrastructure.llm.fabrica import crear_modelo
 from src.main import app
 from tests.contratos import validar
 from tests.fakes import (
     HerramientasFalsas,
+    LimiteEnMemoria,
     ModeloCaido,
     ModeloGuionado,
     RegistroEnMemoria,
@@ -21,6 +25,7 @@ from tests.fakes import (
 
 TURISTA = uuid4()
 CAFE = uuid4()
+CHAT = "/api/recommendations/chat"
 IDENTIDAD = {"X-Usuario-Id": str(TURISTA), "X-Usuario-Rol": "Turista"}
 
 
@@ -32,13 +37,14 @@ def _cumple_el_contrato(respuesta) -> None:
 def chat_con():
     """Cliente cuyo chat usa el modelo indicado y dobles en memoria para lo demás."""
 
-    def _crear(modelo: ModeloGuionado) -> tuple[TestClient, SesionesEnMemoria]:
+    def _crear(modelo, limite: int = 1000) -> tuple[TestClient, SesionesEnMemoria]:
         sesiones = SesionesEnMemoria()
         caso_de_uso = ResponderMensaje(
             modelo,
             HerramientasFalsas({"Tour de café": CAFE}),
             sesiones,
             RegistroEnMemoria(),
+            LimiteEnMemoria(limite),
             reloj=lambda: datetime.now(UTC),
         )
         app.dependency_overrides[obtener_responder_mensaje] = lambda: caso_de_uso
@@ -59,9 +65,7 @@ def test_chat_responde_segun_el_contrato(chat_con):
         )
     )
 
-    respuesta = cliente.post(
-        "/api/recommendations/chat", json={"mensaje": "¿Qué hago en Minca?"}, headers=IDENTIDAD
-    )
+    respuesta = cliente.post(CHAT, json={"mensaje": "¿Qué hago en Minca?"}, headers=IDENTIDAD)
 
     assert respuesta.status_code == 200
     _cumple_el_contrato(respuesta)
@@ -79,7 +83,7 @@ def test_chat_responde_segun_el_contrato(chat_con):
 
 def test_continuar_la_conversacion(chat_con):
     cliente, sesiones = chat_con(ModeloGuionado(responder("Uno."), responder("Dos.")))
-    primera = cliente.post("/api/recommendations/chat", json={"mensaje": "a"}, headers=IDENTIDAD)
+    primera = cliente.post(CHAT, json={"mensaje": "a"}, headers=IDENTIDAD)
 
     segunda = cliente.post(
         "/api/recommendations/chat",
@@ -119,7 +123,7 @@ def test_responde_en_ingles_si_se_pide(chat_con):
 def test_peticion_invalida(chat_con, cuerpo):
     cliente, _ = chat_con(ModeloGuionado())
 
-    respuesta = cliente.post("/api/recommendations/chat", json=cuerpo, headers=IDENTIDAD)
+    respuesta = cliente.post(CHAT, json=cuerpo, headers=IDENTIDAD)
 
     assert respuesta.status_code == 400
     assert respuesta.json()["error"] == "VALIDACION"
@@ -138,9 +142,7 @@ def test_peticion_invalida(chat_con, cuerpo):
 def test_sin_identidad_valida(chat_con, cabeceras):
     cliente, _ = chat_con(ModeloGuionado())
 
-    respuesta = cliente.post(
-        "/api/recommendations/chat", json={"mensaje": "hola"}, headers=cabeceras
-    )
+    respuesta = cliente.post(CHAT, json={"mensaje": "hola"}, headers=cabeceras)
 
     assert respuesta.status_code == 401
     assert respuesta.json()["error"] == "NO_AUTENTICADO"
@@ -150,7 +152,7 @@ def test_sin_identidad_valida(chat_con, cabeceras):
 def test_sin_identidad_responde_401_aunque_el_cuerpo_sea_invalido(chat_con):
     cliente, _ = chat_con(ModeloGuionado())
 
-    respuesta = cliente.post("/api/recommendations/chat", json={})
+    respuesta = cliente.post(CHAT, json={})
 
     assert respuesta.status_code == 401
 
@@ -215,11 +217,63 @@ def test_el_turista_del_cuerpo_se_ignora(chat_con):
     assert contexto.turista_id == TURISTA
 
 
-def test_sin_proveedor_configurado_el_chat_responde_503():
-    # La app real, sin modelo inyectado: hasta la Fase 5 no hay proveedor.
-    respuesta = TestClient(app).post(
-        "/api/recommendations/chat", json={"mensaje": "hola"}, headers=IDENTIDAD
+def test_sin_proveedor_configurado_el_chat_responde_503(chat_con):
+    # Lo que entrega la fábrica mientras no haya proveedor (hasta la Fase 5).
+    cliente, _ = chat_con(crear_modelo(Configuracion(llm_provider="groq")))
+
+    respuesta = cliente.post(CHAT, json={"mensaje": "hola"}, headers=IDENTIDAD)
+
+    assert respuesta.status_code == 503
+    assert respuesta.json()["error"] == "ASISTENTE_NO_DISPONIBLE"
+
+
+def test_una_base_de_datos_caida_responde_503_con_el_formato_comun(chat_con):
+    cliente, sesiones = chat_con(ModeloGuionado())
+
+    async def caida(_):
+        raise DependenciaNoDisponibleError("Valkey no responde")
+
+    sesiones.obtener = caida
+
+    respuesta = cliente.post(
+        "/api/recommendations/chat",
+        json={"mensaje": "hola", "conversacion_id": str(uuid4())},
+        headers=IDENTIDAD,
     )
 
     assert respuesta.status_code == 503
     assert respuesta.json()["error"] == "ASISTENTE_NO_DISPONIBLE"
+    _cumple_el_contrato(respuesta)
+
+
+def test_un_error_inesperado_no_filtra_detalles(chat_con):
+    cliente, _ = chat_con(ModeloGuionado(RuntimeError("detalle interno secreto")))
+    cliente = TestClient(app, raise_server_exceptions=False)
+
+    respuesta = cliente.post(CHAT, json={"mensaje": "hola"}, headers=IDENTIDAD)
+
+    assert respuesta.status_code == 500
+    assert respuesta.json()["error"] == "ERROR_INTERNO"
+    assert "secreto" not in respuesta.text
+
+
+def test_demasiados_mensajes(chat_con):
+    cliente, _ = chat_con(ModeloGuionado(responder("uno"), responder("dos")), limite=2)
+
+    for _ in range(2):
+        assert cliente.post(CHAT, json={"mensaje": "a"}, headers=IDENTIDAD).status_code == 200
+    respuesta = cliente.post(CHAT, json={"mensaje": "a"}, headers=IDENTIDAD)
+
+    assert respuesta.status_code == 429
+    assert respuesta.json()["error"] == "DEMASIADAS_SOLICITUDES"
+    _cumple_el_contrato(respuesta)
+
+
+@pytest.mark.parametrize("mensaje", [" ", "   \n\t "])
+def test_un_mensaje_con_solo_espacios(chat_con, mensaje):
+    cliente, _ = chat_con(ModeloGuionado())
+
+    respuesta = cliente.post(CHAT, json={"mensaje": mensaje}, headers=IDENTIDAD)
+
+    assert respuesta.status_code == 400
+    _cumple_el_contrato(respuesta)

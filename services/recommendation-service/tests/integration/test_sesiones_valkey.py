@@ -2,8 +2,17 @@ import asyncio
 from datetime import timedelta
 from uuid import uuid4
 
+import pytest
+
+from src.application.ports.errores import DependenciaNoDisponibleError
 from src.domain.conversacion import Conversacion, Mensaje, Rol
-from src.infrastructure.persistence.sesiones_valkey import PREFIJO, SesionesValkey
+from src.infrastructure.persistence.sesiones_valkey import (
+    PREFIJO,
+    PREFIJO_LIMITE,
+    LimiteValkey,
+    SesionesValkey,
+    crear_cliente_valkey,
+)
 
 
 def _conversacion_con_mensajes(n: int) -> Conversacion:
@@ -58,3 +67,52 @@ async def test_la_sesion_expira_con_el_ttl(valkey):
     await asyncio.sleep(1.5)
 
     assert await sesiones.obtener(conversacion.id) is None
+
+
+async def test_guarda_los_servicios_vistos(valkey):
+    sesiones = SesionesValkey(valkey)
+    conversacion = _conversacion_con_mensajes(1)
+    conversacion.servicios_vistos = {uuid4(), uuid4()}
+
+    await sesiones.guardar(conversacion)
+
+    assert (
+        await sesiones.obtener(conversacion.id)
+    ).servicios_vistos == conversacion.servicios_vistos
+
+
+async def test_una_sesion_anterior_a_la_fase_4_se_lee_sin_servicios_vistos(valkey):
+    conversacion_id, turista_id = uuid4(), uuid4()
+    await valkey.set(
+        PREFIJO + str(conversacion_id), f'{{"turista_id": "{turista_id}", "mensajes": []}}'
+    )
+
+    conversacion = await SesionesValkey(valkey).obtener(conversacion_id)
+
+    assert conversacion.servicios_vistos == set()
+
+
+async def test_el_limite_cuenta_por_turista_y_vence_con_la_ventana(valkey):
+    limite = LimiteValkey(valkey, maximo=2, ventana=timedelta(seconds=1))
+    turista, otro = uuid4(), uuid4()
+
+    assert [await limite.permitir(turista) for _ in range(3)] == [True, True, False]
+    assert await limite.permitir(otro)
+    assert 0 < await valkey.ttl(PREFIJO_LIMITE + str(turista)) <= 1
+
+    await asyncio.sleep(1.5)
+
+    assert await limite.permitir(turista)
+
+
+async def test_valkey_caido_da_dependencia_no_disponible():
+    cliente = crear_cliente_valkey("redis://localhost:1/0")
+    sesiones = SesionesValkey(cliente)
+
+    with pytest.raises(DependenciaNoDisponibleError):
+        await sesiones.obtener(uuid4())
+    with pytest.raises(DependenciaNoDisponibleError):
+        await sesiones.guardar(_conversacion_con_mensajes(1))
+    with pytest.raises(DependenciaNoDisponibleError):
+        await LimiteValkey(cliente, 1, timedelta(seconds=1)).permitir(uuid4())
+    await cliente.aclose()

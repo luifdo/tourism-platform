@@ -27,5 +27,9 @@ El esquema es interno del servicio y puede ampliarse (por ejemplo, latencia, tok
 
 Cada conversación es una llave `recommendation:conversacion:<conversacion_id>` con un JSON que guarda el turista dueño y sus últimos 10 mensajes (`turista` o `asistente`). Dura 24 horas y cada mensaje nuevo renueva el plazo. Guardar el turista permite responder 404 si otro turista intenta continuar esa conversación (contrato, `ConversacionNoEncontrada`).
 
+Desde la Fase 4 la sesión guarda también `servicios_vistos`: los ids de los servicios que salieron de alguna tool en la conversación. Son los únicos que el chatbot puede recomendar, así que un servicio visto en un mensaje anterior sigue siendo recomendable. Las sesiones guardadas antes de la Fase 4 se leen sin ese campo.
+
+El límite de mensajes usa la llave `recommendation:limite:<turista_id>`: un contador que nace con el primer mensaje y vence al terminar la ventana (`CHAT_LIMITE_VENTANA_SEGUNDOS`).
+
 ---
 [← Variables de entorno](./06-variables-entorno.md) · [Simulación y proveedor de IA →](./08-simulacion.md)

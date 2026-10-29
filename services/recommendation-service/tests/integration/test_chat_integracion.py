@@ -45,7 +45,7 @@ def _ve_el_cafe(mensajes) -> object:
     [busqueda] = [
         m for m in mensajes if isinstance(m, ResultadoLlamada) and m.nombre == "buscar_servicios"
     ]
-    nombres = [s["nombre"] for s in busqueda.contenido["servicios"]]
+    nombres = [s["nombre"] for s in busqueda.contenido["datos"]["servicios"]]
     assert CAFE["nombre"] in nombres
     return responder(
         "Te recomiendo el tour de café en Minca.",

@@ -1,6 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi import FastAPI
@@ -18,6 +18,7 @@ from src.infrastructure.persistence.registro_recomendaciones_pg import (
     RegistroRecomendacionesPostgres,
 )
 from src.infrastructure.persistence.sesiones_valkey import (
+    LimiteValkey,
     SesionesValkey,
     SondaValkey,
     crear_cliente_valkey,
@@ -51,6 +52,11 @@ def create_app(
         ),
         sesiones=SesionesValkey(valkey),
         registro=RegistroRecomendacionesPostgres(motor),
+        limite=LimiteValkey(
+            valkey,
+            maximo=config.chat_limite_mensajes,
+            ventana=timedelta(seconds=config.chat_limite_ventana_segundos),
+        ),
         reloj=lambda: datetime.now(UTC),
         timeout_segundos=config.chat_timeout_segundos,
     )

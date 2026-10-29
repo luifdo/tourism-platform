@@ -5,7 +5,9 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
+from src.application.ports.errores import DependenciaNoDisponibleError
 from src.domain.recomendacion import RegistroRecomendacion
+from src.infrastructure.persistence.base_de_datos import crear_motor
 from src.infrastructure.persistence.modelos import RecomendacionLogModelo
 from src.infrastructure.persistence.registro_recomendaciones_pg import (
     RegistroRecomendacionesPostgres,
@@ -95,3 +97,12 @@ async def test_la_tabla_no_tiene_columnas_para_el_texto_de_la_conversacion(motor
         "modelo",
         "fecha_generacion",
     }
+
+
+async def test_postgres_caido_da_dependencia_no_disponible():
+    motor = crear_motor("postgresql+psycopg://turismo:turismo@localhost:1/recommendation_db")
+
+    with pytest.raises(DependenciaNoDisponibleError):
+        await RegistroRecomendacionesPostgres(motor).registrar([_registro(uuid4(), uuid4())])
+
+    await motor.dispose()

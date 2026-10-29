@@ -24,3 +24,6 @@ class Configuracion(BaseSettings):
     llm_model: str = ""
     # Tiempo máximo de una consulta completa al chat (modelo + tools).
     chat_timeout_segundos: float = 45.0
+    # Límite de mensajes por turista: cuida la cuota del proveedor y evita abusos.
+    chat_limite_mensajes: int = 10
+    chat_limite_ventana_segundos: int = 300

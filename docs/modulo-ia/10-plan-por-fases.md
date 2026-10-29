@@ -178,21 +178,21 @@ Detalle en [04-estructura.md](./04-estructura.md).
 
 ---
 
-## Fase 5: Proveedor de IA real
+## Fase 5: Proveedor de IA real (Groq)
 
-**Objetivo.** Conectar un proveedor de IA real sin cambiar el dominio ni los casos de uso.
+**Objetivo.** Conectar Groq como proveedor de IA real sin cambiar el dominio ni los casos de uso.
 
 **Qué se hace**
-* Elegir el proveedor y obtener la clave (el equipo la proporciona). El SRS prevé Gemini, con el SDK `google-genai`.
-* Escribir su adaptador en `infrastructure/llm/`, que implementa `ModeloDeLenguaje` y traduce las tools al formato del proveedor.
-* Configurar `LLM_PROVIDER`, `LLM_API_KEY` y `LLM_MODEL` por variables de entorno; la clave nunca va al repositorio.
+* Obtener la clave de Groq (el equipo la proporciona) y elegir un modelo de Groq que admita llamada a funciones. Groq reemplaza a Gemini, que preveía el SRS, por los problemas que tuvo el equipo al integrar su API.
+* Escribir el adaptador de Groq en `infrastructure/llm/` con el SDK `groq`: implementa `ModeloDeLenguaje` y traduce las tools al formato de `chat.completions` (compatible con OpenAI).
+* Configurar `LLM_PROVIDER=groq`, `LLM_API_KEY` y `LLM_MODEL` por variables de entorno; la clave nunca va al repositorio.
 * Manejar los errores del proveedor: límite de solicitudes, tiempo agotado y no disponible.
 
 **Carpetas que toca:** `src/infrastructure/llm/`, `.env.example`.
 
 **Pruebas**
 * Unitarias del adaptador con el SDK simulado: traducción de tools y de respuestas.
-* Prueba manual con el proveedor real: una conversación que dispare una tool y devuelva una recomendación válida.
+* Prueba manual con Groq: una conversación que dispare una tool y devuelva una recomendación válida.
 * Errores del proveedor (clave inválida, límite superado, sin red): el servicio responde con un error controlado y `/health` sigue funcionando.
 * Se vuelven a ejecutar las pruebas de las fases 0 a 4: ninguna debe romperse.
 * Verificar que la clave no aparece en logs ni en el repositorio.

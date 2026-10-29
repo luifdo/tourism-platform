@@ -2,7 +2,7 @@
 
 **Módulo 5: IA & Recomendación** · Responsable: Alvaro David Ospino Sanchez (@alvaroospino)
 
-Chatbot turístico en español e inglés que consume la API de Gemini y consulta la plataforma solo mediante herramientas de solo lectura; entrega recomendaciones justificadas (RNF-08) y las registra en `recomendacion_log`. Ver la [Guía Técnica del Módulo 5](../../Documents/Pages/Guia_Tecnica_Modulo_IA.md).
+Chatbot turístico en español e inglés que consume la API de Groq y consulta la plataforma solo mediante herramientas de solo lectura; entrega recomendaciones justificadas (RNF-08) y las registra en `recomendacion_log`. Ver la [Guía Técnica del Módulo 5](../../Documents/Pages/Guia_Tecnica_Modulo_IA.md).
 
 | Aspecto | Valor |
 |---|---|

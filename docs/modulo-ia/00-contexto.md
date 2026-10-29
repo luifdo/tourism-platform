@@ -36,7 +36,7 @@ El chatbot **no entrena ni aloja un modelo propio**. Usa un modelo de lenguaje e
 
 * **Servicio independiente.** Con su propia base de datos, su propio contenedor y su propio contrato REST. Ningún servicio importa su código.
 * **Python 3.12 + FastAPI**, con arquitectura hexagonal, igual que los otros cuatro servicios y siguiendo la estructura del monorepo.
-* **Sin atarse a un proveedor de IA.** El servicio depende de una interfaz propia, y cada proveedor (el SRS prevé Gemini) es un adaptador intercambiable.
+* **Sin atarse a un proveedor de IA.** El servicio depende de una interfaz propia, y cada proveedor es un adaptador intercambiable. El equipo eligió **Groq** como primer proveedor (el SRS preveía Gemini; ver [Simulación y proveedor de IA](./08-simulacion.md)).
 * **Desarrollo aislado.** Los demás servicios todavía no existen, así que se simulan con un contenedor mock. El proveedor de IA se conecta al final.
 * **Trabajo en ramas propias** (`feature/modulo-ia` y una de desarrollo), sin tocar `develop`, `main` ni el trabajo de los demás.
 * **Contrato primero.** Se define `contracts/openapi/recommendation.yaml` antes de escribir el código, como exige el proyecto.

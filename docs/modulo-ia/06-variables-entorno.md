@@ -19,14 +19,14 @@ BOOKING_URL=http://mock-plataforma:9000/api/bookings
 REVIEW_URL=http://mock-plataforma:9000/api/reviews
 
 # Proveedor de IA (Fase 5); ver 08-simulacion.md
-LLM_PROVIDER=
+LLM_PROVIDER=groq
 LLM_API_KEY=
 LLM_MODEL=
 ```
 
-Las variables del proveedor de IA son genéricas (`LLM_*`) y quedan vacías hasta que se conecte uno. En Kubernetes la clave será un `Secret` y el modelo un `ConfigMap`.
+Las variables del proveedor de IA son genéricas (`LLM_*`). `LLM_PROVIDER=groq` elige el adaptador de Groq; `LLM_API_KEY` es la clave de Groq (queda vacía hasta la Fase 5) y `LLM_MODEL` el modelo de Groq que se use, que debe admitir llamada a funciones (tools). En Kubernetes la clave será un `Secret` y el modelo un `ConfigMap`.
 
-> **Decisión del equipo:** se usan variables genéricas `LLM_*` y no `GEMINI_*`. El SRS y el Plan nombran `GEMINI_API_KEY` y `GEMINI_MODEL`. Si se usa Gemini como primer proveedor, esos nombres se asignan en su adaptador o se actualizan los documentos del proyecto.
+> **Decisión del equipo:** se usan variables genéricas `LLM_*` y no `GEMINI_*` ni `GROQ_*`, para que cambiar de proveedor no obligue a renombrar variables. El SRS y el Plan todavía nombran `GEMINI_API_KEY` y `GEMINI_MODEL`, de cuando el proveedor previsto era Gemini.
 
 ---
 [← Dockerfile (explicado)](./05-dockerfile.md) · [Base de datos →](./07-base-de-datos.md)

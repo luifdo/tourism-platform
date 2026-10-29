@@ -91,7 +91,7 @@ Cualquier otro campo se ignora. En particular, **el cuerpo nunca define al turis
 }
 ```
 
-* `respuesta`: el texto para mostrar al turista, en su idioma.
+* `respuesta`: el texto para mostrar al turista, en su idioma. Es **texto plano** (sin Markdown ni tablas): se muestra tal cual, respetando los saltos de línea.
 * `recomendaciones`: puede venir vacía (saludos, preguntas generales, nada que recomendar). Cada `servicio_id` es un servicio del catálogo.
 * El encabezado `Content-Language` dice en qué idioma salió la respuesta.
 

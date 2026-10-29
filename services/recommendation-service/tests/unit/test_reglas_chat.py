@@ -312,3 +312,18 @@ async def test_las_tools_inexistentes_no_se_registran_pero_cuentan_en_el_limite(
     await _preguntar(_caso_de_uso(modelo, registro=registro))
 
     assert registro.registros[0].herramientas_usadas == ["buscar_servicios"]
+
+
+async def test_el_markdown_del_modelo_llega_como_texto_plano():
+    modelo = ModeloGuionado(
+        pedir(("buscar_servicios", {})),
+        responder(
+            "| Servicio | Estado |\n|---|---|\n| **Tour de café** | Confirmada |",
+            recomendacion(CAFE, "Tour de café", "Zona con **capacidad baja**."),
+        ),
+    )
+
+    resultado = await _preguntar(_caso_de_uso(modelo))
+
+    assert resultado.respuesta == "• Servicio: Tour de café · Estado: Confirmada"
+    assert resultado.recomendaciones[0].justificacion == "Zona con capacidad baja."

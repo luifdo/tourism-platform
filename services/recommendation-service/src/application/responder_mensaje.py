@@ -34,6 +34,7 @@ from src.application.ports.repositorio_sesiones import RepositorioSesiones
 from src.domain.conversacion import Conversacion, Mensaje, Rol
 from src.domain.privacidad import ocultar_datos_personales
 from src.domain.recomendacion import Recomendacion, RegistroRecomendacion
+from src.domain.texto_plano import a_texto_plano
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ class ResponderMensaje:
                 texto, propuestas = _leer_final(final.argumentos, respuesta.texto)
                 return turno(texto or MENSAJE_VACIO[idioma], _validar(propuestas, vistos))
             if not respuesta.llamadas:
-                return turno(respuesta.texto.strip() or MENSAJE_VACIO[idioma])
+                return turno(a_texto_plano(respuesta.texto) or MENSAJE_VACIO[idioma])
             if llamadas_hechas + len(respuesta.llamadas) > self._max_llamadas:
                 logger.info("Se alcanzó el límite de %s tools en un mensaje", self._max_llamadas)
                 return turno(MENSAJE_LIMITE[idioma])
@@ -222,13 +223,13 @@ def _leer_final(argumentos: Mapping[str, Any], texto: str) -> tuple[str, list[Re
                 Recomendacion(
                     servicio_id=UUID(str(item["servicio_id"])),
                     nombre=str(item["nombre"]),
-                    justificacion=str(item["justificacion"]).strip(),
+                    justificacion=a_texto_plano(str(item["justificacion"])),
                 )
             )
         except (KeyError, TypeError, ValueError):
             # Incluye la recomendación sin justificación (RNF-08).
             logger.info("Se descartó una recomendación mal formada: %r", item)
-    return respuesta.strip(), recomendaciones
+    return a_texto_plano(respuesta), recomendaciones
 
 
 def _validar(propuestas: list[Recomendacion], vistos: set[UUID]) -> tuple[Recomendacion, ...]:

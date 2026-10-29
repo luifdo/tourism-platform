@@ -109,6 +109,8 @@ que no es posible.
 Respuesta
 - Responde en {_NOMBRE_IDIOMA[idioma]}, de forma breve y clara. No muestres ids ni códigos \
 internos en el texto: la plataforma muestra cada recomendación como una tarjeta.
+- Escribe en texto plano, como en una conversación: sin tablas, sin negritas, sin títulos ni \
+listas en Markdown. Si hay varios elementos, menciónalos en frases o en párrafos cortos.
 - Termina siempre llamando a `{RESPONDER}`; deja `recomendaciones` vacía si no recomiendas \
 servicios concretos."""
 

@@ -12,7 +12,7 @@
 | Sesiones | Valkey 8 | Igual que en el Plan. Se usa con el cliente de Redis, que es compatible. |
 | Llamadas a otros servicios | `httpx` | Cliente HTTP asíncrono para las tools. |
 | Métricas | `prometheus-fastapi-instrumentator` | Expone `/metrics`, que exige RNF-12. |
-| Proveedor de IA | Groq (SDK `groq`) | Decisión del equipo tras los problemas al integrar la API de Gemini, que era la prevista en el SRS y el Plan §4. Groq tiene una API compatible con la de OpenAI, con llamada a funciones (tools) y modelos abiertos. El servicio no depende de un proveedor: se conecta mediante una interfaz propia y se puede cambiar o agregar otro. |
+| Proveedor de IA | Groq (SDK `groq`) | ADR-011 (propuesto). Decisión del equipo tras los problemas al integrar la API de Gemini, que era la prevista en el SRS y el Plan §4. Groq tiene una API compatible con la de OpenAI, con llamada a funciones (tools) y modelos abiertos. El servicio no depende de un proveedor: se conecta mediante una interfaz propia y se puede cambiar o agregar otro. |
 | Pruebas | `pytest` | Indicado en el Plan §8. |
 | Dependencias | `uv` (`pyproject.toml` + `uv.lock`) | Es lo que usan catalog e IAM. `uv` instala las dependencias y `uv.lock` fija las versiones exactas, así el contenedor y todo el equipo usan las mismas. |
 | Lint | `ruff` | Igual que catalog, con la misma configuración. |

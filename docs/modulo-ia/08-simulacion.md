@@ -6,7 +6,7 @@
 
 El servicio no está atado a un proveedor. El caso de uso del chat depende de una interfaz (puerto), por ejemplo `ModeloDeLenguaje`, que recibe el mensaje, el historial y la lista de tools, y devuelve la respuesta o la solicitud de una tool. Cada proveedor es un adaptador en `src/infrastructure/llm/` que implementa esa interfaz.
 
-* **Proveedor elegido: Groq.** El equipo tuvo problemas al implementar la API de Gemini, que era la prevista, y decidió usar Groq. Su API es compatible con la de OpenAI (`chat.completions` con `tools`), así que el adaptador traduce nuestras declaraciones de tools a ese formato y las respuestas del modelo a la interfaz `ModeloDeLenguaje`.
+* **Proveedor elegido: Groq** ([ADR-011](../../Documents/Pages/Registro_Decisiones_Arquitectonicas.md), en estado *Propuesta* hasta que el equipo lo apruebe). El equipo tuvo problemas al implementar la API de Gemini, que era la prevista, y decidió usar Groq. Su API es compatible con la de OpenAI (`chat.completions` con `tools`), así que el adaptador traduce nuestras declaraciones de tools a ese formato y las respuestas del modelo a la interfaz `ModeloDeLenguaje`.
 * **Ahora:** no se conecta ninguno. El adaptador de Groq se escribe en la Fase 5, con la clave que proporcione el equipo. No se construye un proveedor falso.
 * **Cambiar de proveedor:** es escribir un adaptador nuevo y elegirlo con `LLM_PROVIDER`; el dominio y los casos de uso no se tocan.
 * **Nota:** el SRS, el Plan y el ADR-010 todavía definen Gemini como el proveedor del proyecto, y hay que actualizarlos con el cambio a Groq. La excepción a la prioridad de software libre se mantiene: Groq también es un servicio externo propietario, aunque sirve modelos abiertos.

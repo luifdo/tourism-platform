@@ -27,7 +27,7 @@ El módulo es el **dueño de los cupos y del estado de cada reserva**. Los demá
 * calendario de cupos y tarifa del día del prestador (UC19);
 * panel de solicitudes del prestador: confirmar, rechazar y cancelar (UC20);
 * expiración automática de solicitudes sin respuesta y finalización de reservas vencidas;
-* publicación de los eventos `reserva.*` y `auditoria.registrada`.
+* publicación de los eventos `reserva.*`, `disponibilidad.actualizada` y `auditoria.registrada`.
 
 **No incluye:** pagos ni depósitos, envío de correos (lo hace el Módulo 2 al consumir los eventos), reseñas, listas de espera ni reservas por horas (la unidad es el día).
 
@@ -71,15 +71,18 @@ Todas las horas se calculan en la zona horaria `America/Bogota`. La unidad de re
 * **Turista, reserva `CONFIRMADA`:** hasta las 23:59 del día anterior a `fecha_reserva`. El modelo de datos maneja días, no horas, así que la regla de "24 horas antes" se expresa como "hasta el día anterior". Pasado ese límite responde HTTP 409 `FUERA_DE_PLAZO` y la interfaz sugiere contactar al prestador.
 * **Prestador, reserva `CONFIRMADA`:** siempre, con motivo obligatorio (clima, cierre del parque, alerta oficial, etc.). El motivo viaja en `reserva.cancelada` y llega al turista en el correo.
 * Esta es la **regla base de la plataforma** y es la que aplica el servicio. La `politica_cancelacion` que cada prestador publica en su perfil (Módulo 2, UC9) es informativa: puede ser más flexible, pero no más restrictiva que la regla base.
+* Catalog muestra esta regla en la ficha del servicio (UC9) como `regla_base_cancelacion`, copiada de esta sección. **Si la regla cambia, hay que avisarle a catalog (@luifdo) para que actualice el texto.**
 
 ### 4.4 Calendario del prestador (UC19)
 
 * Cada fila de `DISPONIBILIDAD_CUPO` representa un servicio en un día: `cupos_totales`, `cupos_disponibles` y una `tarifa_dia` opcional. Si la tarifa del día es nula, aplica la `tarifa_base` del catálogo.
 * El prestador puede abrir un rango de días de una vez (por ejemplo, "lunes a sábado de noviembre, 20 cupos") o editar un día puntual.
 * Reducir `cupos_totales` por debajo de lo ya reservado (`cupos_totales - cupos_disponibles`) responde HTTP 409 `CUPOS_COMPROMETIDOS`; primero hay que rechazar o cancelar reservas.
-* `cupos_totales` no puede superar la `capacidad_aforo_diario` oficial del servicio (capacidad de carga, §2.4.4 del SRS).
+* Solo el prestador dueño del servicio, según la proyección `servicio_ref` (§8), gestiona su calendario. Si el servicio no está en la proyección, está inactivo o es de otro prestador, responde 404.
+* `cupos_totales` no puede superar la `capacidad_aforo_diario` oficial del servicio (capacidad de carga, §2.4.4 del SRS), que también llega en `servicio_ref`.
 * Cerrar un día es poner `cupos_totales` en lo ya reservado; no se borran filas que tengan reservas.
 * Es un formulario que la PWA puede enviar sin conexión (RNF-13, ESC-09): acepta `Idempotency-Key` y usa `If-Match` con la versión de la fila para detectar conflictos (Plan §6.8).
+* Ante un conflicto, el 409 `VERSION_DISTINTA` trae, además del error común, `version_actual` y `actual` (el día como lo devuelve el GET del calendario), y el `ETag` nuevo. La PWA muestra "tu cambio / lo que hay ahora" sin otra petición y, si el prestador insiste, reenvía con el `If-Match` nuevo. Lo mismo vale para el `PATCH` de una reserva, con la reserva completa en `actual`.
 
 ## 5. Arquitectura
 
@@ -87,7 +90,9 @@ Todas las horas se calculan en la zona horaria `America/Bogota`. La unidad de re
 * **Despliegue:** Deployment en k3s con 2 réplicas mínimas y HPA hasta 6 (Plan §7.3). El bloqueo por fila permite escalar sin perder consistencia, porque la exclusión la garantiza PostgreSQL y no la memoria de una réplica.
 * **Tareas programadas:** dos `CronJob` de Kubernetes que usan la misma imagen del servicio con otro comando (§6.4).
 * **Persistencia:** base lógica `booking_db` en el clúster CloudNativePG, con usuario propio.
-* **Valkey:** solo para las claves de idempotencia de las peticiones (`idem:booking:{key}`, TTL de 48 h).
+* **Valkey:** solo para las claves de idempotencia de las peticiones (§6.3), compartidas por todas las réplicas.
+* **RabbitMQ al arrancar:** booking declara su cola durable `booking.servicios` y la enlaza a la clave `servicio.publicado` del exchange `turismo.eventos`. Tiene que existir antes de que catalog publique, porque RabbitMQ descarta los mensajes que no tienen una cola enlazada.
+* **Consumo de `servicio.publicado.v1`:** se valida el sobre y el payload contra el contrato. Un mensaje inservible (JSON roto, otro tipo o versión, payload fuera de contrato) va directo a la DLQ; un fallo pasajero se reintenta a los 1, 5 y 25 s (colas `booking.servicios.reintento.<espera>`, cabecera `x-intentos`) y, si sigue fallando, va a `turismo.dead-letter` con la cola, los intentos y el error. Es la misma convención y la misma DLX (`turismo.dlx`, tipo topic) que declara catalog. No hace falta deduplicar por `event_id` en Valkey: el evento trae el estado completo con su `version` y solo se aplica si es mayor (§8).
 * **Endpoints:** resumen en la §7; detalle en [`booking.yaml`](../../contracts/openapi/booking.yaml).
 * **Configuración:** `DB_URL`, `VALKEY_URL`, `RABBITMQ_URL`, `EVENTS_EXCHANGE`, `TZ=America/Bogota`, `PLAZO_RESPUESTA_HORAS=48`.
 
@@ -98,7 +103,7 @@ Todas las horas se calculan en la zona horaria `America/Bogota`. La unidad de re
 | `domain/` | Entidades `Reserva` y `DisponibilidadCupo`, enum `EstadoReserva`, reglas de la §4 y errores de dominio (`TransicionInvalida`, `CuposInsuficientes`, `FueraDePlazo`). Sin FastAPI ni SQLAlchemy. |
 | `application/` | Un caso de uso por clase: `SolicitarReserva`, `ModificarReserva`, `CancelarReserva`, `ConfirmarReserva`, `RechazarReserva`, `ExpirarSolicitudes`, `FinalizarReservas`, `GestionarCalendario`, `ConsultarDisponibilidad`, `ConsultarHistorial`. |
 | `application/ports/` | `RepositorioReservas`, `RepositorioDisponibilidad`, `UnidadDeTrabajo`, `PublicadorEventos`, `AlmacenIdempotencia`, `Reloj` (para probar plazos sin esperar). |
-| `infrastructure/` | Routers FastAPI, repositorios SQLAlchemy, publicador aio-pika y consumidor de la proyección de servicios (§8). |
+| `infrastructure/` | Routers FastAPI, repositorios SQLAlchemy, publicador aio-pika y consumidor de `servicio.publicado` para la proyección `servicio_ref` (§8). |
 
 ## 6. Concurrencia y consistencia
 
@@ -111,8 +116,11 @@ SELECT cupos_disponibles FROM disponibilidad_cupo
 WHERE servicio_id = $1 AND fecha = $2
 FOR UPDATE;
 -- validar en dominio y luego:
-UPDATE disponibilidad_cupo SET cupos_disponibles = cupos_disponibles - $3, version = version + 1 ...;
+UPDATE disponibilidad_cupo SET cupos_disponibles = cupos_disponibles - $3, secuencia = secuencia + 1 ...;
 ```
+
+* Mover cupos no sube la `version` del día. La `version` solo cambia cuando el prestador edita los cupos totales o la tarifa (UC19); así una reserva no provoca un conflicto falso cuando la PWA sincroniza una edición hecha sin conexión (ESC-09).
+* La fila lleva además una `secuencia`, que sube con **cada** cambio (reservas y ediciones del prestador). Es la que viaja como `version` en `disponibilidad.actualizada` (§6.5), porque catalog descarta los eventos con un número menor o igual al que ya tiene y necesita ver también los cambios por reservas.
 
 * Cuando se bloquean dos filas (modificación con cambio de fecha), se bloquean **siempre en orden ascendente de fecha** para evitar interbloqueos (*deadlocks*).
 * Restricción en la base: `CHECK (cupos_disponibles BETWEEN 0 AND cupos_totales)`, como segunda barrera si el código fallara.
@@ -125,7 +133,7 @@ Las transiciones se aplican con una actualización condicionada al estado actual
 ```sql
 UPDATE solicitud_reserva
 SET estado = 'CONFIRMADA', version = version + 1, actualizado_en = now()
-WHERE id = $1 AND prestador_id = $2 AND estado = 'SOLICITADA' AND expira_en > now()
+WHERE id = $1 AND prestador_usuario_id = $2 AND estado = 'SOLICITADA' AND expira_en > now()
 RETURNING *;
 ```
 
@@ -134,7 +142,12 @@ Si no devuelve filas, el servicio consulta el estado actual y responde 404 (no e
 ### 6.3 Idempotencia de peticiones
 
 * `POST /api/bookings` y los formularios del calendario aceptan `Idempotency-Key`.
-* La primera respuesta se guarda en Valkey (`idem:booking:{usuario_id}:{key}`, 48 h); un reintento con la misma clave devuelve la misma respuesta sin repetir la operación.
+* La clave en Valkey es `idem:booking:{usuario_id}:{método}:{ruta}:{Idempotency-Key}`, así que un usuario no choca con otro ni una ruta con otra.
+* La primera petición la reserva con `SET NX` (valor `EN_PROCESO`, 60 s). De dos peticiones simultáneas solo una lo consigue, aunque lleguen a réplicas distintas; si el pod muere a medias, la marca vence sola.
+* Al terminar con éxito (2xx) se guarda la respuesta 48 h; un reintento recibe esa misma respuesta (cuerpo y `ETag`) sin repetir la operación. Si la operación falla (4xx, 5xx o excepción), la clave se libera y el reintento se ejecuta de nuevo.
+* Un reintento que llega mientras la primera sigue en proceso recibe 409 `PETICION_EN_PROCESO`; la PWA reintenta con la misma clave unos segundos después.
+* Si Valkey no responde, las peticiones **con** `Idempotency-Key` reciben 503 `IDEMPOTENCIA_NO_DISPONIBLE` (es preferible no ejecutar que arriesgar un duplicado) y las demás siguen normalmente. Valkey no entra en `/health`, para que su caída no saque de servicio todas las réplicas.
+* En modo memoria (demo y pruebas) se usa un almacén local con las mismas reglas, válido solo con una réplica.
 * Las transiciones (`confirmar`, `rechazar`, `cancelar`) ya son idempotentes por la §6.2: repetirlas devuelve 409 con el estado actual, sin efectos.
 
 ### 6.4 Tareas programadas
@@ -146,16 +159,19 @@ Si no devuelve filas, el servicio consulta el estado actual y responde 404 (no e
 
 * Procesan en lotes de 100 con `FOR UPDATE SKIP LOCKED`, de modo que no chocan con las peticiones de los usuarios.
 * `concurrencyPolicy: Forbid` evita dos ejecuciones simultáneas del mismo CronJob.
-* Los eventos de cada lote se publican después del `COMMIT` del lote.
+* Los eventos de cada lote se guardan en el outbox dentro de la transacción del lote (§6.5); los publica el relay de los pods de la API, así que el CronJob no necesita RabbitMQ.
+* Comando: `python -m cron expirar-solicitudes` o `python -m cron finalizar-reservas`, con la misma imagen que la API (`k8s/base/cronjobs.yaml`, hora de Bogotá). Sale con 0 si terminó, 1 si falló y 2 si no está en modo postgres.
 
 ### 6.5 Publicación de eventos
 
-* Se publica con *publisher confirms* y mensajes persistentes; si RabbitMQ no confirma, se reintenta 3 veces y se deja un registro de error con el `reserva_id` (Plan §4.3).
-* **Riesgo aceptado (ADR-008):** si el proceso se cae entre el `COMMIT` y la publicación, el evento se pierde. Para este módulo el impacto es alto, porque `reserva.finalizada` habilita la reseña y `reserva.confirmada` dispara el correo. Por eso es el primer candidato a adoptar el patrón *outbox* que el ADR-008 deja como evolución; la decisión se toma con los resultados de las pruebas de la §10.
+* **`disponibilidad.actualizada`** (acordado con @luifdo el 23 de octubre): cada vez que cambia una fila de disponibilidad se publica el **estado completo del día** (`servicio_id`, `fecha`, `cupos_totales`, `cupos_disponibles` y `version` = `secuencia`), no la diferencia. Sale al solicitar, modificar, rechazar, cancelar o expirar, y cuando el prestador abre o edita su calendario. Un día cerrado sale con `cupos_totales = 0`. Si una operación toca un día varias veces (un lote del CronJob), sale un solo evento con el estado final. Confirmar y finalizar no mueven cupos, así que no lo publican. Catalog lo usa solo para filtrar la búsqueda y el mapa por fecha: el cupo lo sigue garantizando el bloqueo al reservar.
+* **Patrón outbox (adoptado en el Sprint 5):** los eventos se guardan en la tabla `evento_outbox` **en la misma transacción** que el cambio que los produjo, así no puede quedar una reserva creada cuyo evento se perdió porque el proceso se cayó justo después del `COMMIT` (el riesgo que el ADR-008 dejaba aceptado; aquí el impacto era alto, porque `reserva.finalizada` habilita la reseña y `reserva.confirmada` dispara el correo).
+* **Relay:** una tarea de fondo en cada réplica toma los pendientes en orden, de a 100, con `FOR UPDATE SKIP LOCKED` (dos réplicas nunca toman el mismo), los publica con *publisher confirms* y mensajes persistentes, y marca `publicado_en`. Si RabbitMQ no confirma, suma un intento, guarda el error, corta el lote para no desordenar y reintenta en la siguiente vuelta; desde el tercer intento fallido deja un registro de nivel error (Plan §4.3). Si RabbitMQ está caído, booking sigue atendiendo y los eventos esperan en el outbox.
+* **Al menos una vez:** si el relay se cae después de publicar y antes de marcar, el evento sale de nuevo. Cada mensaje lleva `message_id` = `event_id` para que los consumidores lo descarten.
 
 ## 7. Endpoints
 
-Prefijo en Traefik: `/api/bookings`. Errores con el formato común `{ "error", "message", "correlation_id" }`.
+Prefijo en Traefik: `/api/bookings`. Errores con el formato común `{ "error", "message", "correlation_id" }`. El `X-Correlation-ID` que agrega Traefik (o uno generado si falta) se devuelve en la respuesta, viaja en los eventos y aparece en cada línea de log, que sale en JSON por stdout para Loki.
 
 | Método y ruta | Rol | Caso de uso | Notas |
 |---|---|---|---|
@@ -171,21 +187,24 @@ Prefijo en Traefik: `/api/bookings`. Errores con el formato común `{ "error", "
 | `GET /prestador/calendario/{servicio_id}?desde&hasta` | Prestador dueño | UC19 | Días con totales, disponibles, reservados, tarifa y versión. |
 | `POST /prestador/calendario/{servicio_id}/rango` | Prestador dueño | UC19 | Abre varios días. `Idempotency-Key`. Omite los días que ya existen. |
 | `PUT /prestador/calendario/{servicio_id}/{fecha}` | Prestador dueño | UC19 | Crea o edita un día. `If-Match` para editar. |
-| `GET /health`, `GET /metrics` | Interno | — | Sondas de Kubernetes y Prometheus. |
+| `GET /health`, `GET /metrics` | Interno | — | Sondas de Kubernetes (`{status, checks}`, 503 si Postgres no responde) y Prometheus (`http_requests_total`, `http_request_duration_seconds`, las mismas series que los demás servicios). |
 
 ## 8. Datos
 
 Nivel arquitectónico; el DDL detallado se escribe en la Fase 4 (Plan §5).
 
-* **`disponibilidad_cupo`**: `id`, `servicio_id`, `prestador_id`, `fecha`, `cupos_totales`, `cupos_disponibles`, `tarifa_dia` (nula = tarifa base), `version`. Única por (`servicio_id`, `fecha`).
-* **`solicitud_reserva`**: `id`, `turista_id`, `servicio_id`, `prestador_id`, `fecha_reserva`, `numero_personas`, `estado`, `expira_en`, `motivo`, `cancelada_por`, `version`, `creado_en`, `actualizado_en`. Índices por (`turista_id`, `estado`), (`prestador_id`, `estado`, `expira_en`) y (`estado`, `fecha_reserva`) para los CronJobs.
-* **`servicio_ref`** (proyección local, ver §11): `servicio_id`, `prestador_id`, `capacidad_aforo_diario`, `activo`. Permite validar que el prestador es el dueño del servicio y el tope de aforo sin llamar al Módulo 2.
-* `prestador_id` y `turista_id` son siempre el **id de usuario de iam-service** (el mismo de `X-Usuario-Id`).
+* **`servicio_ref`** (proyección local): `servicio_id`, `prestador_id`, `prestador_usuario_id`, `capacidad_aforo_diario`, `tarifa_base`, `activo`, `version`. La alimenta el evento `servicio.publicado.v1` de catalog-service (cola `booking.servicios`); se aplica solo si su `version` es mayor que la guardada, así un mensaje viejo o repetido no pisa uno nuevo. Permite validar al dueño, el aforo y si el servicio está activo sin llamar al Módulo 2.
+* **`disponibilidad_cupo`**: `id`, `servicio_id`, `fecha`, `cupos_totales`, `cupos_disponibles`, `tarifa_dia` (nula = `tarifa_base` de `servicio_ref`), `version` (ediciones del prestador, `ETag`) y `secuencia` (cada cambio, evento a catalog). Única por (`servicio_id`, `fecha`). El dueño sale de `servicio_ref`.
+* **`solicitud_reserva`**: `id`, `turista_id`, `servicio_id`, `prestador_id`, `prestador_usuario_id`, `fecha_reserva`, `numero_personas`, `estado`, `expira_en`, `motivo`, `cancelada_por`, `version`, `creado_en`, `actualizado_en`. Los dos ids del prestador se copian de `servicio_ref` al solicitar. Índices por (`turista_id`, `estado`), (`prestador_usuario_id`, `estado`, `expira_en`) y (`estado`, `fecha_reserva`) para los CronJobs.
+* **Ids de usuario y de perfil:**
+  * `turista_id` y `prestador_usuario_id` son ids de usuario de iam-service, los mismos de `X-Usuario-Id`. Con ellos se decide quién puede ver y cambiar cada reserva.
+  * `prestador_id` es el id del **perfil** del prestador en el catálogo. Es el que viaja en los eventos `reserva.*` y en las respuestas de la API.
+* Si un servicio pasa a inactivo (lo desactiva el prestador o iam suspende al prestador), no acepta solicitudes nuevas ni cambios de calendario. Las solicitudes pendientes siguen su curso: el prestador las responde o vencen a las 48 h.
 
 ## 9. Seguridad y auditoría
 
 * RBAC por endpoint con `X-Usuario-Rol` (`Turista`, `Prestador`); un rol incorrecto responde 403 y publica `auditoria.registrada` con `accion = ACCESS_DENIED`.
-* Un prestador solo ve y gestiona reservas y calendarios de sus propios servicios (filtro por `prestador_id` en la consulta, no después).
+* Un prestador solo ve y gestiona reservas y calendarios de sus propios servicios (filtro por `prestador_usuario_id` en la consulta, no después).
 * Cada cambio de estado publica `auditoria.registrada` (`RESERVA_SOLICITADA`, `RESERVA_CONFIRMADA`, `RESERVA_CANCELADA`, etc.) con el usuario, el `reserva_id` y el `correlation_id` (Plan §4.4).
 * Los eventos solo llevan identificadores; el correo y el nombre del turista no se guardan en `booking_db`.
 
@@ -202,9 +221,10 @@ Nivel arquitectónico; el DDL detallado se escribe en la Fase 4 (Plan §5).
 
 ## 11. Qué se necesita de los demás módulos
 
-* **catalog (pendiente de acordar con @luifdo):** el Plan (§4.1) solo permite que el Módulo 5 llame a otros servicios, así que booking no puede consultar al catálogo de quién es un servicio ni su aforo. Se propone un evento nuevo **`servicio.publicado.v1`** (productor: catalog-service; `servicio_id`, `prestador_id` como id de usuario, `capacidad_aforo_diario`, `activo`), publicado al crear, editar o desactivar un servicio, para alimentar la proyección `servicio_ref`. Hasta que exista, el calendario no puede validar la propiedad del servicio.
-* **catalog (consumidor):** manejar el nuevo evento `reserva.modificada` en la proyección `demanda_diaria` (mover personas entre fechas) y en el aviso al prestador. Mostrar la regla base de cancelación junto a la política del prestador en la ficha (UC9).
-* **catalog (correos):** incluir el `motivo` de `reserva.rechazada` y `reserva.cancelada` en los correos.
+* **catalog (acordado con @luifdo):** publica `servicio.publicado.v1` al crear, editar, desactivar o reactivar un servicio y al suspender o rehabilitar a su prestador, con los dos ids del prestador, el aforo, la tarifa base, `activo` y `version`. booking lo consume para `servicio_ref`.
+* **catalog (disponibilidad):** consume `disponibilidad.actualizada` en su propia proyección para filtrar `/buscar` y el mapa por fecha y personas, sin llamar a booking (Plan §4.1). Si un día aún no tiene evento, lo muestra como "disponibilidad sin confirmar".
+* **catalog (consumidor) — listo:** consume todos los `reserva.*`, incluido `reserva.modificada`, en la cola `catalog.demanda`. Guarda el estado de cada reserva en su proyección `reserva_proyeccion` y suma por día; ya no usa contadores en una tabla `demanda_diaria`, porque un evento repetido o desordenado descuadraba el total. La regla base de cancelación ya sale en la ficha (UC9).
+* **catalog (correos):** en su paso 16 avisa al prestador cuando se modifica una reserva e incluye el `motivo` en los correos de rechazo y cancelación. Para eso, `reserva.rechazada` y `reserva.cancelada` **tienen que seguir trayendo `motivo`** como dice el contrato.
 * **review:** sin cambios; consume `reserva.finalizada` como está.
 * **recommendation:** usar `GET /disponibilidad` y `GET /mis-reservas`; ambos ya existen en este contrato.
 * **iam:** `X-Usuario-Rol` con los valores `Turista` y `Prestador`, y el id de usuario en `X-Usuario-Id`.

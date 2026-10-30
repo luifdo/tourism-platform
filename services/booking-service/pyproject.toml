@@ -1,0 +1,33 @@
+[project]
+name = "booking-service"
+version = "0.1.0"
+description = "Módulo 3: Reservas & Cupos de la Plataforma Digital de Turismo de Santa Marta"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.4",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "aio-pika>=9.4",
+    "redis>=5.0",            # cliente compatible con Valkey
+    "prometheus-client>=0.20",
+    "prometheus-fastapi-instrumentator>=7.0",
+    "tzdata>=2024.1",        # zona America/Bogota también en Windows y en imágenes slim
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integracion: necesita Postgres real (python scripts/postgres_pruebas.py subir)",
+]

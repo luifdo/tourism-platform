@@ -1,0 +1,202 @@
+openapi: 3.0.3
+info:
+  title: recommendation-service — IA & Recomendación (Módulo 5)
+  version: 1.0.0
+  description: |
+    Contrato REST del chatbot turístico. Comportamiento y reglas en la Guía Técnica
+    del Módulo 5 (Documents/Pages/Guia_Tecnica_Modulo_IA.md).
+
+    * La ruta pasa por ForwardAuth en Traefik, que valida el JWT y agrega
+      `X-Usuario-Id` y `X-Usuario-Rol`. El turista siempre sale de `X-Usuario-Id`:
+      el cuerpo de la petición nunca lo trae y el modelo nunca lo decide.
+    * El chatbot es de solo lectura: no crea, modifica ni cancela reservas.
+      Orienta al turista hacia las pantallas de la plataforma.
+    * Responde en el idioma pedido en `Accept-Language` (`es` o `en`, por defecto `es`).
+    * Cada recomendación va con su justificación (RNF-08) y solo incluye servicios
+      que el servicio consultó mediante sus herramientas en esa conversación.
+    * Errores con el formato común `Error`.
+  contact:
+    name: Alvaro David Ospino Sanchez (@alvaroospino)
+servers:
+  - url: /api/recommendations
+    description: Prefijo en el API Gateway (Traefik)
+
+tags:
+  - name: Chat
+  - name: Operación
+
+security:
+  - bearerAuth: []
+
+paths:
+  /chat:
+    post:
+      tags: [Chat]
+      summary: Enviar un mensaje al chatbot (UC14)
+      description: |
+        Rol `Turista`. Si se envía `conversacion_id`, la conversación continúa con los
+        últimos 10 mensajes de esa sesión (guardada 24 horas); si falta, el servicio crea
+        una conversación nueva y devuelve su identificador.
+
+        El servicio consulta catálogo, reservas y reseñas solo mediante herramientas de
+        solo lectura, hasta 6 por mensaje. Si el proveedor de IA no está disponible o no
+        responde a tiempo, responde 503 y el resto de la plataforma sigue operando.
+      operationId: chat
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatPeticion' }
+      responses:
+        '200':
+          description: Respuesta del chatbot, con recomendaciones cuando corresponde.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatRespuesta' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/ConversacionNoEncontrada' }
+        '429': { $ref: '#/components/responses/DemasiadasSolicitudes' }
+        '503': { $ref: '#/components/responses/AsistenteNoDisponible' }
+
+  /health:
+    get:
+      tags: [Operación]
+      summary: Estado del servicio (sondas de Kubernetes)
+      operationId: health
+      security: []
+      servers:
+        - url: /
+      responses:
+        '200':
+          description: El servicio, su base de datos y Valkey responden.
+        '503':
+          description: Alguna dependencia propia no responde. No depende del proveedor de IA.
+
+  /metrics:
+    get:
+      tags: [Operación]
+      summary: Métricas para Prometheus
+      operationId: metrics
+      security: []
+      servers:
+        - url: /
+      responses:
+        '200':
+          description: Métricas en formato de texto de Prometheus.
+          content:
+            text/plain:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT emitido por iam-service; Traefik lo valida con ForwardAuth y reenvía `X-Usuario-Id` y `X-Usuario-Rol`.
+
+  headers:
+    ContentLanguage:
+      description: Idioma de la respuesta.
+      schema: { type: string, enum: [es, en] }
+
+  parameters:
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      required: false
+      description: Idioma de la respuesta, `es` o `en`. Por defecto `es`.
+      schema: { type: string, enum: [es, en], default: es }
+
+  schemas:
+    ChatPeticion:
+      type: object
+      required: [mensaje]
+      properties:
+        mensaje:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Mensaje del turista, sin espacios solos.
+        conversacion_id:
+          type: string
+          format: uuid
+          description: Conversación a continuar. Si falta, se crea una nueva.
+
+    ChatRespuesta:
+      type: object
+      required: [conversacion_id, respuesta, recomendaciones]
+      properties:
+        conversacion_id: { type: string, format: uuid }
+        respuesta:
+          type: string
+          description: Texto del chatbot, en el idioma pedido.
+        recomendaciones:
+          type: array
+          description: Vacía cuando la respuesta no recomienda ningún servicio.
+          items: { $ref: '#/components/schemas/Recomendacion' }
+
+    Recomendacion:
+      type: object
+      required: [servicio_id, nombre, justificacion_explicabilidad]
+      properties:
+        servicio_id:
+          type: string
+          format: uuid
+          description: Servicio del catálogo; el turista abre su ficha para reservar.
+        nombre: { type: string }
+        justificacion_explicabilidad:
+          type: string
+          description: Motivo de la recomendación, legible para el turista (RNF-08).
+
+    Error:
+      type: object
+      required: [error, message, correlation_id]
+      properties:
+        error: { type: string, example: VALIDACION }
+        message: { type: string, description: En el idioma de `Accept-Language`. }
+        correlation_id: { type: string }
+
+  responses:
+    Validacion:
+      description: |
+        Petición inválida: mensaje vacío o de más de 1000 caracteres, o `conversacion_id`
+        que no es un UUID. Código `VALIDACION`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NoAutenticado:
+      description: Falta la identidad (`X-Usuario-Id`) o el token no es válido. Código `NO_AUTENTICADO`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Prohibido:
+      description: El rol no es `Turista`. Código `PROHIBIDO`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ConversacionNoEncontrada:
+      description: |
+        La conversación no existe, expiró (24 horas) o pertenece a otro turista. Se
+        responde igual en los tres casos. Código `CONVERSACION_NO_ENCONTRADA`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    DemasiadasSolicitudes:
+      description: Se superó el límite de mensajes. Código `DEMASIADAS_SOLICITUDES`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    AsistenteNoDisponible:
+      description: |
+        El proveedor de IA no está disponible o no respondió a tiempo. Código
+        `ASISTENTE_NO_DISPONIBLE`. El mensaje indica que se puede seguir usando el catálogo.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

@@ -1,0 +1,61 @@
+[project]
+name = "recommendation-service"
+version = "0.1.0"
+description = "Módulo 5: IA & Recomendación de la Plataforma Digital de Turismo — Santa Marta"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "prometheus-fastapi-instrumentator>=7.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "psycopg[binary]>=3.2",
+    "redis>=5.2",
+    "pydantic-settings>=2.6",
+    "httpx>=0.28",
+    "groq>=0.30",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "pytest>=8.3",
+    "pytest-cov>=7.1.0",
+    "pyyaml>=6.0",
+    "pytest-asyncio>=0.24",
+    "openapi-schema-validator>=0.6",
+]
+
+[tool.uv]
+# Servicio, no biblioteca: uv instala solo las dependencias y el código se copia tal cual.
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# Datos fijos del mock: frases largas que se leen mejor sin partir.
+"mocks/datos.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# Las pruebas `groq` llaman al proveedor real y consumen cuota: solo con `pytest -m groq`.
+addopts = "--import-mode=importlib -m 'not groq'"
+markers = ["groq: llaman a la API real de Groq (requieren LLM_API_KEY en .env)"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+# Cobertura (Plan §8.1: mínimo 70 %): uv run pytest --cov
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = false
+skip_covered = true

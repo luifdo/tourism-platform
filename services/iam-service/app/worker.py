@@ -5,7 +5,7 @@ Así el consumo de eventos no compite con el ForwardAuth de cada petición prote
 reinicios o el escalado de la API no interrumpen la auditoría.
 
 * Consumidor `iam.auditoria` (`auditoria.registrada` → bitácora, UC33).
-* El relay del outbox (`prestador.aprobado`, `prestador.suspendido`) llega en el bloque 4.
+* Relay del outbox (`prestador.suspendido`; `prestador.aprobado` en el bloque 5), C-09.
 
 Expone sus métricas en `WORKER_METRICS_PORT` (/metrics), que también sirve de sonda de vida.
 """
@@ -14,20 +14,47 @@ import asyncio
 import contextlib
 import logging
 import signal
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 from prometheus_client import start_http_server
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.application.use_cases.publicar_eventos_pendientes import PublicarEventosPendientes
 from app.application.use_cases.registrar_evento_auditoria import RegistrarEventoAuditoria
 from app.config import Settings, get_settings
 from app.infrastructure.messaging import manejador_auditoria
 from app.infrastructure.messaging.consumidor_rabbitmq import ConsumidorRabbitMQ
 from app.infrastructure.messaging.manejador_auditoria import ManejadorAuditoria
+from app.infrastructure.messaging.publicador_rabbitmq import PublicadorRabbitMQ
+from app.infrastructure.messaging.relay_outbox import RelayOutbox
 from app.infrastructure.observabilidad.configurar_logs import configurar_logs
 from app.infrastructure.persistence.database import build_engine, build_session_factory
+from app.infrastructure.persistence.outbox_pendiente import SqlAlchemyOutboxPendiente
 from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 logger = logging.getLogger(__name__)
+
+
+def _ahora() -> datetime:
+    return datetime.now(UTC)
+
+
+def construir_relay(
+    settings: Settings,
+    outbox: SqlAlchemyOutboxPendiente,
+    publicador: PublicadorRabbitMQ,
+    reloj: Callable[[], datetime] = _ahora,
+) -> RelayOutbox:
+    return RelayOutbox(
+        publicar=PublicarEventosPendientes(outbox, publicador, reloj, settings.outbox_lote),
+        outbox=outbox,
+        reloj=reloj,
+        lote=settings.outbox_lote,
+        intervalo_segundos=settings.outbox_intervalo_segundos,
+        espera_maxima_segundos=settings.outbox_espera_maxima_segundos,
+        retencion=timedelta(days=settings.outbox_retencion_dias),
+    )
 
 
 def construir_consumidores(
@@ -88,14 +115,24 @@ async def correr(settings: Settings) -> None:
             bucle.add_signal_handler(senal, detener.set)
 
     engine = build_engine(settings.database_url)
-    consumidores = construir_consumidores(settings, build_session_factory(engine))
-    logger.info("Worker iniciado")
+    sesiones = build_session_factory(engine)
+    publicador = PublicadorRabbitMQ(
+        settings.rabbitmq_url, settings.events_exchange, settings.rabbitmq_timeout_seconds
+    )
+    relay = construir_relay(settings, SqlAlchemyOutboxPendiente(sesiones), publicador)
+    consumidores = construir_consumidores(settings, sesiones)
+    logger.info("Worker iniciado: relay del outbox hacia %s", settings.events_exchange)
     try:
-        await iniciar_consumidores(consumidores, detener, settings.rabbitmq_espera_maxima_segundos)
-        await detener.wait()
+        # El relay termina cuando se pide detener; los consumidores siguen solos una vez
+        # conectados.
+        await asyncio.gather(
+            relay.ejecutar(detener),
+            iniciar_consumidores(consumidores, detener, settings.rabbitmq_espera_maxima_segundos),
+        )
     finally:
         for consumidor in consumidores:
             await consumidor.cerrar()
+        await publicador.cerrar()
         await engine.dispose()
         logger.info("Worker detenido")
 

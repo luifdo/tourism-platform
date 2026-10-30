@@ -8,6 +8,8 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
+    Integer,
     String,
     Text,
     func,
@@ -128,3 +130,20 @@ class BitacoraAuditoria(Base):
     # Llave de idempotencia de los eventos de otros servicios; nula en las filas propias (C-04).
     event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), unique=True)
     correlation_id: Mapped[str | None] = mapped_column(String(100))  # C-05
+
+
+class Outbox(Base):
+    """Eventos por publicar (ADR-008, C-09): mismo esquema que el outbox de catalog."""
+
+    __tablename__ = "outbox"
+    # El relay solo busca los pendientes: el índice parcial no crece con los publicados.
+    __table_args__ = (
+        Index("ix_outbox_pendientes", "creado_en", postgresql_where=text("publicado_en IS NULL")),
+    )
+
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    sobre: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    creado_en: Mapped[datetime] = timestamptz_now()
+    publicado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    intentos: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))

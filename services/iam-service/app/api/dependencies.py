@@ -9,10 +9,15 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.api.ip_origen import ip_origen
+from app.application.use_cases.cambiar_estado_usuario import CambiarEstadoUsuario
+from app.application.use_cases.cambiar_rol_usuario import CambiarRolUsuario
 from app.application.use_cases.cerrar_sesion import CerrarSesion
 from app.application.use_cases.check_health import CheckHealth
+from app.application.use_cases.consultar_bitacora import ConsultarBitacora
 from app.application.use_cases.iniciar_sesion import IniciarSesion
+from app.application.use_cases.listar_usuarios import ListarUsuarios
 from app.application.use_cases.obtener_contacto_usuario import ObtenerContactoUsuario
+from app.application.use_cases.obtener_usuario import ObtenerUsuario
 from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoDenegado
 from app.application.use_cases.registrar_usuario import RegistrarUsuario
 from app.application.use_cases.verificar_acceso import VerificarAcceso
@@ -116,6 +121,36 @@ def get_obtener_contacto_usuario(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> ObtenerContactoUsuario:
     return ObtenerContactoUsuario(uow=uow)
+
+
+def get_consultar_bitacora(
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> ConsultarBitacora:
+    return ConsultarBitacora(uow=uow)
+
+
+def get_listar_usuarios(uow: Annotated[UnitOfWork, Depends(get_unit_of_work)]) -> ListarUsuarios:
+    return ListarUsuarios(uow=uow)
+
+
+def get_obtener_usuario(uow: Annotated[UnitOfWork, Depends(get_unit_of_work)]) -> ObtenerUsuario:
+    return ObtenerUsuario(uow=uow)
+
+
+def get_cambiar_rol_usuario(
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    revocacion: Annotated[RevocacionTokens, Depends(get_revocacion)],
+    reloj: Annotated[Callable[[], datetime], Depends(get_reloj)],
+) -> CambiarRolUsuario:
+    return CambiarRolUsuario(uow=uow, revocacion=revocacion, reloj=reloj)
+
+
+def get_cambiar_estado_usuario(
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    revocacion: Annotated[RevocacionTokens, Depends(get_revocacion)],
+    reloj: Annotated[Callable[[], datetime], Depends(get_reloj)],
+) -> CambiarEstadoUsuario:
+    return CambiarEstadoUsuario(uow=uow, revocacion=revocacion, reloj=reloj)
 
 
 def get_registrar_usuario(

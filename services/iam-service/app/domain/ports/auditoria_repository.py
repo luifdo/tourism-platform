@@ -3,6 +3,7 @@ from typing import Any, Protocol
 
 from app.domain.value_objects.enums import ResultadoAuditoria
 from app.domain.value_objects.evento_auditoria import EventoAuditoria
+from app.domain.value_objects.filtro_bitacora import FiltroBitacora, PaginaBitacora
 
 
 class AuditoriaRepository(Protocol):
@@ -23,4 +24,8 @@ class AuditoriaRepository(Protocol):
         Si `usuario_id` no existe en `usuario`, la fila queda con `usuario_id` nulo y el valor
         original en `detalles.usuario_id_no_registrado` (C-38).
         """
+        ...
+
+    async def listar(self, filtro: FiltroBitacora) -> PaginaBitacora:
+        """UC33: filas que cumplen el filtro, por `fecha` descendente."""
         ...

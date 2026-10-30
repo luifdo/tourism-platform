@@ -4,6 +4,7 @@ from typing import Self
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.persistence.auditoria_repository import SqlAlchemyAuditoriaRepository
+from app.infrastructure.persistence.outbox_repository import SqlAlchemyOutbox
 from app.infrastructure.persistence.usuario_repository import SqlAlchemyUsuarioRepository
 
 
@@ -12,6 +13,7 @@ class SqlAlchemyUnitOfWork:
 
     usuarios: SqlAlchemyUsuarioRepository
     auditoria: SqlAlchemyAuditoriaRepository
+    outbox: SqlAlchemyOutbox
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -21,6 +23,7 @@ class SqlAlchemyUnitOfWork:
         self._session = self._session_factory()
         self.usuarios = SqlAlchemyUsuarioRepository(self._session)
         self.auditoria = SqlAlchemyAuditoriaRepository(self._session)
+        self.outbox = SqlAlchemyOutbox(self._session)
         return self
 
     async def __aexit__(

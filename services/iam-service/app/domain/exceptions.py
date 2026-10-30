@@ -26,6 +26,20 @@ class UsuarioNoEncontradoError(DominioError):
     default_message = "El usuario no existe."
 
 
+class AutogestionNoPermitidaError(DominioError):
+    """C-29: un Admin no puede cambiar su propio rol ni desactivarse a sí mismo."""
+
+    code = "AUTOGESTION_NO_PERMITIDA"
+    default_message = "No puede cambiar su propio rol ni desactivar su propia cuenta."
+
+
+class UltimoAdminError(DominioError):
+    """C-29: la plataforma no puede quedarse sin Admins activos."""
+
+    code = "ULTIMO_ADMIN"
+    default_message = "No se puede dejar la plataforma sin administradores activos."
+
+
 class CredencialesInvalidasError(DominioError):
     """Mismo mensaje si el correo no existe o la contraseña no coincide (no revela cuentas)."""
 
@@ -101,6 +115,11 @@ class HabeasDataNoAceptadoError(DominioValidationError):
 class MenorDeEdadError(DominioValidationError):
     code = "MAYORIA_DE_EDAD_REQUERIDA"
     default_message = "Debe ser mayor de edad para registrarse."
+
+
+class RangoFechasInvalidoError(DominioValidationError):
+    code = "RANGO_FECHAS_INVALIDO"
+    default_message = "La fecha 'desde' debe ser anterior a 'hasta'."
 
 
 class RolNoPermitidoError(DominioValidationError):

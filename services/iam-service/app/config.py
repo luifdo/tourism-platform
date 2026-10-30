@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     consumidor_prefetch: int = 10
     # Tope de la espera creciente con la que el worker reintenta conectarse a RabbitMQ.
     rabbitmq_espera_maxima_segundos: float = 30.0
+    # Relay del outbox (worker, C-09): lote por vuelta, pausa entre vueltas, espera máxima tras
+    # un fallo y días que se conservan los eventos ya publicados. Mismos valores que catalog.
+    outbox_lote: int = 100
+    outbox_intervalo_segundos: float = 1.0
+    outbox_espera_maxima_segundos: float = 30.0
+    outbox_retencion_dias: int = 7
 
     # Worker (python -m app.worker): /metrics, que también sirve de sonda de vida.
     worker_metrics_port: int = 9101

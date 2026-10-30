@@ -19,8 +19,9 @@ Autenticación JWT (RS256), verificación de tokens para el API Gateway (Forward
 
 ## Eventos
 
-**Publica:**
-* `prestador.aprobado.v1`
+**Publica** (mediante el outbox, ver abajo):
+* `prestador.suspendido.v1`: un Prestador activo deja de estarlo (UC27), C-17
+* `prestador.aprobado.v1`: en el bloque 5 (UC28)
 
 **Consume:**
 * `auditoria.registrada.v1` (de catalog, booking y review), en la cola durable `iam.auditoria`
@@ -43,7 +44,14 @@ El worker (`python -m app.worker`, misma imagen que la API) consume `iam.auditor
 
 Reintentos a 1, 5 y 25 s ante fallos pasajeros (por ejemplo, PostgreSQL caído). Lo que no cumple el contrato, o falla 4 veces, va a `turismo.dead-letter` con las cabeceras `x-cola`, `x-intentos` y `x-error`. **Nada lo reprocesa solo:** se revisa a mano en la consola de RabbitMQ (http://localhost:15672) y, si se corrigió, se vuelve a publicar desde ahí con la clave `auditoria.registrada`. Repetir un evento ya guardado no lo duplica.
 
-Métricas en `http://localhost:9101/metrics` (`WORKER_METRICS_PORT`), que también sirven de sonda de vida: `iam_eventos_consumidos_total{cola, event_type, resultado}`, con `resultado` igual a `aplicado`, `duplicado`, `reintento` o `dlq`.
+### Outbox y relay
+
+Los eventos del IAM se guardan en la tabla `outbox` en la misma transacción que el cambio (ADR-008, C-09), y el mismo worker los publica en `turismo.eventos` con *publisher confirms*. Lotes de 100 (`OUTBOX_LOTE`) con `FOR UPDATE SKIP LOCKED`, pausa de 1 s entre lotes, espera creciente hasta 30 s si RabbitMQ o PostgreSQL fallan, y limpieza diaria de lo publicado hace más de 7 días. Un evento solo se marca como publicado cuando el broker confirma; la entrega es "al menos una vez" y los consumidores descartan duplicados por `event_id`.
+
+Métricas en `http://localhost:9101/metrics` (`WORKER_METRICS_PORT`), que también sirven de sonda de vida:
+
+* `iam_eventos_consumidos_total{cola, event_type, resultado}`, con `resultado` igual a `aplicado`, `duplicado`, `reintento` o `dlq`.
+* `iam_eventos_publicados_total{event_type}`, `iam_eventos_fallos_publicacion_total`, `iam_outbox_pendientes` e `iam_outbox_antiguedad_segundos`.
 
 ## Estructura (arquitectura hexagonal)
 
@@ -224,9 +232,69 @@ async def listar(claims: Annotated[ClaimsToken, Depends(require_role(Rol.ADMIN))
 | HTTP | `code` | Causa | `detalles` en la bitácora |
 |---|---|---|---|
 | 401 | `TOKEN_INVALIDO` | Igual que en `verificar` | `{"motivo", "metodo", "uri"}` (método y ruta de la propia petición) |
-| 403 | `ROL_INSUFICIENTE` | El rol del token no está en la lista | `{"rol", "requeridos", "metodo", "ruta", "plantilla"}`; `plantilla` es la ruta declarada (p. ej. `/api/iam/admin/usuarios/{id}`) para agrupar por endpoint |
+| 403 | `ROL_INSUFICIENTE` | El rol del token no está en la lista | `{"rol", "requeridos", "metodo", "ruta", "plantilla"}`; `plantilla` es la ruta declarada (p. ej. `/api/iam/admin/usuarios/{usuario_id}`) para agrupar por endpoint |
 
-`GET /api/iam/admin/ping` (solo `Admin`, responde `{"ok": true}`) es **temporal**: existe para probar el RBAC hasta que estén los endpoints de administración.
+### Administración de usuarios: `/api/iam/admin/usuarios` (UC27)
+
+Solo `Admin`. El endpoint temporal `/api/iam/admin/ping` ya no existe (C-33).
+
+* `GET /api/iam/admin/usuarios?rol=&activo=&q=&pagina=1&tamano=20`: `{items, total, pagina, tamano}`. `q` busca en el nombre y en el correo, sin distinguir mayúsculas y tomando `%` y `_` literalmente; `tamano` va de 1 a 100.
+* `GET /api/iam/admin/usuarios/{id}`: la cuenta, incluidas las inactivas.
+* `PATCH /api/iam/admin/usuarios/{id}/rol` con `{"rol": "Entidad", "motivo": "..."}`.
+* `PATCH /api/iam/admin/usuarios/{id}/estado` con `{"activo": false, "motivo": "..."}`.
+
+Cada cuenta se devuelve como `{id, email, nombre_completo, rol, activo, email_verificado, idioma, creado_en, actualizado_en}`. Un cambio que sí cambia algo:
+
+1. Se guarda junto con su fila `ROLE_CHANGE` o `USER_STATUS_CHANGE` en la bitácora: `usuario_id` es el Admin; `detalles` lleva `{usuario_afectado, antes, despues, motivo}`, con el motivo recortado a 500 caracteres.
+2. Si un Prestador activo deja de estarlo (lo desactivan o le cambian el rol), agrega `prestador.suspendido` al outbox. El evento **no** lleva el motivo (C-41). Reactivar o pasar a Prestador no publica nada hasta el bloque 5 (C-42).
+3. Si cambió el rol o se desactivó la cuenta, revoca los tokens del usuario antes y después del commit (C-21): sus peticiones siguientes reciben 401.
+
+Un cambio sin efecto (mismo rol o mismo estado) responde `200` sin auditar, revocar ni publicar.
+
+| HTTP | `code` | Causa |
+|---|---|---|
+| 404 | `USUARIO_NO_ENCONTRADO` | La cuenta no existe |
+| 409 | `AUTOGESTION_NO_PERMITIDA` | El Admin intenta cambiar su propio rol o desactivarse |
+| 409 | `ULTIMO_ADMIN` | La plataforma quedaría sin Admins activos |
+| 422 | `VALIDACION` | Rol inexistente, `activo` no booleano, `motivo` de más de 2000 caracteres, UUID mal formado |
+| 503 | `SERVICIO_NO_DISPONIBLE` | Valkey no responde: no se pudo revocar y **no se cambió nada** |
+
+### `GET /api/iam/admin/bitacora` (UC33)
+
+Solo `Admin`. Consulta la bitácora inmutable (RNF-10): las filas propias del IAM y las que llegan de los demás módulos por `auditoria.registrada`. Se ordena por `fecha` descendente, que es el momento del hecho (C-39). Cada consulta deja una fila `AUDIT_VIEW` con el Admin, los filtros usados y la página, nunca los resultados; se escribe después de leer y, si falla, la consulta responde igual (C-43).
+
+| Parámetro | Valor |
+|---|---|
+| `usuario_id` | UUID |
+| `accion` | Nombre exacto: `ROLE_CHANGE`, `ACCESS_DENIED`, `ZONA_CREADA`… (C-19) |
+| `resultado` | `Exito`, `Denegado` o `Error` |
+| `servicio_origen` | Exacto: `iam-service`, `catalog-service`… |
+| `desde` / `hasta` | ISO 8601 **con zona horaria**; `desde` incluido, `hasta` excluido. En la URL, el `+` de un desfase va como `%2B` (o usar `Z`) |
+| `pagina` / `tamano` | Desde 1 / de 1 a 100 (20 por defecto) |
+
+```json
+{
+  "items": [
+    {
+      "id": "3f0c...",
+      "fecha": "2026-10-30T04:12:45.120Z",
+      "usuario_id": "b13fd0e3-efc5-43b5-83db-ffb94c2d70dd",
+      "accion": "USER_STATUS_CHANGE",
+      "resultado": "Exito",
+      "servicio_origen": "iam-service",
+      "ip_origen": "190.24.10.5",
+      "detalles": {"usuario_afectado": "d24f...", "antes": {"activo": true}, "despues": {"activo": false}, "motivo": "RNT vencido"},
+      "correlation_id": "a5f33072-1848-4071-b2d7-715cb2723ef6",
+      "event_id": null
+    }
+  ],
+  "total": 1,
+  "pagina": 1,
+  "tamano": 20
+}
+```
+
+`event_id` solo aparece en las filas de otros servicios. Errores: 401 y 403 como en todo `require_role`; 422 `VALIDACION` (filtro mal formado o fecha sin zona) y 422 `RANGO_FECHAS_INVALIDO` (`desde` no es anterior a `hasta`).
 
 ### `GET /internal/usuarios/{usuario_id}/contacto` (C-15)
 
@@ -279,6 +347,9 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **Auditoría de los demás servicios en un worker aparte, idempotente en la base** (C-04, C-31): un `event_id` repetido no duplica la fila.
 * **Un evento válido nunca se descarta**: con un usuario desconocido o una IP inválida se guarda igual y la anomalía queda en `detalles` (C-38). `fecha` es el `occurred_at` del evento (C-39).
 * **La DLQ no se reprocesa sola** (C-40): se revisa a mano en la consola de RabbitMQ.
+* **Eventos del IAM por outbox, con entrega "al menos una vez"** (C-09): un evento nunca se pierde entre el commit y RabbitMQ.
+* **UC27 revoca dos veces y falla cerrado** (C-21, C-29): sin Valkey no se cambia ningún rol ni estado.
+* **El motivo de una suspensión no viaja por el bus** (C-41), y **un Prestador reactivado sigue oculto en catalog hasta el bloque 5** (C-42).
 * **Readiness y liveness en `/health/live`, sin dependencias** (C-32, distinto del Plan §7.3): una caída de PostgreSQL o Valkey no saca a todas las réplicas a la vez; `/health` sigue mostrando la falla al monitoreo.
 * **Contacto interno con 404 si llega por Traefik** (C-15). **Riesgo:** catalog todavía no envía `X-Correlation-ID` en esa llamada, así que su log no se cruza con el evento.
 * **El 500 de una excepción no controlada sale sin `X-Correlation-ID`** (C-05).

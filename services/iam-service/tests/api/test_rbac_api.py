@@ -4,7 +4,8 @@ from app.domain.value_objects.enums import Rol
 from tests.api.conftest import CORRELATION_ID, TOKEN_INVALIDO, bearer, emitir, unico_denegado
 from tests.fakes import FakeRevocacion, FakeUnitOfWork
 
-PING = "/api/iam/admin/ping"
+# Cualquier ruta del Admin sirve para probar el RBAC (antes, /admin/ping: C-33).
+PING = "/api/iam/admin/usuarios"
 
 
 def test_admin_200(client: TestClient, uow: FakeUnitOfWork) -> None:
@@ -13,8 +14,8 @@ def test_admin_200(client: TestClient, uow: FakeUnitOfWork) -> None:
     response = client.get(PING, headers=bearer(emitido.access_token))
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
-    assert uow.entradas == 0
+    assert response.json() == {"items": [], "total": 0, "pagina": 1, "tamano": 20}
+    assert uow.auditoria.registros == []
 
 
 def test_turista_403_con_fila_en_la_bitacora(client: TestClient, uow: FakeUnitOfWork) -> None:

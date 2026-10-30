@@ -60,9 +60,13 @@ with httpx.Client(base_url=BASE, timeout=10) as c:
     r = c.post("/api/iam/login", json={"email": email, "password": clave})
     check("Login -> 200", r.status_code == 200, r.text)
     token = r.json()["access_token"]
-    r1 = c.post("/api/iam/login", json={"email": email, "password": "Incorrecta99"})
+    # Mismo X-Correlation-ID en los dos: si no, cada cuerpo lleva el suyo (C-12) y difieren.
+    corr = {"X-Correlation-ID": "smoke-401"}
+    r1 = c.post("/api/iam/login", json={"email": email, "password": "Incorrecta99"}, headers=corr)
     r2 = c.post(
-        "/api/iam/login", json={"email": "nadie.existe@example.com", "password": "Incorrecta99"}
+        "/api/iam/login",
+        json={"email": "nadie.existe@example.com", "password": "Incorrecta99"},
+        headers=corr,
     )
     check(
         "Los dos 401 son idénticos",
@@ -98,10 +102,22 @@ with httpx.Client(base_url=BASE, timeout=10) as c:
         r.status_code == 401 and r.json().get("code") == "TOKEN_INVALIDO",
         r.text,
     )
-    r = c.get("/api/iam/admin/ping", headers=auth)
+    r = c.get("/api/iam/admin/usuarios", headers=auth)
     check(
-        "admin/ping con Turista -> 403 ROL_INSUFICIENTE",
+        "admin/usuarios con Turista -> 403 ROL_INSUFICIENTE",
         r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
+        r.text,
+    )
+    r = c.get("/api/iam/admin/bitacora", headers=auth)
+    check(
+        "admin/bitacora con Turista -> 403 ROL_INSUFICIENTE",
+        r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
+        r.text,
+    )
+    r = c.get("/api/iam/admin/bitacora")
+    check(
+        "admin/bitacora sin token -> 401 TOKEN_INVALIDO",
+        r.status_code == 401 and r.json().get("code") == "TOKEN_INVALIDO",
         r.text,
     )
 

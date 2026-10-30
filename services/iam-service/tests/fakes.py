@@ -1,6 +1,7 @@
 """Dobles en memoria de los puertos, para probar sin base de datos."""
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from types import TracebackType
@@ -9,10 +10,13 @@ from typing import Any, Self
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.domain.entities.usuario import Usuario
+from app.domain.events.evento_dominio import EventoDominio
 from app.domain.exceptions import ServicioNoDisponibleError, UsuarioYaExisteError
 from app.domain.value_objects.email import Email
-from app.domain.value_objects.enums import ResultadoAuditoria
+from app.domain.value_objects.enums import ResultadoAuditoria, Rol
 from app.domain.value_objects.evento_auditoria import EventoAuditoria
+from app.domain.value_objects.filtro_bitacora import EntradaBitacora, FiltroBitacora, PaginaBitacora
+from app.domain.value_objects.filtro_usuarios import FiltroUsuarios, PaginaUsuarios
 from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 
 AHORA = datetime(2026, 10, 23, 15, 0, tzinfo=UTC)
@@ -25,6 +29,7 @@ def reloj_fijo() -> datetime:
 class FakeUsuarioRepository:
     def __init__(self) -> None:
         self.por_email: dict[str, Usuario] = {}
+        self.bloqueos_admins = 0
 
     async def add(self, usuario: Usuario) -> Usuario:
         if usuario.email in self.por_email:
@@ -43,6 +48,39 @@ class FakeUsuarioRepository:
         for email, usuario in self.por_email.items():
             if usuario.id == usuario_id:
                 self.por_email[email] = replace(usuario, password_hash=password_hash)
+
+    async def listar(self, filtro: FiltroUsuarios) -> PaginaUsuarios:
+        q = (filtro.q or "").lower()
+        items = [
+            u
+            for u in self.por_email.values()
+            if (filtro.rol is None or u.rol is filtro.rol)
+            and (filtro.activo is None or u.activo == filtro.activo)
+            and (not q or q in u.nombre_completo.lower() or q in u.email)
+        ]
+        inicio = (filtro.pagina - 1) * filtro.tamano
+        return PaginaUsuarios(
+            items=items[inicio : inicio + filtro.tamano],
+            total=len(items),
+            pagina=filtro.pagina,
+            tamano=filtro.tamano,
+        )
+
+    async def bloquear_admins_activos(self) -> int:
+        self.bloqueos_admins += 1
+        return sum(1 for u in self.por_email.values() if u.rol is Rol.ADMIN and u.activo)
+
+    async def find_by_id_para_actualizar(self, usuario_id: uuid.UUID) -> Usuario | None:
+        return await self.find_by_id(usuario_id)
+
+    async def actualizar_rol_y_estado(
+        self, usuario_id: uuid.UUID, rol: Rol, activo: bool
+    ) -> Usuario:
+        usuario = await self.find_by_id(usuario_id)
+        assert usuario is not None
+        actualizado = replace(usuario, rol=rol, activo=activo)
+        self.por_email[usuario.email] = actualizado
+        return actualizado
 
     def sembrar(self, usuario: Usuario) -> Usuario:
         """Guarda un usuario ya existente (sin pasar por el caso de uso de registro)."""
@@ -76,11 +114,17 @@ class FakePasswordHasher:
 
 
 class FakeRevocacion:
-    """Lista de revocación en memoria. caida=True simula Valkey sin responder."""
+    """Lista de revocación en memoria. caida=True simula Valkey sin responder.
+
+    `al_revocar_usuario` se llama en cada revocar_usuario (antes de fallar o guardar): permite
+    comprobar en qué momento de la transacción ocurre.
+    """
 
     def __init__(self, caida: bool = False) -> None:
         self.revocados: dict[str, datetime] = {}
         self.revocados_desde: dict[uuid.UUID, int] = {}
+        self.revocaciones_usuario: list[tuple[uuid.UUID, datetime]] = []
+        self.al_revocar_usuario: Callable[[], None] | None = None
         self.caida = caida
 
     async def revocar(self, jti: str, expira_en: datetime) -> None:
@@ -89,8 +133,11 @@ class FakeRevocacion:
         self.revocados[jti] = expira_en
 
     async def revocar_usuario(self, usuario_id: uuid.UUID, desde: datetime) -> None:
+        if self.al_revocar_usuario is not None:
+            self.al_revocar_usuario()
         if self.caida:
             raise ServicioNoDisponibleError()
+        self.revocaciones_usuario.append((usuario_id, desde))
         self.revocados_desde[usuario_id] = int(desde.timestamp())
 
     async def esta_revocado_token(self, jti: str, usuario_id: uuid.UUID, iat: datetime) -> bool:
@@ -137,11 +184,25 @@ class RegistroAuditoria:
 
 class FakeAuditoriaRepository:
     """`registrar_evento` no simula el usuario inexistente (C-38): eso lo resuelve el SQL y
-    se prueba en integración."""
+    se prueba en integración. `listar` tampoco filtra (eso es SQL): guarda el filtro recibido y
+    pagina `entradas`.
+    """
 
     def __init__(self) -> None:
         self.registros: list[RegistroAuditoria] = []
         self.eventos: dict[uuid.UUID, EventoAuditoria] = {}
+        self.entradas: list[EntradaBitacora] = []
+        self.filtros: list[FiltroBitacora] = []
+
+    async def listar(self, filtro: FiltroBitacora) -> PaginaBitacora:
+        self.filtros.append(filtro)
+        inicio = (filtro.pagina - 1) * filtro.tamano
+        return PaginaBitacora(
+            items=self.entradas[inicio : inicio + filtro.tamano],
+            total=len(self.entradas),
+            pagina=filtro.pagina,
+            tamano=filtro.tamano,
+        )
 
     async def registrar_evento(self, evento: EventoAuditoria) -> bool:
         if evento.event_id in self.eventos:
@@ -164,6 +225,14 @@ class FakeAuditoriaRepository:
         )
 
 
+class FakeOutbox:
+    def __init__(self) -> None:
+        self.eventos: list[EventoDominio] = []
+
+    async def agregar(self, evento: EventoDominio) -> None:
+        self.eventos.append(evento)
+
+
 class FakeUnitOfWork:
     """Cuenta entradas, commits y rollbacks. Los repositorios persisten entre usos, como una
     base real. caida=True simula PostgreSQL sin responder al abrir la transacción.
@@ -172,6 +241,7 @@ class FakeUnitOfWork:
     def __init__(self, caida: bool = False) -> None:
         self.usuarios = FakeUsuarioRepository()
         self.auditoria = FakeAuditoriaRepository()
+        self.outbox = FakeOutbox()
         self.entradas = 0
         self.commits = 0
         self.rollbacks = 0

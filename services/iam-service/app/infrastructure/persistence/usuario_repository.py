@@ -1,13 +1,14 @@
 import uuid
 
-from sqlalchemy import select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.usuario import Usuario
 from app.domain.exceptions import UsuarioYaExisteError
 from app.domain.value_objects.email import Email
-from app.domain.value_objects.enums import Idioma
+from app.domain.value_objects.enums import Idioma, Rol
+from app.domain.value_objects.filtro_usuarios import FiltroUsuarios, PaginaUsuarios
 from app.infrastructure.persistence.models import Usuario as UsuarioModel
 
 # Nombre fijado por la naming convention de Base y por la migración inicial.
@@ -51,6 +52,74 @@ class SqlAlchemyUsuarioRepository:
             .where(UsuarioModel.id == usuario_id)
             .values(password_hash=password_hash)
         )
+
+    async def listar(self, filtro: FiltroUsuarios) -> PaginaUsuarios:
+        condiciones = []
+        if filtro.rol is not None:
+            condiciones.append(UsuarioModel.rol == filtro.rol)
+        if filtro.activo is not None:
+            condiciones.append(UsuarioModel.activo == filtro.activo)
+        if filtro.q:
+            patron = f"%{_escapar_like(filtro.q)}%"
+            condiciones.append(
+                or_(
+                    UsuarioModel.nombre_completo.ilike(patron, escape="\\"),
+                    UsuarioModel.email.ilike(patron, escape="\\"),
+                )
+            )
+        total = await self._session.scalar(
+            select(func.count()).select_from(UsuarioModel).where(*condiciones)
+        )
+        modelos = await self._session.scalars(
+            select(UsuarioModel)
+            .where(*condiciones)
+            .order_by(UsuarioModel.creado_en.desc(), UsuarioModel.id)
+            .limit(filtro.tamano)
+            .offset((filtro.pagina - 1) * filtro.tamano)
+        )
+        return PaginaUsuarios(
+            items=[_to_entity(m) for m in modelos],
+            total=total or 0,
+            pagina=filtro.pagina,
+            tamano=filtro.tamano,
+        )
+
+    async def bloquear_admins_activos(self) -> int:
+        ids = await self._session.scalars(
+            select(UsuarioModel.id)
+            .where(UsuarioModel.rol == Rol.ADMIN, UsuarioModel.activo.is_(True))
+            .order_by(UsuarioModel.id)
+            .with_for_update()
+        )
+        return len(ids.all())
+
+    async def find_by_id_para_actualizar(self, usuario_id: uuid.UUID) -> Usuario | None:
+        # populate_existing: si la fila ya estaba en la sesión, se relee con el bloqueo puesto.
+        model = await self._session.scalar(
+            select(UsuarioModel)
+            .where(UsuarioModel.id == usuario_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return _to_entity(model) if model is not None else None
+
+    async def actualizar_rol_y_estado(
+        self, usuario_id: uuid.UUID, rol: Rol, activo: bool
+    ) -> Usuario:
+        model = await self._session.scalar(
+            update(UsuarioModel)
+            .where(UsuarioModel.id == usuario_id)
+            .values(rol=rol, activo=activo)
+            .returning(UsuarioModel)
+            .execution_options(populate_existing=True)
+        )
+        assert model is not None
+        return _to_entity(model)
+
+
+def _escapar_like(texto: str) -> str:
+    """El texto del Admin se busca literal: `%` y `_` no son comodines."""
+    return texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _to_model(usuario: Usuario) -> UsuarioModel:

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.schemas.errors import ErrorCampo, ErrorResponse
 from app.domain.exceptions import (
+    AutogestionNoPermitidaError,
     CredencialesInvalidasError,
     CuentaInactivaError,
     DominioError,
@@ -14,6 +15,7 @@ from app.domain.exceptions import (
     RolInsuficienteError,
     ServicioNoDisponibleError,
     TokenInvalidoError,
+    UltimoAdminError,
     UsuarioNoEncontradoError,
     UsuarioYaExisteError,
 )
@@ -70,6 +72,8 @@ def register_error_handlers(app: FastAPI) -> None:
         ServicioNoDisponibleError, _responder_con(status.HTTP_503_SERVICE_UNAVAILABLE)
     )
     app.add_exception_handler(UsuarioYaExisteError, _responder_con(status.HTTP_409_CONFLICT))
+    app.add_exception_handler(AutogestionNoPermitidaError, _responder_con(status.HTTP_409_CONFLICT))
+    app.add_exception_handler(UltimoAdminError, _responder_con(status.HTTP_409_CONFLICT))
     app.add_exception_handler(UsuarioNoEncontradoError, _responder_con(status.HTTP_404_NOT_FOUND))
     app.add_exception_handler(
         DominioValidationError, _responder_con(status.HTTP_422_UNPROCESSABLE_CONTENT)

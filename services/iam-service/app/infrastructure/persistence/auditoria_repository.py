@@ -1,12 +1,13 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import DateTime, String, case, cast, exists, literal, null, select
+from sqlalchemy import DateTime, String, case, cast, exists, func, literal, null, select
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.value_objects.enums import ResultadoAuditoria
 from app.domain.value_objects.evento_auditoria import EventoAuditoria
+from app.domain.value_objects.filtro_bitacora import EntradaBitacora, FiltroBitacora, PaginaBitacora
 from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 from app.infrastructure.persistence.models import BitacoraAuditoria, Usuario
 
@@ -79,3 +80,49 @@ class SqlAlchemyAuditoriaRepository:
         )
         resultado = await self._session.execute(sentencia)
         return resultado.scalar_one_or_none() is not None
+
+    async def listar(self, filtro: FiltroBitacora) -> PaginaBitacora:
+        b = BitacoraAuditoria
+        condiciones = []
+        if filtro.usuario_id is not None:
+            condiciones.append(b.usuario_id == filtro.usuario_id)
+        if filtro.accion is not None:
+            condiciones.append(b.accion == filtro.accion)
+        if filtro.resultado is not None:
+            condiciones.append(b.resultado == filtro.resultado)
+        if filtro.servicio_origen is not None:
+            condiciones.append(b.servicio_origen == filtro.servicio_origen)
+        if filtro.desde is not None:
+            condiciones.append(b.fecha >= filtro.desde)
+        if filtro.hasta is not None:
+            condiciones.append(b.fecha < filtro.hasta)
+        total = await self._session.scalar(select(func.count()).select_from(b).where(*condiciones))
+        filas = await self._session.scalars(
+            select(b)
+            .where(*condiciones)
+            .order_by(b.fecha.desc(), b.id.desc())
+            .limit(filtro.tamano)
+            .offset((filtro.pagina - 1) * filtro.tamano)
+        )
+        return PaginaBitacora(
+            items=[_a_entrada(f) for f in filas],
+            total=total or 0,
+            pagina=filtro.pagina,
+            tamano=filtro.tamano,
+        )
+
+
+def _a_entrada(fila: BitacoraAuditoria) -> EntradaBitacora:
+    return EntradaBitacora(
+        id=fila.id,
+        fecha=fila.fecha,
+        usuario_id=fila.usuario_id,
+        accion=fila.accion,
+        resultado=fila.resultado,
+        servicio_origen=fila.servicio_origen,
+        # INET llega como objeto de ipaddress.
+        ip_origen=str(fila.ip_origen) if fila.ip_origen is not None else None,
+        detalles=fila.detalles,
+        correlation_id=fila.correlation_id,
+        event_id=fila.event_id,
+    )

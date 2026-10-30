@@ -7,15 +7,18 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.dependencies import get_reloj
 from app.api.errors import register_error_handlers
-from app.api.routers import admin, auth, health
+from app.api.middleware.correlacion_middleware import CorrelacionMiddleware
+from app.api.routers import admin, auth, health, internal
 from app.config import Settings, get_settings
 from app.infrastructure.cache.valkey_revocacion import build_valkey_client
+from app.infrastructure.observabilidad.configurar_logs import configurar_logs
 from app.infrastructure.persistence.database import build_engine, build_session_factory
 from app.infrastructure.security.jwt_token_service import JwtTokenService, leer_llaves
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    configurar_logs(settings.service_name, settings.log_level)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -38,10 +41,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await app.state.engine.dispose()
 
     app = FastAPI(title=settings.service_name, version="0.1.0", lifespan=lifespan)
+    app.add_middleware(CorrelacionMiddleware)
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(admin.router)
+    app.include_router(internal.router)
     Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
     return app
 

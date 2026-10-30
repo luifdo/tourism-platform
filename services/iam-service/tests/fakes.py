@@ -13,6 +13,7 @@ from app.domain.exceptions import ServicioNoDisponibleError, UsuarioYaExisteErro
 from app.domain.value_objects.email import Email
 from app.domain.value_objects.enums import ResultadoAuditoria
 from app.domain.value_objects.evento_auditoria import EventoAuditoria
+from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 
 AHORA = datetime(2026, 10, 23, 15, 0, tzinfo=UTC)
 
@@ -34,6 +35,9 @@ class FakeUsuarioRepository:
 
     async def find_by_email(self, email: Email) -> Usuario | None:
         return self.por_email.get(email.value)
+
+    async def find_by_id(self, usuario_id: uuid.UUID) -> Usuario | None:
+        return next((u for u in self.por_email.values() if u.id == usuario_id), None)
 
     async def actualizar_password_hash(self, usuario_id: uuid.UUID, password_hash: str) -> None:
         for email, usuario in self.por_email.items():
@@ -127,6 +131,8 @@ class RegistroAuditoria:
     usuario_id: uuid.UUID | None
     ip_origen: str | None
     detalles: dict[str, Any]
+    # Como el repositorio real, lo lee del ContextVar de la petición (C-05).
+    correlation_id: str | None = None
 
 
 class FakeAuditoriaRepository:
@@ -151,7 +157,11 @@ class FakeAuditoriaRepository:
         ip_origen: str | None,
         detalles: dict[str, Any],
     ) -> None:
-        self.registros.append(RegistroAuditoria(accion, resultado, usuario_id, ip_origen, detalles))
+        self.registros.append(
+            RegistroAuditoria(
+                accion, resultado, usuario_id, ip_origen, detalles, correlation_id_actual()
+            )
+        )
 
 
 class FakeUnitOfWork:

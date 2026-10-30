@@ -8,6 +8,13 @@ class Rol(enum.Enum):
     ADMIN = "Admin"
 
 
+class Idioma(enum.Enum):
+    """Idioma de los correos del usuario (RF-10, C-06)."""
+
+    ES = "es"
+    EN = "en"
+
+
 class TipoDocumento(enum.Enum):
     RNT = "RNT"
     RUT = "RUT"

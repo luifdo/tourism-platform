@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.domain.value_objects.enums import Rol
-from tests.api.conftest import TOKEN_INVALIDO, bearer, emitir, unico_denegado
+from tests.api.conftest import CORRELATION_ID, TOKEN_INVALIDO, bearer, emitir, unico_denegado
 from tests.fakes import FakeRevocacion, FakeUnitOfWork
 
 PING = "/api/iam/admin/ping"
@@ -26,6 +26,7 @@ def test_turista_403_con_fila_en_la_bitacora(client: TestClient, uow: FakeUnitOf
     assert response.json() == {
         "detail": "No tiene permisos para realizar esta acción.",
         "code": "ROL_INSUFICIENTE",
+        "correlation_id": CORRELATION_ID,
     }
     registro = unico_denegado(uow)
     assert registro.usuario_id == u.id

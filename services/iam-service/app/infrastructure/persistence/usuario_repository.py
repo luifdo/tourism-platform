@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.entities.usuario import Usuario
 from app.domain.exceptions import UsuarioYaExisteError
 from app.domain.value_objects.email import Email
+from app.domain.value_objects.enums import Idioma
 from app.infrastructure.persistence.models import Usuario as UsuarioModel
 
 # Nombre fijado por la naming convention de Base y por la migración inicial.
@@ -40,6 +41,10 @@ class SqlAlchemyUsuarioRepository:
         )
         return _to_entity(model) if model is not None else None
 
+    async def find_by_id(self, usuario_id: uuid.UUID) -> Usuario | None:
+        model = await self._session.get(UsuarioModel, usuario_id)
+        return _to_entity(model) if model is not None else None
+
     async def actualizar_password_hash(self, usuario_id: uuid.UUID, password_hash: str) -> None:
         await self._session.execute(
             update(UsuarioModel)
@@ -58,6 +63,7 @@ def _to_model(usuario: Usuario) -> UsuarioModel:
         email_verificado=usuario.email_verificado,
         habeas_data_aceptado=usuario.habeas_data_aceptado,
         habeas_data_aceptado_en=usuario.habeas_data_aceptado_en,
+        idioma=usuario.idioma.value,
     )
     if usuario.id is not None:
         model.id = usuario.id
@@ -75,6 +81,7 @@ def _to_entity(model: UsuarioModel) -> Usuario:
         email_verificado=model.email_verificado,
         habeas_data_aceptado=model.habeas_data_aceptado,
         habeas_data_aceptado_en=model.habeas_data_aceptado_en,
+        idioma=Idioma(model.idioma),
         creado_en=model.creado_en,
         actualizado_en=model.actualizado_en,
     )

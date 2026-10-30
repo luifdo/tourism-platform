@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     db_app_role: str = "iam_user"
 
     valkey_url: str = "redis://localhost:6379/0"
+    valkey_health_timeout_seconds: float = 2.0
 
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
     events_exchange: str = "turismo.eventos"

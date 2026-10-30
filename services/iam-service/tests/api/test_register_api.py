@@ -7,6 +7,7 @@ from httpx import Response
 
 from app.api.dependencies import get_reloj, get_unit_of_work
 from app.main import create_app
+from tests.api.conftest import CON_CORRELACION, CORRELATION_ID
 from tests.fakes import FakeUnitOfWork, reloj_fijo
 
 URL = "/api/iam/register"
@@ -30,7 +31,7 @@ def client(uow: FakeUnitOfWork) -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[get_unit_of_work] = lambda: uow
     app.dependency_overrides[get_reloj] = lambda: reloj_fijo
-    with TestClient(app) as c:
+    with TestClient(app, headers=CON_CORRELACION) as c:
         yield c
 
 
@@ -39,7 +40,16 @@ def test_registro_201(client: TestClient, uow: FakeUnitOfWork) -> None:
 
     assert response.status_code == 201
     data = response.json()
-    assert set(data) == {"id", "email", "nombre_completo", "rol", "email_verificado", "creado_en"}
+    assert set(data) == {
+        "id",
+        "email",
+        "nombre_completo",
+        "rol",
+        "email_verificado",
+        "idioma",
+        "creado_en",
+    }
+    assert data["idioma"] == "es"
     assert data["email"] == "maria.perez@example.com"
     assert data["rol"] == "Turista"
     assert data["email_verificado"] is False
@@ -58,6 +68,7 @@ def test_registro_duplicado_409(client: TestClient) -> None:
     assert response.json() == {
         "detail": "Ya existe una cuenta registrada con ese correo electrónico.",
         "code": "EMAIL_EN_USO",
+        "correlation_id": CORRELATION_ID,
     }
 
 
@@ -78,7 +89,7 @@ def test_reglas_de_dominio_422(
 
     assert response.status_code == 422
     data = response.json()
-    assert set(data) == {"detail", "code"}
+    assert set(data) == {"detail", "code", "correlation_id"}
     assert data["code"] == code
     assert data["detail"]
     assert uow.commits == 0
@@ -87,7 +98,7 @@ def test_reglas_de_dominio_422(
 def assert_validacion(response: Response, campos: set[str]) -> None:
     assert response.status_code == 422
     data = response.json()
-    assert set(data) == {"detail", "code", "errores"}
+    assert set(data) == {"detail", "code", "errores", "correlation_id"}
     assert data["detail"] == "Los datos enviados no son válidos."
     assert data["code"] == "VALIDACION"
     assert {e["campo"] for e in data["errores"]} == campos
@@ -135,3 +146,17 @@ def test_422_validacion_con_tipo_invalido_no_repite_el_valor(client: TestClient)
 
     assert_validacion(response, {"password"})
     assert "SuperSecreta123" not in response.text
+
+
+def test_registro_con_idioma_en(client: TestClient, uow: FakeUnitOfWork) -> None:
+    response = client.post(URL, json={**BODY, "idioma": "en"})
+
+    assert response.status_code == 201
+    assert response.json()["idioma"] == "en"
+    assert uow.usuarios.por_email["maria.perez@example.com"].idioma.value == "en"
+
+
+def test_idioma_no_soportado_422_validacion(client: TestClient) -> None:
+    response = client.post(URL, json={**BODY, "idioma": "fr"})
+
+    assert_validacion(response, {"idioma"})

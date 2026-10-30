@@ -28,7 +28,7 @@ from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoD
 from app.application.use_cases.registrar_usuario import RegistrarUsuario, RegistrarUsuarioCommand
 from app.application.use_cases.verificar_acceso import VerificarAcceso
 from app.domain.exceptions import TokenInvalidoError
-from app.domain.value_objects.enums import Rol
+from app.domain.value_objects.enums import Idioma, Rol
 from app.infrastructure.security.jwt_token_service import JwtTokenService
 
 router = APIRouter(prefix="/api/iam", tags=["auth"])
@@ -70,6 +70,7 @@ async def register(
             habeas_data_aceptado=body.habeas_data_aceptado,
             es_mayor_de_edad=body.es_mayor_de_edad,
             ip_origen=ip_origen(request),
+            idioma=Idioma(body.idioma),
         )
     )
     return UsuarioPublicoResponse.model_validate(usuario)

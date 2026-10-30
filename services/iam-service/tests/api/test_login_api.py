@@ -9,6 +9,7 @@ from app.domain.entities.usuario import Usuario
 from app.domain.value_objects.enums import ResultadoAuditoria, Rol
 from app.infrastructure.security.argon2_password_hasher import Argon2PasswordHasher
 from app.main import create_app
+from tests.api.conftest import CON_CORRELACION, CORRELATION_ID
 from tests.fakes import AHORA, FakeRevocacion, FakeUnitOfWork
 
 LOGIN = "/api/iam/login"
@@ -19,6 +20,7 @@ HASH = Argon2PasswordHasher().hash(PASSWORD)
 CREDENCIALES_INVALIDAS = {
     "detail": "Correo o contraseña incorrectos.",
     "code": "CREDENCIALES_INVALIDAS",
+    "correlation_id": CORRELATION_ID,
 }
 
 
@@ -54,7 +56,7 @@ def client(uow: FakeUnitOfWork, revocacion: FakeRevocacion) -> Iterator[TestClie
     app = create_app()
     app.dependency_overrides[get_unit_of_work] = lambda: uow
     app.dependency_overrides[get_revocacion] = lambda: revocacion
-    with TestClient(app) as c:
+    with TestClient(app, headers=CON_CORRELACION) as c:
         yield c
 
 
@@ -82,6 +84,7 @@ def test_login_200(client: TestClient) -> None:
         "nombre_completo",
         "rol",
         "email_verificado",
+        "idioma",
         "creado_en",
     }
     assert data["usuario"]["email"] == "maria.perez@example.com"
@@ -122,6 +125,7 @@ def test_login_403_cuenta_inactiva(client: TestClient) -> None:
     assert response.json() == {
         "detail": "La cuenta está desactivada. Contacte al administrador.",
         "code": "CUENTA_INACTIVA",
+        "correlation_id": CORRELATION_ID,
     }
 
 
@@ -157,6 +161,7 @@ def test_logout_401(
     assert response.json() == {
         "detail": "El token no es válido, expiró o fue revocado.",
         "code": "TOKEN_INVALIDO",
+        "correlation_id": CORRELATION_ID,
     }
     assert response.headers["WWW-Authenticate"] == "Bearer"
     # ESC-04: el 401 del logout también queda en la bitácora.

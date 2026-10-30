@@ -64,6 +64,7 @@ app/
 │   ├── messaging/       # RabbitMQ
 │   └── storage/         # S3 (SeaweedFS)
 └── api/                 # adaptador HTTP
+    ├── middleware/      # X-Correlation-ID (ASGI puro)
     ├── routers/
     ├── schemas/         # modelos Pydantic de request/response
     └── dependencies.py  # cableado de casos de uso con sus adaptadores
@@ -76,6 +77,7 @@ tests/
 Requiere [uv](https://docs.astral.sh/uv/) y Python 3.12.
 
 ```bash
+docker compose -f docker-compose.dev.yml up -d   # PostgreSQL, Valkey, RabbitMQ, SeaweedFS, Mailpit, pgAdmin
 uv sync                                   # instala dependencias (incluye dev)
 cp .env.example .env                      # ajustar DATABASE_URL y demás
 uv run python -m uvicorn app.main:app --reload --port 8001
@@ -88,12 +90,19 @@ uv run alembic upgrade head               # aplicar migraciones
 
 > En Windows, Smart App Control puede bloquear `uvicorn.exe` del `.venv`; `python -m uvicorn` evita el problema.
 
+Mailpit (SMTP de pruebas en `localhost:1025`, interfaz en http://localhost:8025) queda listo para los correos de recuperación del bloque 6.
+
 ## Endpoints
 
 Operativos:
 
-* `GET /health`: `200` si PostgreSQL responde a `SELECT 1`, `503` si no.
-* `GET /metrics`: métricas Prometheus (prometheus-fastapi-instrumentator).
+* `GET /health`: `200` si PostgreSQL (`SELECT 1`) y Valkey (`PING`) responden, `503` si alguno falla. Lo usan Prometheus y Blackbox para medir la disponibilidad (RNF-01).
+* `GET /health/live`: `200 {"status": "ok"}` sin consultar nada. Es la sonda del `HEALTHCHECK` de Docker y, en k8s, de readiness y liveness (C-32).
+* `GET /metrics`: métricas Prometheus (prometheus-fastapi-instrumentator), más `iam_contacto_consultas_total{resultado}` de la ruta interna de contacto.
+
+### Correlación y logs
+
+Cada petición lleva un `X-Correlation-ID`: el que llega (lo agrega Traefik) si cumple `^[A-Za-z0-9._-]{1,100}$`, o un UUID nuevo. Se devuelve en la respuesta, va en `correlation_id` de los errores y de las filas propias de la bitácora (C-05, C-12), y en cada línea de log. Los logs de la API y del worker salen en JSON por stdout (`ts`, `nivel`, `servicio`, `logger`, `mensaje`, `correlation_id`), listos para Loki.
 
 ### `POST /api/iam/register` (UC1 + UC6)
 
@@ -108,9 +117,12 @@ Cuerpo:
   "nombre_completo": "María Pérez",
   "rol": "Turista",
   "habeas_data_aceptado": true,
-  "es_mayor_de_edad": true
+  "es_mayor_de_edad": true,
+  "idioma": "es"
 }
 ```
+
+`idioma` (`es` o `en`) es opcional; si no viene, queda `es`. Es el idioma de los correos (C-06).
 
 `201 Created`: nunca incluye la contraseña ni su hash.
 
@@ -121,11 +133,12 @@ Cuerpo:
   "nombre_completo": "María Pérez",
   "rol": "Turista",
   "email_verificado": false,
+  "idioma": "es",
   "creado_en": "2026-10-23T07:17:49.145181Z"
 }
 ```
 
-Errores, con cuerpo `{"detail": "<mensaje>", "code": "<code>"}`:
+Errores, con cuerpo `{"detail": "<mensaje>", "code": "<code>", "correlation_id": "<X-Correlation-ID>"}`:
 
 | HTTP | `code` | Causa |
 |---|---|---|
@@ -215,6 +228,28 @@ async def listar(claims: Annotated[ClaimsToken, Depends(require_role(Rol.ADMIN))
 
 `GET /api/iam/admin/ping` (solo `Admin`, responde `{"ok": true}`) es **temporal**: existe para probar el RBAC hasta que estén los endpoints de administración.
 
+### `GET /internal/usuarios/{usuario_id}/contacto` (C-15)
+
+Ruta **interna** ([`contracts/openapi/iam-interno.yaml`](../../contracts/openapi/iam-interno.yaml)): sin `/api`, nunca expuesta por Traefik y fuera de `/docs`. La llama el worker de catalog para enviar sus correos; la NetworkPolicy solo deja llegar desde catalog-service.
+
+`200`, también para un usuario inactivo:
+
+```json
+{
+  "usuario_id": "8fa88503-29e2-4ff7-b47e-bc22f8856bce",
+  "nombre": "María Pérez",
+  "email": "maria.perez@example.com",
+  "idioma": "es"
+}
+```
+
+| HTTP | `code` | Causa |
+|---|---|---|
+| 404 | `USUARIO_NO_ENCONTRADO` | El usuario no existe, **o** la petición trae `X-Forwarded-For` / `X-Forwarded-Host` (llegó por Traefik), aunque el usuario exista |
+| 422 | `VALIDACION` | `usuario_id` no es un UUID (por Traefik, igual 404) |
+
+No escribe en la bitácora: cada consulta deja una línea de log con `usuario_id`, `resultado` y `correlation_id` (nunca el correo) y suma a `iam_contacto_consultas_total{resultado}` (`ok`, `no_encontrado`, `rechazado_proxy`).
+
 ### `GET /api/iam/.well-known/jwks.json`
 
 Público. Devuelve las llaves públicas (`{"keys": [{"kty", "n", "e", "kid", "use": "sig", "alg": "RS256"}]}`) para que el Gateway y los demás servicios verifiquen los tokens. Responde `200` con `Cache-Control: public, max-age=300`.
@@ -244,3 +279,6 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **Auditoría de los demás servicios en un worker aparte, idempotente en la base** (C-04, C-31): un `event_id` repetido no duplica la fila.
 * **Un evento válido nunca se descarta**: con un usuario desconocido o una IP inválida se guarda igual y la anomalía queda en `detalles` (C-38). `fecha` es el `occurred_at` del evento (C-39).
 * **La DLQ no se reprocesa sola** (C-40): se revisa a mano en la consola de RabbitMQ.
+* **Readiness y liveness en `/health/live`, sin dependencias** (C-32, distinto del Plan §7.3): una caída de PostgreSQL o Valkey no saca a todas las réplicas a la vez; `/health` sigue mostrando la falla al monitoreo.
+* **Contacto interno con 404 si llega por Traefik** (C-15). **Riesgo:** catalog todavía no envía `X-Correlation-ID` en esa llamada, así que su log no se cruza con el evento.
+* **El 500 de una excepción no controlada sale sin `X-Correlation-ID`** (C-05).

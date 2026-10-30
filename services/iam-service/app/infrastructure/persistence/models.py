@@ -49,6 +49,7 @@ class Usuario(Base):
         CheckConstraint("email = lower(email)", name="email_minusculas"),
         # Ley 1581 (UC6): no se registra a nadie sin aceptar el tratamiento de datos.
         CheckConstraint("habeas_data_aceptado = true", name="habeas_data_aceptado"),
+        CheckConstraint("idioma IN ('es', 'en')", name="idioma_valido"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -64,6 +65,8 @@ class Usuario(Base):
     habeas_data_aceptado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    # C-06: idioma de los correos (UC36, UC3); lo lee catalog en la ruta interna de contacto.
+    idioma: Mapped[str] = mapped_column(String(2), nullable=False, server_default=text("'es'"))
     creado_en: Mapped[datetime] = timestamptz_now()
     # El trigger usuario_actualizado_en lo refresca en cada UPDATE, venga o no del ORM.
     actualizado_en: Mapped[datetime] = timestamptz_now()

@@ -1,8 +1,9 @@
 """Identificador de correlación de la petición o el evento en curso (Plan §4.1, §7.5).
 
-Vive en un ContextVar: cada petición asíncrona ve el suyo sin pasarlo por parámetros. Lo fija
-el consumidor de eventos con el del sobre (y, desde el bloque 3, el middleware de la API con
-`X-Correlation-ID`); la bitácora lo guarda en `correlation_id` (C-05).
+Vive en un ContextVar: cada petición asíncrona ve el suyo sin pasarlo por parámetros. Lo fijan
+el consumidor de eventos (con el del sobre) y CorrelacionMiddleware en la API (con
+`X-Correlation-ID`). Lo leen la bitácora (`correlation_id`, C-05), las respuestas de error
+(C-12) y los logs en JSON.
 """
 
 from contextvars import ContextVar

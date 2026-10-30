@@ -58,6 +58,14 @@ services:
     volumes:
       - seaweedfs_data:/data
 
+  # Servidor SMTP de pruebas para los correos de recuperación (bloque 6). Interfaz: :8025.
+  mailpit:
+    image: axllent/mailpit
+    container_name: iam-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   pgadmin:
     image: dpage/pgadmin4
     container_name: iam-pgadmin

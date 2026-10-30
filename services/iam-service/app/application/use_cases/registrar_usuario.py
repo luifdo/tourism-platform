@@ -14,7 +14,7 @@ from app.domain.exceptions import (
 from app.domain.ports.password_hasher import PasswordHasher
 from app.domain.ports.unit_of_work import UnitOfWork
 from app.domain.value_objects.email import Email
-from app.domain.value_objects.enums import ResultadoAuditoria, Rol
+from app.domain.value_objects.enums import Idioma, ResultadoAuditoria, Rol
 from app.domain.value_objects.password import Password
 
 ROLES_AUTORREGISTRO = frozenset({Rol.TURISTA, Rol.PRESTADOR})
@@ -32,6 +32,7 @@ class RegistrarUsuarioCommand:
     # Solo se valida; no se guarda en la base.
     es_mayor_de_edad: bool
     ip_origen: str | None
+    idioma: Idioma = Idioma.ES
 
 
 class RegistrarUsuario:
@@ -74,6 +75,7 @@ class RegistrarUsuario:
                     email_verificado=False,
                     habeas_data_aceptado=True,
                     habeas_data_aceptado_en=ahora,
+                    idioma=cmd.idioma,
                 )
             )
             await uow.auditoria.registrar(

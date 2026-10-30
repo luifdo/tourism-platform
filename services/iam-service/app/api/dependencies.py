@@ -12,6 +12,7 @@ from app.api.ip_origen import ip_origen
 from app.application.use_cases.cerrar_sesion import CerrarSesion
 from app.application.use_cases.check_health import CheckHealth
 from app.application.use_cases.iniciar_sesion import IniciarSesion
+from app.application.use_cases.obtener_contacto_usuario import ObtenerContactoUsuario
 from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoDenegado
 from app.application.use_cases.registrar_usuario import RegistrarUsuario
 from app.application.use_cases.verificar_acceso import VerificarAcceso
@@ -23,6 +24,7 @@ from app.domain.ports.token_service import TokenService
 from app.domain.ports.unit_of_work import UnitOfWork
 from app.domain.value_objects.enums import Rol
 from app.domain.value_objects.token import ClaimsToken
+from app.infrastructure.cache.valkey_probe import ValkeyProbe
 from app.infrastructure.cache.valkey_revocacion import ValkeyRevocacionTokens
 from app.infrastructure.persistence.database import SqlAlchemyDatabaseProbe
 from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -42,11 +44,14 @@ def get_session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
 
 
 def get_check_health(
+    request: Request,
     engine: Annotated[AsyncEngine, Depends(get_engine)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> CheckHealth:
-    probe = SqlAlchemyDatabaseProbe(engine, settings.database_health_timeout_seconds)
-    return CheckHealth(database=probe)
+    return CheckHealth(
+        database=SqlAlchemyDatabaseProbe(engine, settings.database_health_timeout_seconds),
+        cache=ValkeyProbe(request.app.state.valkey, settings.valkey_health_timeout_seconds),
+    )
 
 
 def get_unit_of_work(
@@ -105,6 +110,12 @@ def get_cerrar_sesion(
     revocacion: Annotated[RevocacionTokens, Depends(get_revocacion)],
 ) -> CerrarSesion:
     return CerrarSesion(uow=uow, verificar=verificar, revocacion=revocacion)
+
+
+def get_obtener_contacto_usuario(
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> ObtenerContactoUsuario:
+    return ObtenerContactoUsuario(uow=uow)
 
 
 def get_registrar_usuario(

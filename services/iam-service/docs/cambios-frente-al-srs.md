@@ -46,21 +46,22 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** se agregó `event_id` (UUID, `UNIQUE`, nulo en las filas propias del IAM) a `bitacora_auditoria`. El consumidor guarda cada evento con un solo `INSERT … SELECT … ON CONFLICT (event_id) DO NOTHING`. Un duplicado no inserta nada, se confirma (`ack`) y se cuenta en `iam_eventos_consumidos_total{resultado="duplicado"}`. El IAM no consulta Valkey para esto.
 - **Por qué:** el propio laboratorio (§1.3) detectó que un evento reentregado después del TTL de 24 h se insertaría dos veces. Con Valkey, además, el registro "ya procesado" y la fila se confirman en sistemas distintos: si uno falla entre ambos, queda un duplicado o una pérdida. El Módulo 2 llegó a la misma conclusión y el Plan §4.3 ya se actualizó.
 - **Para qué:** cero duplicados sin límite de tiempo (RNF-10, ESC-04) y una dependencia menos en el camino de la auditoría.
-- **Estado:** 🔨 bloque 2: implementado y probado (unitarias, integración `db` y `rabbitmq`), pendiente del commit.
+- **Estado:** ✅ `2d011e0`.
 
 ### C-05 · Columna `correlation_id` en la bitácora
 - **Referencia:** SRS Tabla XVII (no la incluye); Plan §4.1 y §7.5.
-- **Se hizo:** columna `correlation_id VARCHAR(100)`, nula. En los eventos de otros servicios toma el `correlation_id` del sobre (nula si no viene). En las filas propias toma el de la petición en curso (un `ContextVar`); hasta que llegue el middleware `X-Correlation-ID` (bloque 3, C-12), esas filas quedan con `correlation_id` nulo.
+- **Se hizo:** columna `correlation_id VARCHAR(100)`, nula. En los eventos de otros servicios toma el `correlation_id` del sobre (nula si no viene). En las filas propias toma el de la petición en curso: un `ContextVar` que fija `CorrelacionMiddleware` (ASGI puro, adaptado del de catalog) con el `X-Correlation-ID` recibido, o con un UUID nuevo si falta o no cumple `^[A-Za-z0-9._-]{1,100}$`. El middleware lo devuelve en el encabezado de la respuesta, y el mismo valor va en los errores (C-12) y en cada línea de log JSON.
+- **Límite:** el 500 de una excepción no controlada lo arma `ServerErrorMiddleware` de Starlette, que queda por fuera del middleware: esa respuesta sale sin `X-Correlation-ID` y con el cuerpo de texto de Starlette, sin `correlation_id`. Pasa lo mismo en catalog. Los errores previstos (401, 403, 404, 409, 422, 503) sí lo llevan.
 - **Por qué:** el Plan exige seguir una petición entre servicios con `X-Correlation-ID`, pero la bitácora no tenía dónde guardarlo.
 - **Para qué:** cruzar una fila de la bitácora con los logs en Loki y con el evento que la originó.
-- **Estado:** 🔨 bloque 2: columna y eventos de otros servicios implementados y probados, pendiente del commit. 📅 bloque 3: el middleware que la llena en las filas propias.
+- **Estado:** ✅ `2d011e0` (columna y eventos de otros servicios). 🔨 bloque 3: middleware implementado y probado, pendiente del commit.
 
 ### C-06 · Columna `idioma` en `USUARIO`
 - **Referencia:** SRS Tabla XVII; RF-10; `contracts/openapi/iam-interno.yaml`.
-- **Se hizo:** `idioma` (`es` o `en`, `es` por defecto), opcional en el registro y editable en el perfil.
+- **Se hizo:** `idioma VARCHAR(2) NOT NULL DEFAULT 'es'` con `CHECK (idioma IN ('es', 'en'))`; las cuentas existentes quedan en `es`. Es opcional en `POST /api/iam/register` (otro valor responde 422 `VALIDACION`) y se devuelve en su respuesta; como el login usa el mismo esquema, también aparece en su `usuario`. La ruta interna de contacto (C-15) lo entrega a catalog. La edición queda para el perfil del bloque 6.
 - **Por qué:** RF-10 exige la plataforma en dos idiomas, pero el idioma de la PWA vive en el navegador. Los correos los envía el worker de catálogo, que no tiene acceso al navegador.
 - **Para qué:** que los correos de reservas (UC36) y de recuperación (UC3) lleguen en el idioma del usuario.
-- **Estado:** 📅 bloque 3.
+- **Estado:** 🔨 bloque 3: columna, registro y contacto implementados y probados, pendiente del commit. 📅 bloque 6: edición en el perfil.
 
 ### C-07 ★ `razon_social` guardada en `iam_db`
 - **Referencia:** SRS Tabla XVIII (`razon_social` pertenece a `PRESTADOR_PERFIL`, en `catalog_db`); contrato `prestador.aprobado.v1`.
@@ -99,8 +100,8 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Referencia:** Plan §4.1 (`{error, message, correlation_id}`). El SRS no lo fija.
 - **Se hizo:** el IAM responde `{detail, code, errores?, correlation_id}`.
 - **Por qué:** el IAM se construyó antes de que se fijara el formato común, y la PWA ya interpreta estas claves.
-- **Para qué:** no romper la integración con la PWA. Se agrega `correlation_id` para la trazabilidad que pide el Plan. Unificar el formato queda como deuda técnica coordinada con el frontend.
-- **Estado:** ✅ formato base; `correlation_id` 📅 bloque 3.
+- **Para qué:** no romper la integración con la PWA. Se agrega `correlation_id` (el de C-05, siempre presente en los errores previstos) para la trazabilidad que pide el Plan. Unificar el formato queda como deuda técnica coordinada con el frontend.
+- **Estado:** ✅ formato base; `correlation_id` 🔨 bloque 3, implementado y probado, pendiente del commit.
 
 ### C-13 · Encabezados de identidad `X-Usuario-Id` y `X-Usuario-Rol`
 - **Referencia:** SRS §3.3.3 (no los nombra); Plan §4.1 y §6.1; Lab §4.1, Figura 12.
@@ -119,10 +120,16 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 
 ### C-15 · Endpoint interno de contacto
 - **Referencia:** no está en el SRS. Plan §4.1, "única excepción"; `contracts/openapi/iam-interno.yaml`.
-- **Se hizo:** `GET /internal/usuarios/{id}/contacto`, sin prefijo `/api` y sin pasar por Traefik.
+- **Se hizo:** `GET /internal/usuarios/{usuario_id}/contacto`, sin prefijo `/api`, sin pasar por Traefik y fuera del OpenAPI público (`include_in_schema=False`). Responde `{usuario_id, nombre, email, idioma}` como fija el contrato, con `nombre` = `nombre_completo`.
+  - **Usuario inactivo:** 200, para que siga recibiendo los avisos de sus reservas (por ejemplo, la cancelación). Los datos suprimidos serán 404 (bloque 6, C-27).
+  - **Inexistente:** 404 `USUARIO_NO_ENCONTRADO`. **UUID mal formado:** 422 `VALIDACION`.
+  - **Defensa adicional a la NetworkPolicy:** si la petición trae `X-Forwarded-For` o `X-Forwarded-Host` (llegó por Traefik), responde el mismo 404 `USUARIO_NO_ENCONTRADO` sin consultar la base, aunque el usuario exista o el UUID esté mal formado. Así, una regla de enrutamiento mal configurada no expone la ruta ni permite enumerar usuarios.
+  - **Trazabilidad:** métrica `iam_contacto_consultas_total{resultado}` (`ok`, `no_encontrado`, `rechazado_proxy`) y una línea de log JSON por consulta con `usuario_id`, `resultado` y `correlation_id`, nunca el correo. No escribe fila en la bitácora.
 - **Por qué:** los eventos solo llevan identificadores, de modo que los datos personales no viajan por el bus (Ley 1581). Aun así, catálogo necesita el correo para enviar UC36.
 - **Para qué:** que catálogo pida el correo en el momento del envío y no lo guarde. Así el único lugar con el dato sigue siendo `iam_db`.
-- **Estado:** 📅 bloque 3. Propuesto por Luis Fernando.
+- **Por qué basta con el log y no va a la bitácora:** por volumen, porque hay una consulta por cada correo de reserva: la bitácora (de solo inserción, UC33) crecería con filas de rutina que no son acciones de un usuario. Y por trazabilidad: si el worker de catalog envía como `X-Correlation-ID` el `correlation_id` del evento que originó el correo, la línea del log se cruza en Loki con ese evento y con la fila de la bitácora que haya generado. La métrica permite alertar ante un pico de `no_encontrado` o ante cualquier `rechazado_proxy`.
+- **Riesgo:** hoy `DirectorioUsuariosIam` de catalog (`develop`) no envía `X-Correlation-ID`: el IAM genera un UUID nuevo por consulta y la línea del log no se cruza con el evento. Hace falta que catalog agregue el encabezado con su `correlation_id_actual()`. Se coordina con Luis Fernando.
+- **Estado:** 🔨 bloque 3: implementado y probado, pendiente del commit. Propuesto por Luis Fernando. El envío del encabezado desde catalog queda ⏸ pendiente, por coordinar con él.
 
 ### C-16 · El gateway valida con `verificar` y no con el JWKS
 - **Referencia:** SRS §3.3.3 y ESC-04; Plan §2.3 y §6.1; Lab §4.1, Figura 12; ADR-007.
@@ -143,7 +150,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** la base conserva los valores del SRS y el consumidor traduce los del contrato (`EXITO` → `Exito`, etc.). Un `resultado` fuera del enum del contrato, incluidos los valores del SRS, no cumple el contrato y va a la DLQ.
 - **Por qué:** el contrato del equipo usa mayúsculas.
 - **Para qué:** respetar el SRS sin obligar a los productores a cambiar.
-- **Estado:** 🔨 bloque 2: implementado y probado, pendiente del commit.
+- **Estado:** ✅ `2d011e0`.
 
 ### C-19 · Nombres de las acciones de la bitácora
 - **Referencia:** SRS Tabla XVII (`LOGIN_FAIL`, `ROLE_CHANGE`, `ACCESS_DENIED`, `EXPORT`); Plan §2.3 (`LOGIN_FALLIDO`, `ROL_MODIFICADO`, `PRESTADOR_VALIDADO`); Lab §4.2 (`LOGIN_EXITOSO`, `LOGIN_FALLIDO`, `REFRESH_REUTILIZADO`).
@@ -240,14 +247,18 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** la misma imagen corre como API (`app.main`) y como worker (`python -m app.worker`), cada uno en su propio Deployment. El worker consume la cola durable `iam.auditoria` con el consumidor de catalog: mismos argumentos de cola, reintentos a 1, 5 y 25 s, y DLQ `turismo.dead-letter`. Expone `/metrics` en el puerto 9101 (`WORKER_METRICS_PORT`), que sirve también de sonda de vida. Si RabbitMQ no responde al arrancar, reintenta con espera creciente hasta 30 s. La publicación del outbox se le agrega en el bloque 4 (C-09).
 - **Por qué:** la API atiende el ForwardAuth de *cada* petición protegida de la plataforma. Si el consumo de eventos compite con ella por los recursos, sube la latencia de todo el sistema.
 - **Para qué:** escalar la API con su HPA (2 a 4 réplicas) sin duplicar consumidores, y que reiniciar la API no interrumpa la auditoría. Es el mismo patrón que usa catálogo.
-- **Estado:** 🔨 bloque 2: consumidor implementado y probado (también de punta a punta contra RabbitMQ 4 y PostgreSQL), pendiente del commit. 📅 bloque 4: relay del outbox. 📅 bloque 7: Deployment y sondas en k3s. ⏸ El servicio `iam-worker` en `infra/docker-compose.yml` se coordina con quien mantiene `infra/`.
+- **Estado:** ✅ `2d011e0` (consumidor, probado también de punta a punta contra RabbitMQ 4 y PostgreSQL). 📅 bloque 4: relay del outbox. 📅 bloque 7: Deployment y sondas en k3s. ⏸ El servicio `iam-worker` en `infra/docker-compose.yml` se coordina con quien mantiene `infra/`.
 
-### C-32 · Sondas `/health` y `/health/live` separadas
-- **Referencia:** Plan §7.3 (`/health` para readiness y liveness).
-- **Se hizo:** `/health/live` no consulta dependencias; `/health` comprueba PostgreSQL y Valkey.
-- **Por qué:** si la sonda de liveness depende de PostgreSQL, una caída de la base reinicia en cadena todas las réplicas, sin que reiniciarlas arregle nada.
-- **Para qué:** que Kubernetes solo saque la réplica del enrutamiento (readiness) mientras la base vuelve (RNF-01, ESC-01).
-- **Estado:** 📅 bloque 3.
+### C-32 ★ Sondas `/health` y `/health/live` separadas
+- **Referencia:** Plan §7.3 (`/health` para readiness y liveness); Lab 3, Figura 10.
+- **El documento fija:** una sola ruta `/health` para las sondas de readiness y liveness.
+- **Se hizo:**
+  - `/health` comprueba PostgreSQL (`SELECT 1`) y Valkey (`PING`), cada uno con un timeout de 2 s, y responde 503 si alguno falla (`checks: {database, valkey}`). Lo consultan Prometheus y Blackbox para medir la disponibilidad (RNF-01).
+  - `/health/live` no consulta nada y responde `{"status": "ok"}`.
+  - El `HEALTHCHECK` del Dockerfile apunta a `/health/live`. En k8s, readiness y liveness también apuntarán a `/health/live` (bloque 7).
+- **Por qué:** `verificar`, que es el ForwardAuth de toda la plataforma, no usa PostgreSQL, y si Valkey cae ya responde 503 por su cuenta (C-22). PostgreSQL y Valkey son compartidos por todas las réplicas: si la readiness dependiera de ellos, su caída sacaría a todas las réplicas del enrutamiento a la vez, y una falla parcial (sin login ni registro, pero con `verificar` funcionando) se volvería una caída total de la plataforma. Por la misma razón, una liveness con dependencias reiniciaría en cadena todas las réplicas sin que eso arregle la base.
+- **Para qué:** que una caída de PostgreSQL degrade solo las rutas que lo necesitan, mientras `/health` sigue mostrando la falla en el monitoreo (RNF-01, ESC-01).
+- **Estado:** 🔨 bloque 3: rutas y `HEALTHCHECK` implementados y probados, pendiente del commit. 📅 bloque 7: sondas en los manifiestos de k3s.
 
 ### C-33 · Endpoint temporal `GET /api/iam/admin/ping`
 - **Referencia:** no está en el SRS ni en el Plan.
@@ -295,7 +306,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - A la DLQ solo va lo que no cumple el contrato: sobre o versión inválidos, `additionalProperties`, `resultado` fuera del enum, `usuario_id` que no es UUID, `ip_origen` en `null` o que no es string, y `accion` vacía o de más de 50 caracteres (la longitud de la columna).
 - **Por qué:** un evento así sí cumple el contrato. Mandarlo a la DLQ sacaría de la bitácora un hecho que ocurrió y dejaría la auditoría incompleta (RNF-10). Un `usuario_id` que el IAM no conoce es justamente lo que conviene ver en UC33.
 - **Para qué:** que ningún evento válido se pierda de la bitácora y que la anomalía quede visible y filtrable en `detalles`.
-- **Estado:** 🔨 bloque 2: implementado y probado (integración `db` para el usuario, unitarias para la IP, y de punta a punta), pendiente del commit.
+- **Estado:** ✅ `2d011e0`.
 
 ### C-39 · `fecha` de los eventos recibidos es su `occurred_at`
 - **Referencia:** SRS Tabla XVII (`fecha`); `contracts/events/envelope.v1.json` (`occurred_at`).
@@ -303,7 +314,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** en los eventos de otros servicios, `fecha` es el `occurred_at` del sobre, es decir, el momento del hecho en el servicio de origen y no el de la inserción. En las filas propias sigue siendo `now()`. Un `occurred_at` sin zona horaria no cumple RFC 3339 y va a la DLQ.
 - **Por qué:** un evento puede llegar minutos u horas tarde (broker caído, reintentos, outbox atrasado). Con la fecha de inserción, la bitácora mostraría un acceso denegado o una exportación en un momento en que no ocurrió.
 - **Para qué:** que UC33 ordene y filtre por el momento real de cada hecho y que las filas cuadren con los logs del servicio de origen (ESC-04).
-- **Estado:** 🔨 bloque 2: implementado y probado con un evento de hace una hora, pendiente del commit.
+- **Estado:** ✅ `2d011e0`.
 
 ### C-40 · Los eventos de la DLQ se revisan a mano
 - **Referencia:** Plan §4.3 y ADR-008 (tras 3 intentos fallidos, el mensaje va a `turismo.dead-letter`).
@@ -311,7 +322,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** nada reprocesa la DLQ automáticamente. Cada mensaje llega con las cabeceras `x-cola` (`iam.auditoria`), `x-intentos` y `x-error`, y se revisa a mano desde la consola de administración de RabbitMQ (puerto 15672). Si el problema se corrigió, se vuelve a publicar desde ahí con la clave `auditoria.registrada`. Repetirlo es seguro: la base descarta el `event_id` ya guardado (C-04). La métrica `iam_eventos_consumidos_total{resultado="dlq"}` cuenta los que llegan.
 - **Por qué:** lo que llega a la DLQ no cumple el contrato o falló tres veces seguidas. Reintentarlo solo lo haría fallar en bucle, y decidir si un mensaje roto se corrige o se descarta requiere a una persona.
 - **Para qué:** que ningún evento se pierda en silencio y que la revisión quede en manos de quien opera la plataforma. Conviene una alerta sobre la métrica `dlq` (bloque 7).
-- **Estado:** 🔨 bloque 2: comportamiento implementado y probado, pendiente del commit. 📅 bloque 7: alerta en Grafana.
+- **Estado:** ✅ `2d011e0`. 📅 bloque 7: alerta en Grafana.
 
 ---
 
@@ -320,7 +331,8 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 Coordinar con Luis Fernando, que es el responsable de la arquitectura y de los contratos:
 
 - **SRS v1.2:** C-04, C-07, C-08, C-17, C-20, C-27 y C-36 (unificar la Tabla V con la Tabla XXII y ESC-04), además de los campos de C-01, C-02, C-05 y C-06, y de C-38 y C-39 en la descripción de `BITACORA_AUDITORIA`. En ESC-04, aclarar que el IAM audita directamente sus propios 403 y que el usuario solo se registra si la firma del token es válida (C-23).
-- **Plan:** §4.1 (C-11, C-12 y el riesgo de C-13: la confianza en `X-Usuario-*` exige eliminarlos en las rutas públicas), §2.3 (C-19 y C-21) §4.3 (C-38 y C-40: qué va a la DLQ y que se revisa a mano) y §7.3 (C-32).
-- **Lab:** Figuras 1 y 2 y especificación ACME (C-04); Figura 6 (C-31); §4.2 (C-20 y C-21: en la transición "rol modificado o usuario desactivado", cambiar "jti a Valkey" por la revocación por usuario con revocado-desde).
+- **Plan:** §4.1 (C-11, C-12 y el riesgo de C-13: la confianza en `X-Usuario-*` exige eliminarlos en las rutas públicas), §2.3 (C-19 y C-21) §4.3 (C-38 y C-40: qué va a la DLQ y que se revisa a mano) y §7.3 (C-32: readiness y liveness en `/health/live`, y `/health` solo para el monitoreo).
+- **Lab:** Figuras 1 y 2 y especificación ACME (C-04); Figura 6 (C-31); Figura 10 (C-32: readiness y liveness en `/health/live`); §4.2 (C-20 y C-21: en la transición "rol modificado o usuario desactivado", cambiar "jti a Valkey" por la revocación por usuario con revocado-desde).
 - **Gateway (`gateway/`, Juan Francisco):** `authResponseHeaders` con `X-Usuario-Id` y `X-Usuario-Rol`, y eliminación de esos encabezados en toda petición entrante (C-13).
+- **Catalog (`services/catalog-service/`, Luis Fernando):** que `DirectorioUsuariosIam` envíe `X-Correlation-ID` con el `correlation_id` del evento al pedir el contacto (C-15).
 - **Registro de decisiones:** proponer un ADR del IAM que reúna C-04, C-16, C-21, C-27 y C-34.

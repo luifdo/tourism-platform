@@ -21,6 +21,11 @@ class UsuarioYaExisteError(DominioError):
     default_message = "Ya existe una cuenta registrada con ese correo electrónico."
 
 
+class UsuarioNoEncontradoError(DominioError):
+    code = "USUARIO_NO_ENCONTRADO"
+    default_message = "El usuario no existe."
+
+
 class CredencialesInvalidasError(DominioError):
     """Mismo mensaje si el correo no existe o la contraseña no coincide (no revela cuentas)."""
 

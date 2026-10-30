@@ -23,6 +23,7 @@ from app.config import Settings, get_settings
 from app.infrastructure.messaging import manejador_auditoria
 from app.infrastructure.messaging.consumidor_rabbitmq import ConsumidorRabbitMQ
 from app.infrastructure.messaging.manejador_auditoria import ManejadorAuditoria
+from app.infrastructure.observabilidad.configurar_logs import configurar_logs
 from app.infrastructure.persistence.database import build_engine, build_session_factory
 from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 
@@ -101,11 +102,7 @@ async def correr(settings: Settings) -> None:
 
 def main() -> None:
     settings = get_settings()
-    # Los logs en JSON con correlation_id (formateador de catalog) llegan en el bloque 3.
-    logging.basicConfig(
-        level=settings.log_level,
-        format=f"%(asctime)s %(levelname)s {settings.service_name}-worker %(name)s: %(message)s",
-    )
+    configurar_logs(f"{settings.service_name}-worker", settings.log_level)
     start_http_server(settings.worker_metrics_port)
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(correr(settings))

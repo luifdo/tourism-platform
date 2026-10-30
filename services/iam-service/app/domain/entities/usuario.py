@@ -2,7 +2,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from app.domain.value_objects.enums import Rol
+from app.domain.value_objects.enums import Idioma, Rol
 
 
 @dataclass(kw_only=True)
@@ -17,6 +17,7 @@ class Usuario:
     email_verificado: bool = False
     habeas_data_aceptado: bool
     habeas_data_aceptado_en: datetime
+    idioma: Idioma = Idioma.ES
     id: uuid.UUID | None = None
     creado_en: datetime | None = None
     actualizado_en: datetime | None = None

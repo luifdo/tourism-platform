@@ -184,7 +184,8 @@ async def test_fuera_del_contrato_va_directo_a_la_dlq(
     assert muerto.headers["x-cola"] == cola
     assert muerto.headers["x-intentos"] == 0
     assert str(muerto.headers["x-error"])
-    assert contador(cola, "dlq") == 1
+    # El contador sube después del ack: el mensaje puede llegar a la DLQ un instante antes.
+    await esperar(lambda: contador(cola, "dlq") == 1)
     assert contador(cola, "reintento") == 0
     assert uow.auditoria.eventos == {}
 
@@ -224,7 +225,8 @@ async def test_tras_tres_reintentos_va_a_la_dlq_y_no_vuelve(bus: Bus, consumir: 
 
     assert muerto.headers["x-intentos"] == 4
     assert "ConnectionRefusedError" in str(muerto.headers["x-error"])
-    assert (contador(cola, "reintento"), contador(cola, "dlq")) == (3, 1)
+    await esperar(lambda: contador(cola, "dlq") == 1)
+    assert contador(cola, "reintento") == 3
     await asyncio.sleep(1)  # C-40: nada lo saca de la DLQ para volver a intentarlo
     assert llamadas == 4
 

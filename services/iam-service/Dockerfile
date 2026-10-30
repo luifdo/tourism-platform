@@ -35,7 +35,8 @@ COPY migrations ./migrations
 USER iam
 EXPOSE 8001
 
+# /health/live no consulta PostgreSQL ni Valkey (C-32).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/live')"
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--proxy-headers"]

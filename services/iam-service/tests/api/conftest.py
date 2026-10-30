@@ -14,9 +14,13 @@ from tests.fakes import AHORA, FakeRevocacion, FakeUnitOfWork, RegistroAuditoria
 
 # IP que reporta el TestClient: así se comprueba la columna ip_origen de la bitácora.
 IP_CLIENTE = "190.24.10.5"
+# X-Correlation-ID fijo en cada petición: los cuerpos de error se comparan completos (C-12).
+CORRELATION_ID = "corr-prueba-api"
+CON_CORRELACION = {"X-Correlation-ID": CORRELATION_ID}
 TOKEN_INVALIDO = {
     "detail": "El token no es válido, expiró o fue revocado.",
     "code": "TOKEN_INVALIDO",
+    "correlation_id": CORRELATION_ID,
 }
 
 
@@ -65,5 +69,5 @@ def client(uow: FakeUnitOfWork, revocacion: FakeRevocacion) -> Iterator[TestClie
     app = create_app()
     app.dependency_overrides[get_unit_of_work] = lambda: uow
     app.dependency_overrides[get_revocacion] = lambda: revocacion
-    with TestClient(app, client=(IP_CLIENTE, 50000)) as c:
+    with TestClient(app, client=(IP_CLIENTE, 50000), headers=CON_CORRELACION) as c:
         yield c

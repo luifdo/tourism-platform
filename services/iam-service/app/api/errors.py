@@ -14,8 +14,10 @@ from app.domain.exceptions import (
     RolInsuficienteError,
     ServicioNoDisponibleError,
     TokenInvalidoError,
+    UsuarioNoEncontradoError,
     UsuarioYaExisteError,
 )
+from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 
 Handler = Callable[[Request, Exception], Awaitable[JSONResponse]]
 
@@ -23,6 +25,7 @@ Handler = Callable[[Request, Exception], Awaitable[JSONResponse]]
 def _json(
     status_code: int, body: ErrorResponse, headers: dict[str, str] | None = None
 ) -> JSONResponse:
+    body.correlation_id = correlation_id_actual()
     return JSONResponse(
         status_code=status_code, content=body.model_dump(exclude_none=True), headers=headers
     )
@@ -67,6 +70,7 @@ def register_error_handlers(app: FastAPI) -> None:
         ServicioNoDisponibleError, _responder_con(status.HTTP_503_SERVICE_UNAVAILABLE)
     )
     app.add_exception_handler(UsuarioYaExisteError, _responder_con(status.HTTP_409_CONFLICT))
+    app.add_exception_handler(UsuarioNoEncontradoError, _responder_con(status.HTTP_404_NOT_FOUND))
     app.add_exception_handler(
         DominioValidationError, _responder_con(status.HTTP_422_UNPROCESSABLE_CONTENT)
     )

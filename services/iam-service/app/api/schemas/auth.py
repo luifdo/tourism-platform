@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
-from app.domain.value_objects.enums import Rol
+from app.domain.value_objects.enums import Idioma, Rol
 
 
 class RegistroRequest(BaseModel):
@@ -18,6 +18,7 @@ class RegistroRequest(BaseModel):
                     "rol": "Turista",
                     "habeas_data_aceptado": True,
                     "es_mayor_de_edad": True,
+                    "idioma": "es",
                 }
             ]
         }
@@ -29,6 +30,8 @@ class RegistroRequest(BaseModel):
     rol: Literal["Turista", "Prestador"]
     habeas_data_aceptado: bool
     es_mayor_de_edad: bool
+    # Idioma de los correos (C-06). Se edita en el perfil (bloque 6).
+    idioma: Literal["es", "en"] = "es"
 
 
 class LoginRequest(BaseModel):
@@ -54,6 +57,7 @@ class UsuarioPublicoResponse(BaseModel):
     nombre_completo: str
     rol: Rol
     email_verificado: bool
+    idioma: Idioma
     creado_en: datetime
 
 

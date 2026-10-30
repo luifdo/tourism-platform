@@ -1,0 +1,110 @@
+# Un clúster PostgreSQL con cinco bases lógicas, cada una con su usuario (Plan §5). Escenario A: una
+# instancia; en el Escenario B basta con subir `instances`. Respaldo en SeaweedFS (Plan §7.6).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: turismo-datos
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgis:16-3.4
+  postgresql:
+    parameters:
+      # Con los HPA al máximo, cada servicio abre decenas de conexiones por réplica.
+      max_connections: "200"
+      shared_buffers: 256MB
+      timezone: UTC
+  bootstrap:
+    initdb:
+      database: iam_db
+      owner: iam_user
+      secret: { name: postgres-rol-iam }
+  managed:
+    roles:
+      - name: catalog_user
+        ensure: present
+        login: true
+        passwordSecret: { name: postgres-rol-catalog }
+      - name: booking_user
+        ensure: present
+        login: true
+        passwordSecret: { name: postgres-rol-booking }
+      - name: review_user
+        ensure: present
+        login: true
+        passwordSecret: { name: postgres-rol-review }
+      - name: recommendation_user
+        ensure: present
+        login: true
+        passwordSecret: { name: postgres-rol-recommendation }
+  storage:
+    size: 10Gi
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "2", memory: 2Gi }
+  backup:
+    # 14 días; el base es diario (abajo) y el WAL se archiva de forma continua: RPO < 24 h.
+    retentionPolicy: 14d
+    barmanObjectStore:
+      destinationPath: s3://respaldos-postgres/
+      endpointURL: http://seaweedfs.turismo-datos.svc:8333
+      s3Credentials:
+        accessKeyId: { name: postgres-respaldos, key: ACCESS_KEY_ID }
+        secretAccessKey: { name: postgres-respaldos, key: SECRET_ACCESS_KEY }
+      wal: { compression: gzip }
+      data: { compression: gzip }
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-diario
+  namespace: turismo-datos
+spec:
+  schedule: "0 0 3 * * *" # 03:00 UTC: segundos, minutos, horas...
+  backupOwnerReference: self
+  cluster: { name: postgres }
+---
+# iam_db la crea bootstrap.initdb. Las extensiones las instala el operador: el dueño de la base no
+# es superusuario, y el CREATE EXTENSION IF NOT EXISTS de las migraciones queda sin efecto.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: catalog-db
+  namespace: turismo-datos
+spec:
+  cluster: { name: postgres }
+  name: catalog_db
+  owner: catalog_user
+  extensions:
+    - { name: postgis, ensure: present }
+    - { name: unaccent, ensure: present }
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: booking-db
+  namespace: turismo-datos
+spec:
+  cluster: { name: postgres }
+  name: booking_db
+  owner: booking_user
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: review-db
+  namespace: turismo-datos
+spec:
+  cluster: { name: postgres }
+  name: review_db
+  owner: review_user
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: recommendation-db
+  namespace: turismo-datos
+spec:
+  cluster: { name: postgres }
+  name: recommendation_db
+  owner: recommendation_user

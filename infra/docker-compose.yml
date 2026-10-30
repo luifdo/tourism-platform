@@ -2,9 +2,9 @@
 #   cp .env.example .env
 #   docker compose up -d --build
 #
-# Levanta la infraestructura compartida y los cinco microservicios. Traefik se agrega cuando
-# exista su configuración en gateway/; mientras tanto la identidad se envía a mano
-# (X-Usuario-Id y X-Usuario-Rol) a los puertos de cada servicio.
+# Levanta la infraestructura compartida, los cinco microservicios y Traefik en el puerto 80. Hasta
+# que existan las rutas en gateway/config/compose/, la identidad se envía a mano (X-Usuario-Id y
+# X-Usuario-Rol) a los puertos de cada servicio.
 
 name: tourism-platform
 
@@ -343,7 +343,22 @@ services:
       valkey: { condition: service_started }
 
   # ---------- API Gateway ----------
-  # Traefik (ADR-007); en el clúster k3s viene incluido como Ingress.
+  # Traefik (ADR-007); en el clúster k3s viene incluido como Ingress. Aquí solo el contenedor: las
+  # rutas y los middlewares son de gateway/config/compose/ y se recargan solos. Sin ellos, todo da 404.
+  traefik:
+    image: traefik:v3.3
+    command:
+      - --providers.file.directory=/etc/traefik/dinamica
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --ping=true
+    ports: ["80:80"]
+    volumes:
+      - ../gateway/config/compose:/etc/traefik/dinamica:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      retries: 5
 
 volumes:
   postgres-data:

@@ -1,0 +1,17 @@
+# Operador de CloudNativePG, versión fija. Se aplica con --server-side: sus CRD pasan del límite
+# de tamaño de la anotación que usa un apply normal.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.27/releases/cnpg-1.27.1.yaml
+
+# Sus valores por defecto (100m de CPU y sondas de 1 s) hacen que el kubelet lo mate cuando el nodo
+# está cargado, justo cuando arrancan los servicios del Escenario A.
+patches:
+  - target: { kind: Deployment, name: cnpg-controller-manager }
+    patch: |-
+      - { op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: 500m }
+      - { op: add, path: /spec/template/spec/containers/0/livenessProbe/timeoutSeconds, value: 5 }
+      - { op: add, path: /spec/template/spec/containers/0/readinessProbe/timeoutSeconds, value: 5 }
+      - { op: add, path: /spec/template/spec/containers/0/startupProbe/timeoutSeconds, value: 5 }

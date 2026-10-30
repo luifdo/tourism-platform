@@ -1,0 +1,17 @@
+# Infraestructura compartida del clúster (Plan §7.2 y §7.4). Pasos en README.md.
+# Requiere antes el operador de CloudNativePG (operador/) y los Secrets (generar_secretos.py).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: turismo-santa-marta
+    includeSelectors: false
+
+resources:
+  - namespaces.yaml
+  - networkpolicy.yaml
+  - datos/postgres.yaml
+  - datos/rabbitmq.yaml
+  - datos/valkey.yaml
+  - datos/seaweedfs.yaml

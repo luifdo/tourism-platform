@@ -231,3 +231,4 @@ target/
 # Secretos de Kubernetes que genera Kustomize (se sube solo el .example)
 secretos.env
 >>>>>>> origin/develop
+infra/k8s/secretos/

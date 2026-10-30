@@ -38,6 +38,10 @@ class AbrirDocumento:
             documento = await uow.documentos.find_by_id(documento_id)
             if documento is None:
                 raise DocumentoNoEncontradoError()
+            # C-27: el objeto ya no existe en el bucket.
+            dueno = await uow.usuarios.find_by_id(documento.usuario_id)
+            if dueno is not None and dueno.suprimido:
+                raise DocumentoNoEncontradoError()
             await uow.auditoria.registrar(
                 accion="DOCUMENT_VIEW",
                 resultado=ResultadoAuditoria.EXITO,

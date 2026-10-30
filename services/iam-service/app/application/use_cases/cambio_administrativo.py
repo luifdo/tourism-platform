@@ -1,25 +1,23 @@
-import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, ClassVar
 
+from app.application.use_cases.revocacion_doble import RevocacionDoble
 from app.domain.entities.documento_verificacion import EstadoVerificacion, estado_verificacion
 from app.domain.entities.usuario import Usuario
 from app.domain.events.prestador_aprobado import PrestadorAprobado
 from app.domain.events.prestador_suspendido import PrestadorSuspendido
 from app.domain.exceptions import (
     AutogestionNoPermitidaError,
-    ServicioNoDisponibleError,
+    CuentaSuprimidaError,
     UltimoAdminError,
     UsuarioNoEncontradoError,
 )
 from app.domain.ports.revocacion_tokens import RevocacionTokens
 from app.domain.ports.unit_of_work import UnitOfWork
 from app.domain.value_objects.enums import ResultadoAuditoria, Rol
-
-logger = logging.getLogger(__name__)
 
 # El motivo va a la bitácora recortado; nunca al bus (C-41).
 MOTIVO_MAX = 500
@@ -36,7 +34,8 @@ class CambioAdministrativoCommand:
 class CambioAdministrativo:
     """Pasos comunes de los cambios de UC27 (rol y estado de una cuenta).
 
-    1. Bloquea los Admins activos y luego la cuenta afectada (C-29).
+    1. Bloquea los Admins activos y luego la cuenta afectada (C-29). Una cuenta con los datos
+       suprimidos no admite cambios (C-27).
     2. Sin efecto (mismo rol y mismo estado): devuelve la cuenta sin auditar, revocar ni
        publicar.
     3. Reglas: no sobre la propia cuenta; no dejar la plataforma sin Admins activos.
@@ -53,7 +52,7 @@ class CambioAdministrativo:
         self, uow: UnitOfWork, revocacion: RevocacionTokens, reloj: Callable[[], datetime]
     ) -> None:
         self._uow = uow
-        self._revocacion = revocacion
+        self._revocacion = RevocacionDoble(revocacion, reloj)
         self._reloj = reloj
 
     async def _aplicar(
@@ -64,6 +63,8 @@ class CambioAdministrativo:
             objetivo = await uow.usuarios.find_by_id_para_actualizar(cmd.usuario_id)
             if objetivo is None or objetivo.id is None:
                 raise UsuarioNoEncontradoError()
+            if objetivo.suprimido:
+                raise CuentaSuprimidaError()
             rol, activo = nuevo(objetivo)
             if (rol, activo) == (objetivo.rol, objetivo.activo):
                 return objetivo
@@ -103,22 +104,12 @@ class CambioAdministrativo:
                     )
             revocar = rol is not objetivo.rol or (objetivo.activo and not activo)
             if revocar:
-                await self._revocacion.revocar_usuario(objetivo.id, ahora)
+                await self._revocacion.antes_del_commit(objetivo.id, ahora)
             await uow.commit()
 
         if revocar:
-            await self._revocar_tras_commit(objetivo.id)
+            await self._revocacion.despues_del_commit(objetivo.id)
         return actualizado
-
-    async def _revocar_tras_commit(self, usuario_id: uuid.UUID) -> None:
-        # Cierra la ventana entre la primera revocación y el commit: un login en el segundo
-        # siguiente leía aún el rol o el estado viejos y su token quedaba fuera de la marca.
-        try:
-            await self._revocacion.revocar_usuario(usuario_id, self._reloj())
-        except ServicioNoDisponibleError:
-            logger.error(
-                "No se pudo repetir la revocación por usuario tras el commit", exc_info=True
-            )
 
 
 def _detalles(antes: Usuario, despues: Usuario, motivo: str | None) -> dict[str, Any]:

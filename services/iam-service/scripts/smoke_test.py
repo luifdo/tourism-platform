@@ -2,13 +2,16 @@
 Uso: uv run python scripts/smoke_test.py
 """
 
+import re
 import sys
+import time
 import uuid
 
 import httpx
 import jwt
 
 BASE = "http://localhost:8001"
+MAILPIT = "http://localhost:8025/api/v1"
 todo_ok = True
 
 
@@ -16,6 +19,20 @@ def check(nombre: str, condicion: bool, detalle: str = "") -> None:
     global todo_ok
     print(("OK    " if condicion else "FALLA ") + nombre + ("" if condicion else f"  -> {detalle}"))
     todo_ok = todo_ok and condicion
+
+
+def leer_enlace(destinatario: str, intentos: int = 20) -> str | None:
+    """Enlace de recuperación del último correo en Mailpit. El correo sale en segundo plano
+    (C-50): se espera hasta unos segundos."""
+    for _ in range(intentos):
+        mensajes = httpx.get(f"{MAILPIT}/messages", timeout=5).json()["messages"]
+        for mensaje in mensajes:
+            if any(d["Address"] == destinatario for d in mensaje["To"]):
+                texto = httpx.get(f"{MAILPIT}/message/{mensaje['ID']}", timeout=5).json()["Text"]
+                encontrado = re.search(r"https?://\S+", texto)
+                return encontrado.group(0) if encontrado else None
+        time.sleep(0.25)
+    return None
 
 
 with httpx.Client(base_url=BASE, timeout=10) as c:
@@ -179,6 +196,128 @@ with httpx.Client(base_url=BASE, timeout=10) as c:
         r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
         r.text,
     )
+
+    # Perfil (UC4) con ETag e If-Match
+    r = c.get("/api/iam/perfil", headers=auth)
+    etag = r.headers.get("etag", "")
+    check(
+        "Perfil -> 200 con ETag y sin el hash",
+        r.status_code == 200 and etag == '"1"' and "password" not in r.text,
+        r.text,
+    )
+    con_version = {**auth, "If-Match": etag}
+    r = c.patch("/api/iam/perfil", json={"nombre": "Humo Editado"}, headers=con_version)
+    check(
+        "PATCH perfil con If-Match -> 200, ETag nuevo",
+        r.status_code == 200
+        and r.json().get("nombre") == "Humo Editado"
+        and r.headers.get("etag") == '"2"',
+        r.text,
+    )
+    r = c.patch("/api/iam/perfil", json={"nombre": "Otro Nombre"}, headers=con_version)
+    check(
+        "PATCH con If-Match viejo -> 409 VERSION_CONFLICTO",
+        r.status_code == 409 and r.json().get("code") == "VERSION_CONFLICTO",
+        r.text,
+    )
+    r = c.patch("/api/iam/perfil", json={"email": "otro@example.com"}, headers=auth)
+    check("PATCH del correo -> 422 VALIDACION", r.status_code == 422, r.text)
+
+    # Recuperación (UC3): recuperar -> leer el enlace en Mailpit -> restablecer -> login
+    r = c.post("/api/iam/auth/recuperar", json={"email": email})
+    r2 = c.post("/api/iam/auth/recuperar", json={"email": "nadie.existe@example.com"})
+    check(
+        "Recuperar -> 202, misma respuesta si el correo no existe",
+        r.status_code == r2.status_code == 202 and r.content == r2.content,
+        f"{r.text} / {r2.text}",
+    )
+    enlace = leer_enlace(email)
+    check(
+        "El enlace llega a Mailpit y apunta a la PWA",
+        enlace is not None and "/restablecer-contrasena?token=" in enlace,
+        str(enlace),
+    )
+    token_reset = (enlace or "=").split("token=")[-1]
+    r = c.post("/api/iam/auth/restablecer", json={"token": token_reset, "password": "corta"})
+    check(
+        "Contraseña débil -> 422 PASSWORD_INVALIDA",
+        r.status_code == 422 and r.json().get("code") == "PASSWORD_INVALIDA",
+        r.text,
+    )
+    clave_nueva = "Restablecida123"
+    r = c.post(
+        "/api/iam/auth/restablecer",
+        json={"token": token_reset, "password": clave_nueva, "confirmacion": clave_nueva},
+    )
+    check("Restablecer (el 422 no gastó el enlace) -> 204", r.status_code == 204, r.text)
+    r = c.post("/api/iam/auth/restablecer", json={"token": token_reset, "password": clave_nueva})
+    check(
+        "El enlace es de un solo uso -> 400 TOKEN_INVALIDO",
+        r.status_code == 400 and r.json().get("code") == "TOKEN_INVALIDO",
+        r.text,
+    )
+    r = c.post("/api/iam/login", json={"email": email, "password": clave})
+    check("Login con la contraseña vieja -> 401", r.status_code == 401, r.text)
+    r = c.get("/api/iam/perfil", headers=auth)
+    check("El token anterior al restablecer -> 401", r.status_code == 401, r.text)
+    r = c.post("/api/iam/login", json={"email": email, "password": clave_nueva})
+    check("Login con la contraseña nueva -> 200", r.status_code == 200, r.text)
+    # La marca de revocación va en segundos e incluye el segundo del cambio (C-21).
+    time.sleep(1.1)
+    r = c.post("/api/iam/login", json={"email": email, "password": clave_nueva})
+    auth = {"Authorization": f"Bearer {r.json().get('access_token')}"}
+
+    # Cambio de contraseña (UC4)
+    r = c.post(
+        "/api/iam/perfil/contrasena",
+        json={"password_actual": "Incorrecta99", "password_nueva": "Cambiada12345"},
+        headers=auth,
+    )
+    check(
+        "Contraseña actual incorrecta -> 422 PASSWORD_ACTUAL_INCORRECTA",
+        r.status_code == 422 and r.json().get("code") == "PASSWORD_ACTUAL_INCORRECTA",
+        r.text,
+    )
+    r = c.post(
+        "/api/iam/perfil/contrasena",
+        json={"password_actual": clave_nueva, "password_nueva": "Cambiada12345"},
+        headers=auth,
+    )
+    check("Cambio de contraseña -> 204", r.status_code == 204, r.text)
+    r = c.get("/api/iam/perfil", headers=auth)
+    check("El token anterior al cambio -> 401", r.status_code == 401, r.text)
+    time.sleep(1.1)
+    r = c.post("/api/iam/login", json={"email": email, "password": "Cambiada12345"})
+    auth = {"Authorization": f"Bearer {r.json().get('access_token')}"}
+
+    # Supresión de datos del Prestador con documentos en SeaweedFS (Ley 1581, C-27)
+    r = c.request("DELETE", "/api/iam/perfil", json={"password": "Incorrecta99"}, headers=auth_p)
+    check(
+        "Supresión con contraseña incorrecta -> 401 CREDENCIALES_INVALIDAS",
+        r.status_code == 401 and r.json().get("code") == "CREDENCIALES_INVALIDAS",
+        r.text,
+    )
+    r = c.request("DELETE", "/api/iam/perfil", json={"password": clave}, headers=auth_p)
+    check("Supresión -> 204", r.status_code == 204, r.text)
+    r = c.get("/api/iam/perfil", headers=auth_p)
+    check("El token del suprimido -> 401", r.status_code == 401, r.text)
+    r = c.post("/api/iam/login", json={"email": email_p, "password": clave})
+    check(
+        "Login del suprimido -> 401 CREDENCIALES_INVALIDAS",
+        r.status_code == 401 and r.json().get("code") == "CREDENCIALES_INVALIDAS",
+        r.text,
+    )
+    r = c.post("/api/iam/auth/recuperar", json={"email": email_p})
+    check(
+        "Recuperar del suprimido -> 202 sin correo",
+        r.status_code == 202 and leer_enlace(email_p, intentos=4) is None,
+        r.text,
+    )
+    id_p = jwt.decode(auth_p["Authorization"].split()[1], options={"verify_signature": False})[
+        "sub"
+    ]
+    r = c.get(f"/internal/usuarios/{id_p}/contacto")
+    check("Contacto interno del suprimido -> 404", r.status_code == 404, r.text)
 
     # Logout y revocación
     r = c.post("/api/iam/logout", headers=auth)

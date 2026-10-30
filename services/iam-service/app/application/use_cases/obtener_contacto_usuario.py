@@ -9,7 +9,7 @@ class ObtenerContactoUsuario:
     """Contacto de un usuario para los correos de catalog (C-15, `iam-interno.yaml`).
 
     Un usuario inactivo también se devuelve: debe seguir recibiendo los avisos de sus
-    reservas (por ejemplo, la cancelación). Los datos suprimidos serán 404 (bloque 6, C-27).
+    reservas (por ejemplo, la cancelación). Con los datos suprimidos, 404 (C-27).
     """
 
     def __init__(self, uow: UnitOfWork) -> None:
@@ -18,6 +18,6 @@ class ObtenerContactoUsuario:
     async def execute(self, usuario_id: uuid.UUID) -> Usuario:
         async with self._uow as uow:
             usuario = await uow.usuarios.find_by_id(usuario_id)
-        if usuario is None:
+        if usuario is None or usuario.suprimido:
             raise UsuarioNoEncontradoError()
         return usuario

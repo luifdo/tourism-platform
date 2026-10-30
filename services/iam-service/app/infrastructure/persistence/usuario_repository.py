@@ -1,10 +1,11 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.entities.usuario import Usuario
+from app.domain.entities.usuario import NOMBRE_SUPRIMIDO, Usuario, email_suprimido
 from app.domain.exceptions import UsuarioYaExisteError
 from app.domain.value_objects.email import Email
 from app.domain.value_objects.enums import Idioma, Rol
@@ -123,6 +124,40 @@ class SqlAlchemyUsuarioRepository:
         assert model is not None
         return _to_entity(model)
 
+    async def actualizar_perfil(
+        self, usuario_id: uuid.UUID, nombre_completo: str, idioma: Idioma
+    ) -> Usuario:
+        model = await self._session.scalar(
+            update(UsuarioModel)
+            .where(UsuarioModel.id == usuario_id)
+            .values(
+                nombre_completo=nombre_completo,
+                idioma=idioma.value,
+                version=UsuarioModel.version + 1,
+            )
+            .returning(UsuarioModel)
+            .execution_options(populate_existing=True)
+        )
+        assert model is not None
+        return _to_entity(model)
+
+    async def suprimir_datos(
+        self, usuario_id: uuid.UUID, password_hash: str, suprimido_en: datetime
+    ) -> None:
+        await self._session.execute(
+            update(UsuarioModel)
+            .where(UsuarioModel.id == usuario_id)
+            .values(
+                email=email_suprimido(usuario_id),
+                nombre_completo=NOMBRE_SUPRIMIDO,
+                razon_social=None,
+                activo=False,
+                password_hash=password_hash,
+                datos_suprimidos_en=suprimido_en,
+                version=UsuarioModel.version + 1,
+            )
+        )
+
 
 def _escapar_like(texto: str) -> str:
     """El texto del Admin se busca literal: `%` y `_` no son comodines."""
@@ -159,6 +194,8 @@ def _to_entity(model: UsuarioModel) -> Usuario:
         habeas_data_aceptado_en=model.habeas_data_aceptado_en,
         idioma=Idioma(model.idioma),
         razon_social=model.razon_social,
+        version=model.version,
+        datos_suprimidos_en=model.datos_suprimidos_en,
         creado_en=model.creado_en,
         actualizado_en=model.actualizado_en,
     )

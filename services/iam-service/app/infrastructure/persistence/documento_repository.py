@@ -94,6 +94,13 @@ class SqlAlchemyDocumentoRepository:
         assert model is not None
         return _to_entity(model)
 
+    async def borrar_motivos_rechazo(self, usuario_id: uuid.UUID) -> None:
+        await self._session.execute(
+            update(DocumentoModel)
+            .where(DocumentoModel.usuario_id == usuario_id)
+            .values(motivo_rechazo=None)
+        )
+
     async def listar_prestadores(self, filtro: FiltroPrestadores) -> PaginaPrestadores:
         # Conteos de los vigentes por prestador; el estado se deriva igual que en
         # estado_verificacion() (rechazado > incompleto > aprobado > pendiente).
@@ -122,7 +129,7 @@ class SqlAlchemyDocumentoRepository:
             else_=EstadoVerificacion.PENDIENTE.value,
         ).label("estado")
         u = UsuarioModel
-        condiciones = [u.rol == Rol.PRESTADOR]
+        condiciones = [u.rol == Rol.PRESTADOR, u.datos_suprimidos_en.is_(None)]
         if filtro.estado is not None:
             condiciones.append(estado == filtro.estado.value)
         base = select(u, estado).outerjoin(conteos, conteos.c.usuario_id == u.id)

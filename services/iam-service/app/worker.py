@@ -5,7 +5,7 @@ Así el consumo de eventos no compite con el ForwardAuth de cada petición prote
 reinicios o el escalado de la API no interrumpen la auditoría.
 
 * Consumidor `iam.auditoria` (`auditoria.registrada` → bitácora, UC33).
-* Relay del outbox (`prestador.suspendido`; `prestador.aprobado` en el bloque 5), C-09.
+* Relay del outbox (`prestador.suspendido` y `prestador.aprobado`), C-09.
 
 Expone sus métricas en `WORKER_METRICS_PORT` (/metrics), que también sirve de sonda de vida.
 """

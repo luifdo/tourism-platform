@@ -9,35 +9,45 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.api.ip_origen import ip_origen
+from app.api.segundo_plano import TareasSegundoPlano
 from app.application.use_cases.abrir_documento import AbrirDocumento
 from app.application.use_cases.aprobar_prestador import AprobarPrestador
+from app.application.use_cases.cambiar_contrasena import CambiarContrasena
 from app.application.use_cases.cambiar_estado_usuario import CambiarEstadoUsuario
 from app.application.use_cases.cambiar_rol_usuario import CambiarRolUsuario
 from app.application.use_cases.cerrar_sesion import CerrarSesion
 from app.application.use_cases.check_health import CheckHealth
 from app.application.use_cases.consultar_bitacora import ConsultarBitacora
 from app.application.use_cases.consultar_verificacion import ConsultarVerificacion
+from app.application.use_cases.editar_perfil import EditarPerfil
 from app.application.use_cases.iniciar_sesion import IniciarSesion
 from app.application.use_cases.listar_prestadores import ListarPrestadores
 from app.application.use_cases.listar_usuarios import ListarUsuarios
 from app.application.use_cases.obtener_contacto_usuario import ObtenerContactoUsuario
+from app.application.use_cases.obtener_perfil import ObtenerPerfil
 from app.application.use_cases.obtener_usuario import ObtenerUsuario
 from app.application.use_cases.rechazar_prestador import RechazarPrestador
 from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoDenegado
 from app.application.use_cases.registrar_usuario import RegistrarUsuario
+from app.application.use_cases.restablecer_contrasena import RestablecerContrasena
+from app.application.use_cases.solicitar_recuperacion import SolicitarRecuperacion
 from app.application.use_cases.subir_documento import SubirDocumento
+from app.application.use_cases.suprimir_datos import SuprimirDatos
 from app.application.use_cases.verificar_acceso import VerificarAcceso
 from app.config import Settings, get_settings
 from app.domain.exceptions import RolInsuficienteError, TokenInvalidoError
 from app.domain.ports.almacen_documentos import AlmacenDocumentos
+from app.domain.ports.enviador_correo import EnviadorCorreo
 from app.domain.ports.password_hasher import PasswordHasher
 from app.domain.ports.revocacion_tokens import RevocacionTokens
 from app.domain.ports.token_service import TokenService
+from app.domain.ports.tokens_recuperacion import TokensRecuperacion
 from app.domain.ports.unit_of_work import UnitOfWork
 from app.domain.value_objects.enums import Rol
 from app.domain.value_objects.token import ClaimsToken
 from app.infrastructure.cache.valkey_probe import ValkeyProbe
 from app.infrastructure.cache.valkey_revocacion import ValkeyRevocacionTokens
+from app.infrastructure.cache.valkey_tokens_recuperacion import ValkeyTokensRecuperacion
 from app.infrastructure.persistence.database import SqlAlchemyDatabaseProbe
 from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from app.infrastructure.security.argon2_password_hasher import Argon2PasswordHasher
@@ -134,9 +144,64 @@ def get_almacen_documentos(request: Request) -> AlmacenDocumentos:
     return request.app.state.almacen_documentos
 
 
+def get_tokens_recuperacion(request: Request) -> TokensRecuperacion:
+    return ValkeyTokensRecuperacion(request.app.state.valkey)
+
+
+def get_enviador_correo(request: Request) -> EnviadorCorreo:
+    return request.app.state.enviador_correo
+
+
+def get_tareas_segundo_plano(request: Request) -> TareasSegundoPlano:
+    return request.app.state.tareas_segundo_plano
+
+
 Reloj = Annotated[Callable[[], datetime], Depends(get_reloj)]
 Uow = Annotated[UnitOfWork, Depends(get_unit_of_work)]
 Almacen = Annotated[AlmacenDocumentos, Depends(get_almacen_documentos)]
+Hasher = Annotated[PasswordHasher, Depends(get_password_hasher)]
+Revocacion = Annotated[RevocacionTokens, Depends(get_revocacion)]
+Tokens = Annotated[TokensRecuperacion, Depends(get_tokens_recuperacion)]
+Enviador = Annotated[EnviadorCorreo, Depends(get_enviador_correo)]
+Ajustes = Annotated[Settings, Depends(get_settings)]
+
+
+def get_obtener_perfil(uow: Uow) -> ObtenerPerfil:
+    return ObtenerPerfil(uow=uow)
+
+
+def get_editar_perfil(uow: Uow) -> EditarPerfil:
+    return EditarPerfil(uow=uow)
+
+
+def get_cambiar_contrasena(
+    uow: Uow, hasher: Hasher, revocacion: Revocacion, reloj: Reloj
+) -> CambiarContrasena:
+    return CambiarContrasena(uow=uow, hasher=hasher, revocacion=revocacion, reloj=reloj)
+
+
+def get_solicitar_recuperacion(
+    uow: Uow, tokens: Tokens, enviador: Enviador, settings: Ajustes
+) -> SolicitarRecuperacion:
+    return SolicitarRecuperacion(
+        uow=uow, tokens=tokens, enviador=enviador, pwa_url=settings.pwa_url
+    )
+
+
+def get_restablecer_contrasena(
+    uow: Uow, tokens: Tokens, hasher: Hasher, revocacion: Revocacion, reloj: Reloj
+) -> RestablecerContrasena:
+    return RestablecerContrasena(
+        uow=uow, tokens=tokens, hasher=hasher, revocacion=revocacion, reloj=reloj
+    )
+
+
+def get_suprimir_datos(
+    uow: Uow, hasher: Hasher, almacen: Almacen, revocacion: Revocacion, reloj: Reloj
+) -> SuprimirDatos:
+    return SuprimirDatos(
+        uow=uow, hasher=hasher, almacen=almacen, revocacion=revocacion, reloj=reloj
+    )
 
 
 def get_subir_documento(uow: Uow, almacen: Almacen, reloj: Reloj) -> SubirDocumento:

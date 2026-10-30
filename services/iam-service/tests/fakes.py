@@ -1,5 +1,7 @@
 """Dobles en memoria de los puertos, para probar sin base de datos."""
 
+import asyncio
+import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -13,11 +15,18 @@ from app.domain.entities.documento_verificacion import (
     DocumentoVerificacion,
     estado_verificacion,
 )
-from app.domain.entities.usuario import Usuario
+from app.domain.entities.usuario import NOMBRE_SUPRIMIDO, Usuario, email_suprimido
 from app.domain.events.evento_dominio import EventoDominio
 from app.domain.exceptions import ServicioNoDisponibleError, UsuarioYaExisteError
+from app.domain.ports.enviador_correo import Correo
 from app.domain.value_objects.email import Email
-from app.domain.value_objects.enums import EstadoDocumento, ResultadoAuditoria, Rol, TipoDocumento
+from app.domain.value_objects.enums import (
+    EstadoDocumento,
+    Idioma,
+    ResultadoAuditoria,
+    Rol,
+    TipoDocumento,
+)
 from app.domain.value_objects.evento_auditoria import EventoAuditoria
 from app.domain.value_objects.filtro_bitacora import EntradaBitacora, FiltroBitacora, PaginaBitacora
 from app.domain.value_objects.filtro_prestadores import (
@@ -95,6 +104,38 @@ class FakeUsuarioRepository:
         actualizado = replace(usuario, rol=rol, activo=activo)
         self.por_email[usuario.email] = actualizado
         return actualizado
+
+    async def actualizar_perfil(
+        self, usuario_id: uuid.UUID, nombre_completo: str, idioma: Idioma
+    ) -> Usuario:
+        usuario = await self.find_by_id(usuario_id)
+        assert usuario is not None
+        actualizado = replace(
+            usuario,
+            nombre_completo=nombre_completo,
+            idioma=idioma,
+            version=usuario.version + 1,
+        )
+        self.por_email[usuario.email] = actualizado
+        return actualizado
+
+    async def suprimir_datos(
+        self, usuario_id: uuid.UUID, password_hash: str, suprimido_en: datetime
+    ) -> None:
+        usuario = await self.find_by_id(usuario_id)
+        assert usuario is not None
+        del self.por_email[usuario.email]
+        suprimido = replace(
+            usuario,
+            email=email_suprimido(usuario_id),
+            nombre_completo=NOMBRE_SUPRIMIDO,
+            razon_social=None,
+            activo=False,
+            password_hash=password_hash,
+            datos_suprimidos_en=suprimido_en,
+            version=usuario.version + 1,
+        )
+        self.por_email[suprimido.email] = suprimido
 
     def sembrar(self, usuario: Usuario) -> Usuario:
         """Guarda un usuario ya existente (sin pasar por el caso de uso de registro)."""
@@ -295,10 +336,14 @@ class FakeDocumentoRepository:
         self.documentos[documento_id] = revisado
         return revisado
 
+    async def borrar_motivos_rechazo(self, usuario_id: uuid.UUID) -> None:
+        for d in await self.historial(usuario_id):
+            self.documentos[d.id] = replace(d, motivo_rechazo=None)  # type: ignore[index]
+
     async def listar_prestadores(self, filtro: FiltroPrestadores) -> PaginaPrestadores:
         resumenes = []
         for u in self._usuarios.por_email.values():
-            if u.rol is not Rol.PRESTADOR or u.id is None:
+            if u.rol is not Rol.PRESTADOR or u.id is None or u.suprimido:
                 continue
             vigentes = await self.vigentes(u.id)
             estado = estado_verificacion(vigentes)
@@ -342,19 +387,88 @@ class FakeDocumentoRepository:
 
 
 class FakeAlmacenDocumentos:
-    """Bucket en memoria. caido=True simula SeaweedFS sin responder."""
+    """Bucket en memoria. caido=True simula SeaweedFS sin responder.
+
+    `al_guardar` se llama en cada guardar, ya con el objeto en el bucket: permite simular lo que
+    ocurre mientras el archivo sube.
+    """
 
     def __init__(self, caido: bool = False) -> None:
         self.objetos: dict[str, tuple[bytes, str]] = {}
         self.caido = caido
+        self.prefijos_borrados: list[str] = []
+        self.al_guardar: Callable[[], Any] | None = None
+
+    async def borrar_prefijo(self, prefijo: str) -> int:
+        if self.caido:
+            raise ServicioNoDisponibleError()
+        self.prefijos_borrados.append(prefijo)
+        claves = [c for c in self.objetos if c.startswith(prefijo)]
+        for clave in claves:
+            del self.objetos[clave]
+        return len(claves)
 
     async def guardar(self, clave: str, contenido: bytes, tipo_contenido: str) -> None:
         if self.caido:
             raise ServicioNoDisponibleError()
         self.objetos[clave] = (contenido, tipo_contenido)
+        if self.al_guardar is not None:
+            await self.al_guardar()
 
     def url_lectura(self, clave: str, tipo_contenido: str, nombre_archivo: str) -> str:
         return f"https://s3.prueba/{clave}?tipo={tipo_contenido}&nombre={nombre_archivo}"
+
+
+class FakeTokensRecuperacion:
+    """Tokens de UC3 en memoria, en claro (el SHA-256 se prueba en integración). caido=True
+    simula Valkey sin responder. `en_espera` son los usuarios dentro de los 60 s."""
+
+    def __init__(self, caido: bool = False) -> None:
+        self.tokens: dict[str, uuid.UUID] = {}
+        self.en_espera: set[uuid.UUID] = set()
+        self.caido = caido
+
+    def _comprobar(self) -> None:
+        if self.caido:
+            raise ServicioNoDisponibleError()
+
+    async def reservar_envio(self, usuario_id: uuid.UUID) -> bool:
+        self._comprobar()
+        if usuario_id in self.en_espera:
+            return False
+        self.en_espera.add(usuario_id)
+        return True
+
+    async def guardar(self, token: str, usuario_id: uuid.UUID) -> None:
+        self._comprobar()
+        self.tokens = {t: u for t, u in self.tokens.items() if u != usuario_id}
+        self.tokens[token] = usuario_id
+
+    async def consumir(self, token: str) -> uuid.UUID | None:
+        self._comprobar()
+        return self.tokens.pop(token, None)
+
+    async def descartar(self, usuario_id: uuid.UUID) -> None:
+        self._comprobar()
+        self.tokens = {t: u for t, u in self.tokens.items() if u != usuario_id}
+        self.en_espera.discard(usuario_id)
+
+
+class FakeEnviadorCorreo:
+    """Guarda los correos. caido=True simula el SMTP sin responder. `liberar` permite retener el
+    envío para comprobar que la respuesta HTTP no lo espera."""
+
+    def __init__(self, caido: bool = False) -> None:
+        self.enviados: list[Correo] = []
+        self.caido = caido
+        self.liberar = threading.Event()
+        self.liberar.set()
+
+    async def enviar(self, correo: Correo) -> None:
+        await asyncio.to_thread(self.liberar.wait, 10)
+        if self.caido:
+            raise ServicioNoDisponibleError()
+        self.enviados.append(correo)
 
 
 class FakeOutbox:

@@ -32,7 +32,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** se agregaron `motivo_rechazo`, `revisado_por` y `revisado_en`, que UC28 llena al aprobar o rechazar. En el bloque 5 se sumaron `tipo_contenido` (el tipo real, detectado por la firma de bytes), `tamano_bytes` y `vigente`, con un índice único parcial `(usuario_id, tipo_documento) WHERE vigente` (C-30). El prestador ve el estado y el motivo; solo el Admin ve `revisado_por`. La llave `objeto_s3` nunca sale en una respuesta.
 - **Por qué:** UC28 permite rechazar, pero el modelo no guarda ni el motivo ni quién decidió.
 - **Para qué:** que el prestador sepa qué corregir y que cada decisión del Admin sea trazable.
-- **Estado:** ✅ esquema en `8851049`. 🔨 bloque 5: implementado y probado, pendiente del commit.
+- **Estado:** ✅ esquema en `8851049`. ✅ `951bdc4`: `tipo_contenido`, `tamano_bytes`, `vigente` y el llenado de la revisión.
 
 ### C-03 · Restricciones de integridad en la base
 - **Referencia:** SRS §3.7 (no las especifica); RNF-10; UC6.
@@ -58,24 +58,24 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 
 ### C-06 · Columna `idioma` en `USUARIO`
 - **Referencia:** SRS Tabla XVII; RF-10; `contracts/openapi/iam-interno.yaml`.
-- **Se hizo:** `idioma VARCHAR(2) NOT NULL DEFAULT 'es'` con `CHECK (idioma IN ('es', 'en'))`; las cuentas existentes quedan en `es`. Es opcional en `POST /api/iam/register` (otro valor responde 422 `VALIDACION`) y se devuelve en su respuesta; como el login usa el mismo esquema, también aparece en su `usuario`. La ruta interna de contacto (C-15) lo entrega a catalog. La edición queda para el perfil del bloque 6.
+- **Se hizo:** `idioma VARCHAR(2) NOT NULL DEFAULT 'es'` con `CHECK (idioma IN ('es', 'en'))`; las cuentas existentes quedan en `es`. Es opcional en `POST /api/iam/register` (otro valor responde 422 `VALIDACION`) y se devuelve en su respuesta; como el login usa el mismo esquema, también aparece en su `usuario`. La ruta interna de contacto (C-15) lo entrega a catalog. Se edita con `PATCH /api/iam/perfil` (C-49).
 - **Por qué:** RF-10 exige la plataforma en dos idiomas, pero el idioma de la PWA vive en el navegador. Los correos los envía el worker de catálogo, que no tiene acceso al navegador.
 - **Para qué:** que los correos de reservas (UC36) y de recuperación (UC3) lleguen en el idioma del usuario.
-- **Estado:** ✅ `dcf6496` (columna, registro y contacto). 📅 bloque 6: edición en el perfil.
+- **Estado:** ✅ `dcf6496` (columna, registro y contacto). 🔨 bloque 6: edición en el perfil, implementada y probada, pendiente del commit.
 
 ### C-07 ★ `razon_social` guardada en `iam_db`
 - **Referencia:** SRS Tabla XVIII (`razon_social` pertenece a `PRESTADOR_PERFIL`, en `catalog_db`); contrato `prestador.aprobado.v1`.
 - **Se hizo:** el IAM pide `razon_social` al cargar el RUT (UC37), la guarda en `usuario.razon_social` (de 2 a 200 caracteres; sin ella, 422 `RAZON_SOCIAL_INVALIDA`) y la envía en `prestador.aprobado`. Con el RNT el campo no se usa. Si se vuelve a cargar el RUT, la razón social se actualiza.
 - **Por qué:** catálogo crea el perfil al consumir el evento y necesita un nombre comercial desde el primer momento. Quien la conoce en ese momento es el IAM, porque viene del RUT.
 - **Para qué:** que el perfil del prestador nazca completo. Catálogo sigue siendo el dueño del perfil y puede editarlo después.
-- **Estado:** 🔨 bloque 5: implementado y probado, pendiente del commit.
+- **Estado:** ✅ `951bdc4`.
 
 ### C-08 ★ `prestador_id` igual al `usuario_id`
 - **Referencia:** SRS Tabla XVIII (`PRESTADOR_PERFIL.id` es una PK propia de catálogo); contratos `prestador.aprobado.v1` y `prestador.suspendido.v1`.
 - **Se hizo:** `prestador.suspendido` (bloque 4) lleva `prestador_id` = `usuario_id`; `prestador.aprobado` (bloque 5) también.
 - **Por qué:** el contrato exige un `prestador_id` que asigna el IAM. Un identificador nuevo obligaría a crear otra tabla y a mantenerlo estable cuando un prestador se suspende y se vuelve a aprobar.
 - **Para qué:** un identificador estable sin estructuras adicionales; catálogo reactiva el mismo perfil.
-- **Estado:** ✅ `8583e38` (`prestador.suspendido`). 🔨 bloque 5 (`prestador.aprobado`), pendiente del commit. Acordado con Luis Fernando.
+- **Estado:** ✅ `8583e38` (`prestador.suspendido`). ✅ `951bdc4` (`prestador.aprobado`). Acordado con Luis Fernando.
 
 ### C-09 · Tabla `outbox` en `iam_db`
 - **Referencia:** SRS §3.6.2, nota (el patrón outbox es opcional); Plan §4.3 y §4.4; ADR-008.
@@ -84,8 +84,12 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Para qué:** garantizar la entrega de `prestador.aprobado` y `prestador.suspendido`. Es el mismo patrón que ya usa catálogo.
 - **Estado:** ✅ `8583e38`.
 
-### C-10 · Columna `datos_suprimidos_en` (ver C-27)
-- **Estado:** 📅 bloque 6.
+### C-10 · Columnas `datos_suprimidos_en` (ver C-27) y `version` (ver C-49)
+- **Referencia:** SRS Tabla XVII (no las incluye).
+- **Se hizo:** `datos_suprimidos_en TIMESTAMPTZ`, nula salvo en las cuentas suprimidas, y `version INTEGER NOT NULL DEFAULT 1`, que sube con cada edición del perfil.
+- **Por qué:** una cuenta suprimida debe distinguirse de una simplemente inactiva, que el Admin puede reactivar. El formulario de perfil de RNF-13 necesita una versión para detectar conflictos.
+- **Para qué:** bloquear todo cambio posterior sobre una cuenta suprimida (`CUENTA_SUPRIMIDA`) y responder 409 si el perfil cambió mientras el formulario esperaba la conexión.
+- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit.
 
 ---
 
@@ -123,7 +127,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 ### C-15 · Endpoint interno de contacto
 - **Referencia:** no está en el SRS. Plan §4.1, "única excepción"; `contracts/openapi/iam-interno.yaml`.
 - **Se hizo:** `GET /internal/usuarios/{usuario_id}/contacto`, sin prefijo `/api`, sin pasar por Traefik y fuera del OpenAPI público (`include_in_schema=False`). Responde `{usuario_id, nombre, email, idioma}` como fija el contrato, con `nombre` = `nombre_completo`.
-  - **Usuario inactivo:** 200, para que siga recibiendo los avisos de sus reservas (por ejemplo, la cancelación). Los datos suprimidos serán 404 (bloque 6, C-27).
+  - **Usuario inactivo:** 200, para que siga recibiendo los avisos de sus reservas (por ejemplo, la cancelación). Con los datos suprimidos, 404 `USUARIO_NO_ENCONTRADO` (C-27).
   - **Inexistente:** 404 `USUARIO_NO_ENCONTRADO`. **UUID mal formado:** 422 `VALIDACION`.
   - **Defensa adicional a la NetworkPolicy:** si la petición trae `X-Forwarded-For` o `X-Forwarded-Host` (llegó por Traefik), responde el mismo 404 `USUARIO_NO_ENCONTRADO` sin consultar la base, aunque el usuario exista o el UUID esté mal formado. Así, una regla de enrutamiento mal configurada no expone la ruta ni permite enumerar usuarios.
   - **Trazabilidad:** métrica `iam_contacto_consultas_total{resultado}` (`ok`, `no_encontrado`, `rechazado_proxy`) y una línea de log JSON por consulta con `usuario_id`, `resultado` y `correlation_id`, nunca el correo. No escribe fila en la bitácora.
@@ -143,7 +147,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 
 ### C-17 · Evento `prestador.suspendido`
 - **Referencia:** SRS Tabla XIV (solo `prestador.aprobado`); `contracts/events/prestador.suspendido.v1.json`.
-- **Se hizo:** el IAM lo agrega al outbox cuando un Prestador activo deja de estarlo: el Admin lo desactiva o le cambia el rol. El payload lleva `prestador_id` (= `usuario_id`, C-08), `usuario_id` y `suspendido_por` (el Admin), sin `motivo` (C-41). Si el prestador ya estaba inactivo no se publica otra vez. Pasar una cuenta **a** Prestador no publica nada (C-42). Una prueba valida el sobre contra `envelope.v1.json` y el payload contra `prestador.suspendido.v1.json` leyendo los archivos del monorepo.
+- **Se hizo:** el IAM lo agrega al outbox cuando un Prestador activo deja de estarlo: el Admin lo desactiva o le cambia el rol. El payload lleva `prestador_id` (= `usuario_id`, C-08), `usuario_id` y `suspendido_por` (el Admin), sin `motivo` (C-41). También lo agrega la supresión de datos de un Prestador visible, con `suspendido_por` = el propio usuario (C-48). Si el prestador ya estaba inactivo no se publica otra vez. Reactivar a un Prestador o devolverle el rol no publica este evento: publica `prestador.aprobado` si sus dos documentos están aprobados (C-42). Una prueba valida el sobre contra `envelope.v1.json` y el payload contra `prestador.suspendido.v1.json` leyendo los archivos del monorepo.
 - **Por qué:** cuando el Admin desactiva a un prestador (UC27), su oferta seguiría visible en el catálogo.
 - **Para qué:** que catálogo oculte el perfil y los servicios, y que la reserva deje de aceptarlos.
 - **Estado:** ✅ `8583e38`.
@@ -160,7 +164,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** se usan los nombres del SRS. Las acciones nuevas siguen su mismo estilo (inglés, mayúsculas con guion bajo): `LOGIN_SUCCESS`, `LOGOUT`, `USER_REGISTER`, `USER_STATUS_CHANGE`, `PROVIDER_APPROVED`, `PROVIDER_REJECTED`, `DOCUMENT_UPLOAD`, `DOCUMENT_VIEW`, `PROFILE_UPDATE`, `PASSWORD_CHANGE`, `PASSWORD_RESET_REQUEST`, `PASSWORD_RESET`, `DATA_SUPPRESSION`, `AUDIT_VIEW`. Las que llegan de otros módulos (`ZONA_CREADA`, etc.) se guardan tal como vienen.
 - **Por qué:** los tres documentos no coinciden entre sí. El SRS es el acuerdo de mayor jerarquía.
 - **Para qué:** un vocabulario consistente para filtrar en UC33. El filtro `accion` de `GET /api/iam/admin/bitacora` compara el nombre exacto (C-43): con nombres mezclados (`ROLE_CHANGE` y `ROL_MODIFICADO`), una búsqueda dejaría fuera parte de los cambios de rol. Las acciones de otros módulos se guardan como vienen, así que se filtran con su propio nombre (`ZONA_CREADA`). El Plan y el laboratorio deberían actualizarse con estos nombres.
-- **Estado:** ✅ los existentes; ✅ `8583e38`: `ROLE_CHANGE` (del SRS), `USER_STATUS_CHANGE` y `AUDIT_VIEW`; 🔨 bloque 5: `DOCUMENT_UPLOAD`, `DOCUMENT_VIEW`, `PROVIDER_APPROVED` y `PROVIDER_REJECTED`, pendiente del commit; el resto, en cada bloque.
+- **Estado:** ✅ los existentes; ✅ `8583e38`: `ROLE_CHANGE` (del SRS), `USER_STATUS_CHANGE` y `AUDIT_VIEW`; ✅ `951bdc4`: `DOCUMENT_UPLOAD`, `DOCUMENT_VIEW`, `PROVIDER_APPROVED` y `PROVIDER_REJECTED`; 🔨 bloque 6: `PROFILE_UPDATE`, `PASSWORD_CHANGE`, `PASSWORD_RESET_REQUEST`, `PASSWORD_RESET` y `DATA_SUPPRESSION`, pendiente del commit.
 
 ### C-41 · `prestador.suspendido` sin `motivo`
 - **Referencia:** `contracts/events/prestador.suspendido.v1.json` (admite `motivo` opcional, hasta 500 caracteres); Plan §4.2 (los eventos llevan solo identificadores).
@@ -178,7 +182,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - **Bloque 5:** `cambio_administrativo.py` publica `prestador.aprobado` (con `aprobado_por` = el Admin y la `razon_social`) cuando un Prestador **vuelve a quedar visible**, sea porque lo reactivan o porque la cuenta vuelve a tener ese rol, y **sus dos documentos vigentes están aprobados**. Con documentos pendientes, rechazados o faltantes, no se publica nada. Del mismo modo, aprobar a un prestador inactivo aprueba sus documentos pero no publica (C-47): el evento sale al reactivarlo.
 - **Por qué:** `prestador.aprobado` significa que el prestador tiene sus documentos (RNT y RUT) aprobados. Publicarlo sin esa condición habilitaría en catalog a prestadores que nunca fueron verificados.
 - **Para qué:** que catalog solo muestre prestadores verificados y que, al rehabilitar a uno, restaure los servicios que había apagado por la suspensión.
-- **Estado:** ✅ `8583e38` (sin evento). 🔨 bloque 5: `prestador.aprobado` al rehabilitar, pendiente del commit.
+- **Estado:** ✅ `8583e38` (sin evento). ✅ `951bdc4`: `prestador.aprobado` al rehabilitar.
 
 ### C-43 · Consulta de la bitácora (UC33)
 - **Referencia:** SRS UC33 ("Consultar bitácora de auditoría inmutable") y RNF-10 ("consulta de bitácora disponible en panel administrativo"). Ninguno fija filtros, orden ni formato.
@@ -213,7 +217,8 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   1. **Antes del commit**, con `desde` = el momento del cambio. Si Valkey no responde, 503 `SERVICIO_NO_DISPONIBLE` y la transacción se deshace: ni el cambio, ni la bitácora, ni el evento quedan confirmados (falla cerrado, como C-22).
   2. **Después del commit**, con un `desde` nuevo. Si esta falla, solo queda un log de error: el cambio ya está confirmado y la primera marca sigue vigente.
 - **Ventana que cierra la segunda revocación:** entre la primera marca y el commit pasan milisegundos, pero el login de ese usuario puede caer en ese intervalo. Como la transacción del Admin aún no es visible, el login lee el rol o el estado viejos, y si el `iat` cae en el segundo siguiente al de la marca, el token queda fuera de ella (`iat > desde`): un usuario degradado o desactivado conservaría un token válido por 15 minutos. La segunda marca, tomada después del commit, es posterior a ese `iat` y lo revoca. Un login posterior al commit ya lee el cambio.
-- **Estado:** ✅ `d30aef8`: el mecanismo y la verificación (probados también con integración `valkey`). ✅ `8583e38`: UC27 con la doble revocación. 📅 bloque 6: cambio de contraseña y supresión.
+- **Quién más la llama (bloque 6):** el cambio de contraseña (C-52), el restablecimiento (C-28) y la supresión (C-48), con el componente `RevocacionDoble`, extraído de `CambioAdministrativo` sin cambiar su comportamiento. Por la regla `<=`, un token emitido en el mismo segundo también quedaría revocado: por eso el cambio de contraseña no entrega un token nuevo y la PWA inicia sesión otra vez.
+- **Estado:** ✅ `d30aef8`: el mecanismo y la verificación (probados también con integración `valkey`). ✅ `8583e38`: UC27 con la doble revocación. 🔨 bloque 6: cambio y restablecimiento de contraseña y supresión, pendiente del commit.
 
 ### C-22 · Logout por revocación del `jti`, fallando cerrado
 - **Referencia:** SRS RNF-04; Plan §2.3.
@@ -241,9 +246,9 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 
 ### C-25 · Verificación del correo (`email_verificado`)
 - **Referencia:** SRS Tabla XVII.
-- **Se hizo:** el campo existe, siempre en `false`, y no hay flujo de verificación.
-- **Por qué:** ningún caso de uso del SRS lo exige, y no cabe en la Fase 4.
-- **Estado:** ⏸ fuera de alcance del prototipo.
+- **Se hizo:** el campo existe, siempre en `false`, y no hay flujo de verificación. Como consecuencia, el correo no se edita en el perfil (C-51). La recuperación (C-28) no lo tiene en cuenta ni lo cambia: envía el enlace a cualquier cuenta activa.
+- **Por qué:** ningún caso de uso del SRS lo exige, y no cabe en la Fase 4. Sin verificación, cambiar el correo permitiría apuntar la recuperación de una cuenta a una dirección que nadie comprobó.
+- **Estado:** ⏸ fuera de alcance del prototipo. 🔨 bloque 6: el correo no editable, pendiente del commit.
 
 ### C-26 · Rate limiting (UC32) configurado en el gateway
 - **Referencia:** SRS Tabla VI (UC32 asignado al Módulo 1); Plan §2.3 (lo aplica Traefik).
@@ -253,17 +258,40 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 
 ### C-27 ★ Supresión de datos por anonimización
 - **Referencia:** SRS §2.4.5 (derecho de supresión, Ley 1581); RNF-10.
-- **Se hizo:** `DELETE /api/iam/perfil` reemplaza el correo, el nombre y la razón social por valores neutros, desactiva la cuenta y registra `datos_suprimidos_en`. No borra la fila.
-- **Documentos de verificación (requisito del bloque 5 para el bloque 6):** la supresión debe **borrar** de SeaweedFS todos los objetos del usuario, los vigentes y los reemplazados (`vigente = false`, que se conservan para el historial de revisión, C-30), porque el RUT contiene datos personales. Las filas de `documento_verificacion` se conservan **anonimizadas** (sin `objeto_s3` utilizable y sin `motivo_rechazo`), porque las referencian la bitácora y las decisiones del Admin. Una consulta de su URL después de la supresión debe responder 404.
+- **Se hizo:** `DELETE /api/iam/perfil` (orden y fallos en C-48) deja `email = suprimido+<id>@invalid`, `nombre_completo = "Usuario suprimido"`, `razon_social = NULL`, `activo = false`, un `password_hash` aleatorio y `datos_suprimidos_en`. No borra la fila. Conserva `habeas_data_aceptado_en`, la prueba del consentimiento (C-01), y el rol, que no identifica a nadie.
+- **Documentos de verificación:** **borra** de SeaweedFS todo el prefijo `{usuario_id}/`: vigentes, reemplazados (`vigente = false`, C-30) y huérfanos, porque el RUT contiene datos personales. Las filas de `documento_verificacion` se conservan porque las referencian la bitácora y las decisiones del Admin, y su llave S3 solo tiene identificadores. Su `motivo_rechazo` se vacía: es texto libre, puede nombrar a la persona y, a diferencia de la bitácora, sí se puede borrar.
+- **Después de la supresión:**
+  - El Admin no puede reactivarla ni cambiarle el rol, aprobarla ni rechazarla: 409 `CUENTA_SUPRIMIDA`.
+  - El contacto interno y `GET /api/iam/admin/documentos/{id}/url` responden 404, sin fila `DOCUMENT_VIEW`.
+  - La cola de prestadores la excluye. En `GET /api/iam/admin/usuarios` aparece como "Usuario suprimido".
+  - El login falla como credenciales inválidas (`LOGIN_FAIL` con `usuario_no_existe`), `recuperar` no envía nada y un enlace pedido antes responde 400 `TOKEN_INVALIDO`.
+  - `SubirDocumento` rechaza con `CUENTA_SUPRIMIDA` una carga que termina después de la supresión y borra su objeto, que llegó al bucket cuando el prefijo ya se había borrado.
+  - El correo original queda libre: la persona puede registrarse otra vez, con una cuenta nueva sin relación con la anterior.
+- **Datos que no se pueden borrar:**
+  - **Texto libre en la bitácora inmutable (RNF-10):** `detalles.motivo` de `ROLE_CHANGE` y `USER_STATUS_CHANGE` (C-41), `detalles.documentos[].motivo` de `PROVIDER_REJECTED` y `detalles.motivo` de `MODERACION` (review-service). Lo escribe un Admin y podría mencionar a la persona.
+  - **`ip_origen` de las filas de la bitácora,** ligada a un `usuario_id` que ya no identifica a nadie por sí solo.
+  - **`razon_social` en el `sobre` de `prestador.aprobado` en el outbox,** hasta su purga a los 7 días de publicado (C-09).
+- **Revisión de `detalles`:** ninguna fila del IAM ni de catalog, booking o review guarda correos, nombres o razón social como campo; solo identificadores, rutas, códigos y el texto libre anterior. El consumidor guarda `detalles` tal como llega (`auditoria.registrada.v1` no restringe su contenido), así que esto depende de que los productores mantengan esa regla.
+- **Límite:** la supresión solo alcanza a `iam_db` y al bucket del IAM. `prestador.suspendido` oculta el perfil en catalog, pero `PRESTADOR_PERFIL` conserva su `razon_social`, `telefono` y `direccion` en `catalog_db`. Para cumplir la Ley 1581 de punta a punta, catalog debe borrarlos, y hoy no recibe ninguna señal que distinga una supresión de una suspensión reversible. Se coordina con Luis Fernando.
 - **Por qué:** la bitácora inmutable (RNF-10) referencia al usuario con una llave foránea `RESTRICT`, y borrar la fila rompería la trazabilidad exigida por ESC-04.
 - **Para qué:** cumplir la supresión de datos personales conservando la auditoría sin datos que identifiquen a la persona.
-- **Estado:** 📅 bloque 6.
+- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit. ⏸ El borrado del perfil en `catalog_db`, por coordinar con Luis Fernando.
 
 ### C-28 · Detalle del flujo de recuperación (UC3)
 - **Referencia:** SRS UC3 ("verificación vía correo"), sin más detalle.
-- **Se hizo:** `recuperar` responde siempre 202. El token es de un solo uso, dura 30 minutos y en Valkey se guarda su SHA-256, no el token. Hay 60 s de espera entre solicitudes. El enlace apunta a la PWA (`/restablecer-contrasena?token=`) y al restablecer se revocan las sesiones anteriores.
-- **Por qué:** sin estas reglas, el flujo permite averiguar qué correos existen, reutilizar enlaces o abusar del envío de correos.
-- **Estado:** 📅 bloque 6.
+- **Se hizo:**
+  - **`POST /api/iam/auth/recuperar {email}`:** responde 202 de inmediato y siempre con el mismo cuerpo, también con un formato de correo inválido. Todo lo demás corre en segundo plano (C-50). Si la cuenta existe, está activa y conserva sus datos: reserva la espera, guarda el token, audita y envía el correo.
+  - **Token:** `secrets.token_urlsafe(32)`, de un solo uso y válido 30 minutos. En Valkey se guarda `iam:reset:<sha256(token)>` = `usuario_id`, nunca el token en claro. Una solicitud nueva invalida la anterior, con la llave auxiliar `iam:reset-vigente:<usuario_id>`.
+  - **Enfriamiento:** `iam:reset-espera:<usuario_id>`, 60 s con `SET NX`. Dentro de ese plazo no sale otro correo, no se invalida el enlace vigente y no se audita.
+  - **Correo:** con `aiosmtplib`, en el idioma del usuario (`es` o `en`), en texto plano y HTML, con el nombre escapado, la duración y el aviso de ignorarlo si no lo pidió. El enlace es `{PWA_URL}/restablecer-contrasena?token=<token>`, nunca armado con el `Host` de la petición.
+  - **Bitácora:** `PASSWORD_RESET_REQUEST` con el `usuario_id`, antes de enviar: no sale ningún correo sin su fila. Si el correo no existe, no se audita y nunca se registra el correo intentado.
+  - **`POST /api/iam/auth/restablecer {token, password}`:** ignora campos extra como `confirmacion`. Valida la política antes de consumir el token (422 `PASSWORD_INVALIDA`, sin gastar el enlace). Consume con `GETDEL` atómico (inválido, vencido o ya usado: 400 `TOKEN_INVALIDO`, el código que espera `ResetView.vue`). La misma respuesta si la cuenta se desactivó o se suprimió después de pedirlo. Calcula el hash solo después de consumir, para que un token falso en esta ruta pública no gaste Argon2. Guarda el hash, audita `PASSWORD_RESET` y aplica la doble revocación (C-21). 204.
+- **Es 400 y no 401:** el 401 `TOKEN_INVALIDO` de las rutas protegidas significa "sesión vencida"; aquí nadie tiene sesión.
+- **Costo:** si la base o Valkey fallan después de consumir el token, el enlace ya se gastó y hay que pedir otro.
+- **Riesgo:** el token viaja en el query string del enlace. Si Traefik registra la URL completa al servir la PWA, queda en sus logs de acceso; `gateway/` debe omitir el query string de `/restablecer-contrasena`. Se coordina con Juan Francisco.
+- **Por qué:** sin estas reglas, el flujo permite averiguar qué correos existen, reutilizar enlaces, llenar el correo de otra persona o envenenar el enlace con un `Host` falso.
+- **Para qué:** recuperar la cuenta (UC3) sin revelar quién está registrado y sin que una copia de Valkey sirva para restablecer contraseñas.
+- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit. ⏸ El límite de peticiones (C-26) y el query string en los logs de Traefik, por coordinar con Juan Francisco.
 
 ### C-29 · Reglas de la administración de usuarios
 - **Referencia:** SRS UC27 (sin reglas).
@@ -289,7 +317,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - Auditoría de la carga: `DOCUMENT_UPLOAD` con `{documento_id, tipo, tipo_contenido, tamano_bytes, reemplaza}`.
 - **Por qué:** sin estas reglas se pueden subir archivos maliciosos o enormes, y los documentos tributarios quedarían accesibles sin control.
 - **Para qué:** que el Admin solo abra PDF o imágenes reales, por un enlace que caduca, y que cada acceso a un documento personal quede registrado.
-- **Estado:** 🔨 bloque 5: implementado y probado, pendiente del commit. ⏸ El límite del cuerpo en Traefik, por coordinar con Juan Francisco.
+- **Estado:** ✅ `951bdc4`. ⏸ El límite del cuerpo en Traefik, por coordinar con Juan Francisco.
 
 ### C-44 · Sin antivirus en los documentos
 - **Referencia:** SRS RF-12 y UC37 (no lo piden).
@@ -320,7 +348,60 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - Una cuenta sin rol Prestador: 409 `NO_ES_PRESTADOR`.
 - **Por qué:** UC28 habla de aprobar o rechazar **prestadores**, y catalog solo necesita saber si el prestador quedó habilitado. Rechazar por documento permite decirle al prestador exactamente qué corregir.
 - **Para qué:** una cola de revisión clara para el Admin y un solo evento por aprobación.
-- **Estado:** 🔨 bloque 5: implementado y probado, pendiente del commit.
+- **Estado:** ✅ `951bdc4`.
+
+### C-48 · Orden de la supresión de datos
+- **Referencia:** SRS §2.4.5 y Ley 1581 (derecho de supresión), sin procedimiento.
+- **El documento fija:** el derecho, no los pasos.
+- **Se hizo:** `DELETE /api/iam/perfil {password}` pide la contraseña (si no coincide, 401 `CREDENCIALES_INVALIDAS` y una fila `DATA_SUPPRESSION` / `Denegado`). Después:
+  1. Bloquea los Admins activos y la cuenta; si es el último Admin activo, 409 `ULTIMO_ADMIN`.
+  2. Primera revocación; si Valkey falla, 503 sin haber borrado nada.
+  3. Borra en SeaweedFS el prefijo `{usuario_id}/`. Si falla, también si `delete_objects` informa un error en un objeto, 503.
+  4. En una transacción: datos neutros (C-27), `motivo_rechazo` vacío, `DATA_SUPPRESSION` / `Exito` con `{rol, objetos_borrados}` y `prestador.suspendido` si era un Prestador visible, con `suspendido_por` = el propio usuario.
+  5. Commit y segunda revocación (si falla, solo un log). 204.
+- **Si algo falla a la mitad:** desde el paso 2 los tokens ya están revocados, aunque la respuesta sea 503. Para repetir, el usuario debe **iniciar sesión otra vez**: su contraseña sigue sirviendo porque nada se confirmó. Si la base falló después del paso 3, sus documentos ya no existen pero la cuenta sigue activa hasta que repita la petición; el borrado es idempotente.
+- **El 401 de la contraseña:** es `CREDENCIALES_INVALIDAS`, y la PWA debe distinguirlo por el `code` del 401 `TOKEN_INVALIDO`, que sí significa sesión vencida.
+- **`suspendido_por`:** el contrato lo describe como "Administrador que suspendió", pero aquí no actúa ningún Admin. El esquema solo exige un UUID.
+- **Por qué:** lo único irreversible fuera de la transacción es el borrado del paso 3. Va después de la primera revocación para que un Valkey caído no deje documentos borrados sin efecto alguno. Va antes del commit para que un fallo de SeaweedFS no deje una cuenta marcada como suprimida con sus documentos todavía en el bucket. Se hace con la cuenta bloqueada para que una carga simultánea no se cuele (C-27). Bloquear los Admins en el mismo orden que UC27 evita interbloqueos y que dos Admins se supriman a la vez y dejen la plataforma sin ninguno.
+- **Para qué:** que un fallo nunca deje a la persona creyendo que sus datos se borraron cuando no fue así, sin una tabla ni un proceso más para reintentar.
+- **Costo:** el bloqueo de los Admins se mantiene durante la llamada a SeaweedFS (hasta unos segundos si responde lento), y sin SeaweedFS nadie puede suprimir sus datos, ni siquiera quien nunca subió un documento.
+- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit.
+
+### C-49 · RNF-13 en el perfil: `If-Match` sin `Idempotency-Key`
+- **Referencia:** SRS RNF-13 y §3.6 (formularios diferidos: "cada envío lleva una clave de idempotencia" y "las ediciones llevan la versión del registro"); ADR de operación sin conexión; UC4.
+- **El documento fija:** `Idempotency-Key` y versión en todos los formularios diferidos, incluido UC4.
+- **Se hizo:** `GET` y `PATCH /api/iam/perfil` devuelven `ETag` a partir de `version` y `Cache-Control: no-store`. Si llega `If-Match` y no coincide (acepta `"3"`, `W/"3"`, `3` y `*`; cualquier otro valor no coincide), 409 `VERSION_CONFLICTO`. Sin `If-Match` se acepta, para los clientes en línea. **No usa `Idempotency-Key`.** Bitácora `PROFILE_UPDATE` con `{campos: [...]}`: los nombres, nunca los valores. Sin cambios: 200 sin auditar ni subir la versión.
+- **Por qué no hace falta la clave:** `PATCH` fija valores y no agrega nada, así que repetirlo da el mismo resultado. Para que eso se cumpla, la comprobación "sin cambios" va **antes** que la de la versión: si se perdió la respuesta y la cola reenvía el mismo `PATCH` con su `If-Match` ya viejo, encuentra los mismos valores y responde 200, no un 409 falso. Un cambio distinto con esa versión vieja sí es 409. La cola de la PWA (`offlineQueue.js`) envía la clave de todos modos, y el IAM la ignora.
+- **Sin conexión no:** el cambio de contraseña (C-52) y la supresión (C-48) exigen confirmar en línea la contraseña y su respuesta, y no deben encolarse.
+- **`version` cubre solo lo editable:** cambiar el rol, el estado o la razón social no la sube, para que un cambio del Admin o una carga del RUT no le cause un conflicto a un formulario que no los toca.
+- **Para qué:** cumplir la detección de conflictos de RNF-13 sin almacenar claves de idempotencia.
+- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit.
+
+### C-50 · Fallos del SMTP y trabajo en segundo plano en la recuperación
+- **Referencia:** SRS UC3 ("verificación vía correo"), sin comportamiento ante fallos.
+- **El documento fija:** nada.
+- **Se hizo:** `recuperar` lanza el trabajo con `asyncio.create_task` y responde. Corre en la API, con el mismo `correlation_id`. No usa `BackgroundTasks` de FastAPI porque corre dentro del ciclo de la petición y retiene la conexión keep-alive: quien envíe otra petición por esa conexión notaría la espera del SMTP. Si Valkey, la base o el SMTP fallan, queda un log de error (sin el correo) y la métrica `iam_recuperacion_solicitudes_total{resultado}` (`enviado`, `no_elegible`, `enfriamiento`, `fallo_valkey`, `fallo_smtp`, `fallo_base`). Si no se pudo enviar, descarta el token y la espera, para que se pueda pedir otra vez de inmediato. Al apagarse, la API espera hasta 15 s las tareas en curso.
+- **Por qué:** para que ni el tiempo ni un 503 revelen si el correo existe, nada que dependa de esa respuesta puede correr dentro de la petición.
+- **Costo:** el usuario recibe 202 aunque el correo nunca salga, y solo le queda volver a pedirlo. Si el pod muere con la tarea en curso, se pierde sin rastro más allá de la fila de la bitácora, si alcanzó a escribirse. No hay reintentos ni outbox: un enlace de 30 minutos reenviado tarde sirve de poco, y el usuario puede repetir la solicitud.
+- **Riesgo:** las tareas no tienen tope. Una ráfaga contra `recuperar` acumula consultas a la base, y solo la contiene el rate limiting de Traefik (C-26), todavía pendiente.
+- **Para qué:** que la recuperación no sirva para enumerar cuentas, con los fallos visibles para quien opera la plataforma. Conviene una alerta sobre `fallo_smtp` (bloque 7).
+- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit. 📅 bloque 7: alerta, y Secret y salida a SMTP en k3s.
+
+### C-51 · Campos del perfil que no se editan
+- **Referencia:** SRS UC4 ("Gestionar perfil de usuario"), sin lista de campos.
+- **El documento fija:** nada.
+- **Se hizo:** `PATCH /api/iam/perfil` solo admite `nombre` e `idioma`, con las reglas del registro (`NOMBRE_INVALIDO`; otro idioma, 422 `VALIDACION`). Enviar `email`, `razon_social` o cualquier otro campo responde 422 `VALIDACION`, en vez de un 200 que no los cambió. La API llama `nombre` al `nombre_completo` de la base, como el contrato de contacto (C-15).
+- **Por qué:** el correo no se edita porque no hay verificación de correo (C-25). La razón social va con la carga del RUT (C-07).
+- **Para qué:** que la dirección de recuperación siempre sea la registrada y que la razón social no se separe del documento que la respalda.
+- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit.
+
+### C-52 · `POST /perfil/contrasena` y 422 `PASSWORD_ACTUAL_INCORRECTA`
+- **Referencia:** lo comunicado al frontend: `/perfil/password` y 401 si la contraseña actual es incorrecta. El SRS no lo fija.
+- **El documento fija:** nada; es una diferencia frente a lo acordado de palabra.
+- **Se hizo:** `POST /api/iam/perfil/contrasena {password_actual, password_nueva}`, con los nombres en español de las demás rutas propias. Contraseña actual incorrecta: **422** `PASSWORD_ACTUAL_INCORRECTA`, con su fila `PASSWORD_CHANGE` / `Denegado`. Si es correcta: política (422 `PASSWORD_INVALIDA`), nuevo hash Argon2id, `PASSWORD_CHANGE` / `Exito` y doble revocación (C-21). 204, sin token nuevo.
+- **Por qué:** con un 401, la PWA lo confundiría con una sesión vencida y sacaría al usuario, que solo se equivocó al escribir.
+- **Para qué:** mostrar el error en el campo correcto. El frontend debe ajustar la ruta y el código, e iniciar sesión otra vez tras el 204.
+- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit. ⏸ Avisar del cambio al frontend.
 
 ---
 
@@ -413,7 +494,8 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** el IAM usa el bucket privado `documentos-verificacion` (`S3_BUCKET`), con dos endpoints: `S3_ENDPOINT_URL` (interno, para subir) y `S3_ENDPOINT_PUBLICO` (el que ve el navegador del Admin; la firma incluye el host). En desarrollo, `docker-compose.dev.yml` usa `chrislusf/seaweedfs:3.80` (la misma versión que `infra/`) **sin archivo de identidades**: acepta cualquier credencial (incluso vacía) y no comprueba firmas, así que las credenciales por defecto (`iam_access_dev` / `iam_secret_dev`) son solo de relleno. El bucket se crea con `uv run python -m scripts.crear_bucket`.
 - **Por qué:** en `infra/` (y en k3s) SeaweedFS usa un archivo de identidades (`-s3.config`), como el de catalog. Allí, sin una identidad propia con permisos sobre su bucket, el IAM no puede subir ni firmar, y es ese archivo el que hace privado el bucket.
 - **Para qué:** que en k3s el bucket y las credenciales del IAM los provea `infra/` (Luis Fernando): una identidad `iam` con acciones `Read`, `Write` y `List` solo sobre `documentos-verificacion`, y sus llaves en un Secret que se monta como `S3_ACCESS_KEY` y `S3_SECRET_KEY`. El IAM no crea el bucket en producción.
-- **Estado:** 🔨 bloque 5: configuración y script de desarrollo, pendiente del commit. ⏸ identidad, bucket y Secret en `infra/`, por coordinar con Luis Fernando.
+- **Riesgo (bloque 6):** la supresión lista y borra objetos (C-48). En desarrollo no se puede comprobar el permiso, porque SeaweedFS no valida identidades; hay que confirmar en k3s que la identidad `iam` puede borrar. Si no puede, cada supresión responderá 503.
+- **Estado:** ✅ `951bdc4`: configuración y script de desarrollo. ⏸ identidad, bucket y Secret en `infra/`, por coordinar con Luis Fernando.
 
 ---
 
@@ -424,8 +506,9 @@ Coordinar con Luis Fernando, que es el responsable de la arquitectura y de los c
 - **SRS v1.2:** C-04, C-07, C-08, C-17 (y las reglas de UC27 de C-29 y de UC28 de C-47), C-20, C-27 y C-36 (unificar la Tabla V con la Tabla XXII y ESC-04), además de los campos de C-01, C-02, C-05 y C-06, y de C-38 y C-39 en la descripción de `BITACORA_AUDITORIA`. En ESC-04, aclarar que el IAM audita directamente sus propios 403 y que el usuario solo se registra si la firma del token es válida (C-23).
 - **Plan:** §4.1 (C-11, C-12 y el riesgo de C-13: la confianza en `X-Usuario-*` exige eliminarlos en las rutas públicas), §2.3 (C-19 y C-21) §4.3 (C-38 y C-40: qué va a la DLQ y que se revisa a mano) y §7.3 (C-32: readiness y liveness en `/health/live`, y `/health` solo para el monitoreo).
 - **Lab:** Figuras 1 y 2 y especificación ACME (C-04); Figura 6 (C-31); Figura 10 (C-32: readiness y liveness en `/health/live`); §4.2 (C-20 y C-21: en la transición "rol modificado o usuario desactivado", cambiar "jti a Valkey" por la revocación por usuario con revocado-desde).
-- **Gateway (`gateway/`, Juan Francisco):** `authResponseHeaders` con `X-Usuario-Id` y `X-Usuario-Rol`, y eliminación de esos encabezados en toda petición entrante (C-13). Límite del cuerpo (`buffering.maxRequestBodyBytes`, unos 6 MB) en `POST /api/iam/prestador/documentos` (C-30).
+- **Gateway (`gateway/`, Juan Francisco):** `authResponseHeaders` con `X-Usuario-Id` y `X-Usuario-Rol`, y eliminación de esos encabezados en toda petición entrante (C-13). Límite del cuerpo (`buffering.maxRequestBodyBytes`, unos 6 MB) en `POST /api/iam/prestador/documentos` (C-30). `/api/iam/auth/recuperar` y `/restablecer` públicas, con rate limiting (C-26, C-50); `/api/iam/perfil` con ForwardAuth; el query string de `/restablecer-contrasena` fuera de los logs de acceso (C-28).
+- **Frontend (`frontend/`, Juan Francisco):** usar `POST /perfil/contrasena` y `PASSWORD_ACTUAL_INCORRECTA`, y volver a iniciar sesión tras el 204 (C-52). Distinguir `CREDENCIALES_INVALIDAS` en la supresión (C-48). No encolar sin conexión el cambio de contraseña ni la supresión (C-49). El 400 `TOKEN_INVALIDO` y los cuerpos de recuperar y restablecer ya coinciden.
 - **Infra (`infra/`, Luis Fernando):** identidad `iam` en el archivo de identidades de SeaweedFS, el bucket `documentos-verificacion` y el Secret con sus llaves (C-46).
-- **Contratos (`contracts/`, Luis Fernando):** en `prestador.suspendido.v1.json`, aclarar que el IAM no envía `motivo` (C-41), o quitarlo del esquema.
-- **Catalog (`services/catalog-service/`, Luis Fernando):** que `DirectorioUsuariosIam` envíe `X-Correlation-ID` con el `correlation_id` del evento al pedir el contacto (C-15).
+- **Contratos (`contracts/`, Luis Fernando):** en `prestador.suspendido.v1.json`, aclarar que el IAM no envía `motivo` (C-41), o quitarlo del esquema, y que `suspendido_por` es el propio usuario en una supresión (C-48).
+- **Catalog (`services/catalog-service/`, Luis Fernando):** que `DirectorioUsuariosIam` envíe `X-Correlation-ID` con el `correlation_id` del evento al pedir el contacto (C-15). Borrar `razon_social`, `telefono` y `direccion` de `PRESTADOR_PERFIL` cuando un prestador suprime sus datos, lo que requiere una señal distinta de `prestador.suspendido` (C-27). Tratar el 404 del contacto de un usuario suprimido sin reintentar (C-15).
 - **Registro de decisiones:** proponer un ADR del IAM que reúna C-04, C-16, C-21, C-27 y C-34.

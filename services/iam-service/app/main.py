@@ -8,13 +8,17 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.api.dependencies import get_reloj
 from app.api.errors import register_error_handlers
 from app.api.middleware.correlacion_middleware import CorrelacionMiddleware
-from app.api.routers import admin, auth, health, internal, prestador
+from app.api.routers import admin, auth, health, internal, perfil, prestador
+from app.api.segundo_plano import TareasSegundoPlano
 from app.config import Settings, get_settings
 from app.infrastructure.cache.valkey_revocacion import build_valkey_client
+from app.infrastructure.correo.enviador_smtp import EnviadorSmtp
 from app.infrastructure.observabilidad.configurar_logs import configurar_logs
 from app.infrastructure.persistence.database import build_engine, build_session_factory
 from app.infrastructure.security.jwt_token_service import JwtTokenService, leer_llaves
 from app.infrastructure.storage.almacen_documentos_s3 import AlmacenDocumentosS3
+
+_ESPERA_TAREAS_AL_APAGAR = 15.0
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -45,7 +49,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             secret_key=settings.s3_secret_key,
             bucket=settings.s3_bucket,
         )
+        app.state.enviador_correo = EnviadorSmtp(
+            host=settings.smtp_host,
+            puerto=settings.smtp_port,
+            remitente=settings.smtp_from,
+            usuario=settings.smtp_usuario,
+            clave=settings.smtp_password,
+            starttls=settings.smtp_tls,
+            timeout_segundos=settings.smtp_timeout_seconds,
+        )
+        app.state.tareas_segundo_plano = TareasSegundoPlano()
         yield
+        # Antes de cerrar Valkey y la base, que estas tareas usan.
+        await app.state.tareas_segundo_plano.esperar(timeout_segundos=_ESPERA_TAREAS_AL_APAGAR)
         await app.state.valkey.aclose()
         await app.state.engine.dispose()
 
@@ -55,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(admin.router)
+    app.include_router(perfil.router)
     app.include_router(prestador.router)
     app.include_router(internal.router)
     Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)

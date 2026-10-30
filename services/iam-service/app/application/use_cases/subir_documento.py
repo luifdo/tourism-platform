@@ -6,9 +6,11 @@ from datetime import datetime
 
 from app.domain.entities.documento_verificacion import DocumentoVerificacion
 from app.domain.exceptions import (
+    CuentaSuprimidaError,
     DocumentoAprobadoError,
     NoEsPrestadorError,
     RazonSocialInvalidaError,
+    ServicioNoDisponibleError,
     UsuarioNoEncontradoError,
 )
 from app.domain.ports.almacen_documentos import AlmacenDocumentos
@@ -40,7 +42,8 @@ class SubirDocumento:
     4. En una transacción, con la cuenta bloqueada (contra cargas o revisiones simultáneas):
        retira el vigente anterior, guarda el nuevo como Pendiente, guarda la razón social y
        audita `DOCUMENT_UPLOAD`. Si la base falla aquí, el objeto queda huérfano en el bucket
-       (con una llave que no se puede adivinar) y queda en el log.
+       (con una llave que no se puede adivinar) y queda en el log. Si la cuenta se suprimió
+       mientras subía, rechaza la carga y borra el objeto (C-27).
     """
 
     def __init__(
@@ -61,9 +64,19 @@ class SubirDocumento:
 
         try:
             return await self._registrar(cmd, archivo, clave, razon_social)
+        except CuentaSuprimidaError:
+            await self._borrar_objeto(clave)
+            raise
         except Exception:
             logger.error("Documento subido sin registrar en la base; objeto huérfano: %s", clave)
             raise
+
+    async def _borrar_objeto(self, clave: str) -> None:
+        # La supresión borró el prefijo antes de que este objeto llegara al bucket (C-27).
+        try:
+            await self._almacen.borrar_prefijo(clave)
+        except ServicioNoDisponibleError:
+            logger.error("Objeto de una cuenta suprimida sin borrar: %s", clave)
 
     async def _registrar(
         self,
@@ -76,6 +89,8 @@ class SubirDocumento:
             prestador = await uow.usuarios.find_by_id_para_actualizar(cmd.usuario_id)
             if prestador is None:
                 raise UsuarioNoEncontradoError()
+            if prestador.suprimido:
+                raise CuentaSuprimidaError()
             if prestador.rol is not Rol.PRESTADOR:
                 raise NoEsPrestadorError()
             vigentes = await uow.documentos.vigentes(cmd.usuario_id)

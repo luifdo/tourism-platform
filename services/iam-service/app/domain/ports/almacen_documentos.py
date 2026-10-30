@@ -16,3 +16,11 @@ class AlmacenDocumentos(Protocol):
         """URL prefirmada de lectura que vale VALIDEZ_URL. Fija el tipo de contenido y el
         nombre con que el navegador muestra el archivo (no la llave interna)."""
         ...
+
+    async def borrar_prefijo(self, prefijo: str) -> int:
+        """Borra todos los objetos con ese prefijo y devuelve cuántos eran. Es idempotente.
+
+        Lanza ServicioNoDisponibleError si el almacenamiento no responde o si no pudo borrar
+        alguno (C-27).
+        """
+        ...

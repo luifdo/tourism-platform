@@ -10,7 +10,7 @@ Autenticación JWT (RS256), verificación de tokens para el API Gateway (Forward
 | Requerimientos funcionales | RF-08, RF-09, RF-12 |
 | Requerimientos no funcionales | RNF-04, RNF-10 |
 | Escenarios de calidad | ESC-04 |
-| Persistencia | PostgreSQL — base lógica `iam_db`; documentos en SeaweedFS (bucket `documentos-verificacion`); tokens revocados en Valkey |
+| Persistencia | PostgreSQL — base lógica `iam_db`; documentos en SeaweedFS (bucket `documentos-verificacion`); tokens revocados y de recuperación en Valkey |
 | Lenguaje / framework | Python 3.12 + FastAPI (orientado a objetos, arquitectura hexagonal) |
 | Puerto interno | `8001` |
 | Prefijo en el Gateway (Traefik) | `/api/iam` |
@@ -100,9 +100,9 @@ uv run alembic upgrade head               # aplicar migraciones
 
 > En Windows, Smart App Control puede bloquear `uvicorn.exe` del `.venv`; `python -m uvicorn` evita el problema.
 
-> **Pendiente (pruebas):** durante el bloque 5, una corrida completa de `uv run pytest -q` tuvo una falla intermitente que no se identificó (no se guardó la salida) y no volvió a aparecer en las cinco corridas siguientes. Si reaparece, guardar la salida completa (`uv run pytest -q > salida.log 2>&1`), identificar la prueba y corregir la carrera, como se hizo en el bloque 2 con el contador `dlq` de `test_consumidor_auditoria.py`, que se leía antes de que el consumidor lo actualizara.
+> **Pruebas:** las de integración comparten la base de desarrollo. En el bloque 6 apareció una falla que dependía de su estado: un evento que quedó pendiente en el outbox (por usar el servicio sin el worker) le cambiaba el resultado a `test_outbox_pg.py`, y otra prueba del mismo archivo lo marcaba como publicado con un commit real, de modo que la corrida siguiente ya pasaba. Se corrigió con la fixture `sin_pendientes_ajenos`. Puede ser también la causa de la falla intermitente del bloque 5, pero no se puede confirmar porque de esa no se guardó la salida. Si aparece otra, guardar la salida completa (`uv run pytest -q > salida.log 2>&1`) e identificar la prueba.
 
-Mailpit (SMTP de pruebas en `localhost:1025`, interfaz en http://localhost:8025) queda listo para los correos de recuperación del bloque 6.
+Mailpit (SMTP de pruebas en `localhost:1025`, interfaz en http://localhost:8025) recibe los correos de recuperación sin enviarlos. `scripts/smoke_test.py` lee de ahí el enlace (`http://localhost:8025/api/v1/messages`), así que necesita Mailpit, SeaweedFS y el bucket.
 
 SeaweedFS de desarrollo (`chrislusf/seaweedfs:3.80`, puerto 8333) no tiene archivo de identidades: acepta cualquier credencial (incluso vacía) y no comprueba las firmas. Antes de cargar documentos hay que crear el bucket con `scripts.crear_bucket`. En k3s, el bucket y las credenciales los provee `infra/` (C-46).
 
@@ -112,7 +112,7 @@ Operativos:
 
 * `GET /health`: `200` si PostgreSQL (`SELECT 1`) y Valkey (`PING`) responden, `503` si alguno falla. Lo usan Prometheus y Blackbox para medir la disponibilidad (RNF-01).
 * `GET /health/live`: `200 {"status": "ok"}` sin consultar nada. Es la sonda del `HEALTHCHECK` de Docker y, en k8s, de readiness y liveness (C-32).
-* `GET /metrics`: métricas Prometheus (prometheus-fastapi-instrumentator), más `iam_contacto_consultas_total{resultado}` de la ruta interna de contacto.
+* `GET /metrics`: métricas Prometheus (prometheus-fastapi-instrumentator), más `iam_contacto_consultas_total{resultado}` de la ruta interna de contacto e `iam_recuperacion_solicitudes_total{resultado}` de la recuperación de contraseña.
 
 ### Correlación y logs
 
@@ -252,7 +252,7 @@ Solo `Admin`. El endpoint temporal `/api/iam/admin/ping` ya no existe (C-33).
 Cada cuenta se devuelve como `{id, email, nombre_completo, rol, activo, email_verificado, idioma, creado_en, actualizado_en}`. Un cambio que sí cambia algo:
 
 1. Se guarda junto con su fila `ROLE_CHANGE` o `USER_STATUS_CHANGE` en la bitácora: `usuario_id` es el Admin; `detalles` lleva `{usuario_afectado, antes, despues, motivo}`, con el motivo recortado a 500 caracteres.
-2. Si un Prestador activo deja de estarlo (lo desactivan o le cambian el rol), agrega `prestador.suspendido` al outbox. El evento **no** lleva el motivo (C-41). Reactivar o pasar a Prestador no publica nada hasta el bloque 5 (C-42).
+2. Si un Prestador activo deja de estarlo (lo desactivan o le cambian el rol), agrega `prestador.suspendido` al outbox. El evento **no** lleva el motivo (C-41). Reactivar a un Prestador o devolverle el rol publica `prestador.aprobado` solo si sus dos documentos están aprobados (C-42).
 3. Si cambió el rol o se desactivó la cuenta, revoca los tokens del usuario antes y después del commit (C-21): sus peticiones siguientes reciben 401.
 
 Un cambio sin efecto (mismo rol o mismo estado) responde `200` sin auditar, revocar ni publicar.
@@ -351,10 +351,58 @@ Ruta **interna** ([`contracts/openapi/iam-interno.yaml`](../../contracts/openapi
 
 | HTTP | `code` | Causa |
 |---|---|---|
-| 404 | `USUARIO_NO_ENCONTRADO` | El usuario no existe, **o** la petición trae `X-Forwarded-For` / `X-Forwarded-Host` (llegó por Traefik), aunque el usuario exista |
+| 404 | `USUARIO_NO_ENCONTRADO` | El usuario no existe o suprimió sus datos (C-27), **o** la petición trae `X-Forwarded-For` / `X-Forwarded-Host` (llegó por Traefik), aunque el usuario exista |
 | 422 | `VALIDACION` | `usuario_id` no es un UUID (por Traefik, igual 404) |
 
 No escribe en la bitácora: cada consulta deja una línea de log con `usuario_id`, `resultado` y `correlation_id` (nunca el correo) y suma a `iam_contacto_consultas_total{resultado}` (`ok`, `no_encontrado`, `rechazado_proxy`).
+
+### Perfil: `/api/iam/perfil` (UC4)
+
+Cualquier rol autenticado, con la validación de token de `require_role`.
+
+* `GET /api/iam/perfil`: `{id, email, nombre, rol, idioma, razon_social, creado_en}`, con `ETag` a partir de la versión.
+* `PATCH /api/iam/perfil` con `{"nombre"?, "idioma"?}`: las reglas del registro. El correo y la razón social no se editan (C-51). `If-Match` es opcional; si no coincide, `409 VERSION_CONFLICTO`. Repetir el mismo `PATCH` responde `200`, también con el `If-Match` viejo, por eso no usa `Idempotency-Key` (C-49). Audita `PROFILE_UPDATE` con los nombres de los campos, nunca los valores.
+* `POST /api/iam/perfil/contrasena` con `{"password_actual", "password_nueva"}`: `204` sin token nuevo; todas las sesiones se revocan y la PWA debe iniciar sesión otra vez (C-21, C-52).
+
+| HTTP | `code` | Causa |
+|---|---|---|
+| 401 | `TOKEN_INVALIDO` | Sin token, o token inválido, expirado o revocado |
+| 409 | `VERSION_CONFLICTO` | `If-Match` no coincide con la versión actual |
+| 422 | `NOMBRE_INVALIDO`, `VALIDACION` | Nombre, idioma o campo no editable |
+| 422 | `PASSWORD_ACTUAL_INCORRECTA` | Contraseña actual incorrecta (no 401: no es una sesión vencida) |
+| 422 | `PASSWORD_INVALIDA` | La contraseña nueva no cumple la política |
+| 503 | `SERVICIO_NO_DISPONIBLE` | Valkey no responde |
+
+El cambio de contraseña y la supresión no se hacen sin conexión: exigen confirmación en línea (C-49).
+
+### Recuperación de contraseña: `/api/iam/auth/recuperar` y `/restablecer` (UC3)
+
+Rutas públicas (C-28).
+
+* `POST /api/iam/auth/recuperar` con `{"email"}`: `202` de inmediato y siempre con el mismo cuerpo, exista o no el correo. El resto corre en segundo plano: ni el tiempo ni un `503` revelan si existe (C-50). El enlace vale 30 minutos, es de un solo uso y una solicitud nueva invalida la anterior. Entre dos correos a un usuario pasan al menos 60 s.
+* `POST /api/iam/auth/restablecer` con `{"token", "password"}`, ignorando campos extra como `confirmacion`: `204`, y las sesiones anteriores quedan revocadas.
+
+| HTTP | `code` | Causa |
+|---|---|---|
+| 400 | `TOKEN_INVALIDO` | Enlace inválido, vencido o ya usado, o cuenta desactivada o suprimida después de pedirlo |
+| 422 | `PASSWORD_INVALIDA` | No cumple la política; el enlace **no** se gasta |
+| 503 | `SERVICIO_NO_DISPONIBLE` | Valkey no responde al restablecer |
+
+Si el SMTP o Valkey fallan al recuperar, el usuario recibe `202` igual y solo le queda volver a pedirlo: queda un log de error, sin el correo, y `iam_recuperacion_solicitudes_total{resultado}` (C-50). Variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USUARIO`, `SMTP_PASSWORD`, `SMTP_TLS` y `PWA_URL`.
+
+### Supresión de datos: `DELETE /api/iam/perfil` (Ley 1581)
+
+Con `{"password"}` en el cuerpo. **Irreversible.** Reemplaza el correo, el nombre y la razón social por valores neutros, desactiva la cuenta y borra sus documentos de SeaweedFS; la fila y la bitácora se conservan (C-27). Orden y fallos en C-48.
+
+| HTTP | `code` | Causa |
+|---|---|---|
+| 204 | | Datos suprimidos |
+| 401 | `CREDENCIALES_INVALIDAS` | La contraseña no coincide |
+| 401 | `TOKEN_INVALIDO` | Token inválido, expirado o revocado |
+| 409 | `ULTIMO_ADMIN` | Es el último Admin activo |
+| 503 | `SERVICIO_NO_DISPONIBLE` | Valkey o SeaweedFS no responden. **Los tokens ya se revocaron:** hay que iniciar sesión y repetir la petición |
+
+Después: login e `recuperar` se comportan como si la cuenta no existiera, el contacto interno y la URL de los documentos responden `404`, la cola de prestadores la excluye, y el Admin recibe `409 CUENTA_SUPRIMIDA` si intenta reactivarla, cambiarle el rol o revisarla.
 
 ### `GET /api/iam/.well-known/jwks.json`
 
@@ -389,7 +437,10 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **UC27 revoca dos veces y falla cerrado** (C-21, C-29): sin Valkey no se cambia ningún rol ni estado.
 * **El motivo de una suspensión no viaja por el bus** (C-41). **Rehabilitar a un Prestador publica `prestador.aprobado` solo si sus dos documentos están aprobados** (C-42).
 * **Los documentos pasan por el IAM y se validan por su contenido** (C-30). **Sin antivirus** (C-44), con las mitigaciones listadas en el registro. **Un documento aprobado no se renueva** (C-45).
-* **El bucket y las credenciales del IAM en k3s los provee `infra/`** (C-46), y **la supresión del bloque 6 debe borrar los objetos de SeaweedFS** (C-27).
+* **El bucket y las credenciales del IAM en k3s los provee `infra/`** (C-46).
+* **La supresión anonimiza y borra los documentos, pero no alcanza a todo** (C-27, C-48): el texto libre y la IP de la bitácora inmutable y la razón social del outbox hasta su purga no se pueden borrar. **Riesgo:** catalog conserva `razon_social`, `telefono` y `direccion` del perfil en `catalog_db`; falta coordinar su borrado.
+* **Recuperación sin enumeración de cuentas** (C-28, C-50): todo corre después de responder `202`. **Costo:** si el correo no sale, el usuario no se entera; solo queda el log y la métrica.
+* **El perfil usa `If-Match` sin `Idempotency-Key`** (C-49), y **el correo y la razón social no se editan** (C-51). **`POST /perfil/contrasena` y el 422** difieren de lo comunicado al frontend (C-52).
 * **Readiness y liveness en `/health/live`, sin dependencias** (C-32, distinto del Plan §7.3): una caída de PostgreSQL o Valkey no saca a todas las réplicas a la vez; `/health` sigue mostrando la falla al monitoreo.
 * **Contacto interno con 404 si llega por Traefik** (C-15). **Riesgo:** catalog todavía no envía `X-Correlation-ID` en esa llamada, así que su log no se cruza con el evento.
 * **El 500 de una excepción no controlada sale sin `X-Correlation-ID`** (C-05).

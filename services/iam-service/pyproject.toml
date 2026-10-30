@@ -20,6 +20,7 @@ dependencies = [
     "prometheus-client>=0.21",
     "boto3>=1.43.122",
     "python-multipart>=0.0.32",
+    "aiosmtplib>=3.0",
 ]
 
 [dependency-groups]

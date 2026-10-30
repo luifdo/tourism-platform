@@ -11,6 +11,7 @@ from app.domain.exceptions import (
     AutogestionNoPermitidaError,
     CredencialesInvalidasError,
     CuentaInactivaError,
+    CuentaSuprimidaError,
     DocumentoAprobadoError,
     DocumentoNoEncontradoError,
     DocumentosIncompletosError,
@@ -21,9 +22,11 @@ from app.domain.exceptions import (
     RolInsuficienteError,
     ServicioNoDisponibleError,
     TokenInvalidoError,
+    TokenRecuperacionInvalidoError,
     UltimoAdminError,
     UsuarioNoEncontradoError,
     UsuarioYaExisteError,
+    VersionConflictoError,
 )
 from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 
@@ -86,8 +89,13 @@ def register_error_handlers(app: FastAPI) -> None:
         DocumentoAprobadoError,
         DocumentosIncompletosError,
         DocumentoYaRevisadoError,
+        CuentaSuprimidaError,
+        VersionConflictoError,
     ):
         app.add_exception_handler(error, conflicto)
+    app.add_exception_handler(
+        TokenRecuperacionInvalidoError, _responder_con(status.HTTP_400_BAD_REQUEST)
+    )
     app.add_exception_handler(DocumentoNoEncontradoError, _responder_con(status.HTTP_404_NOT_FOUND))
     app.add_exception_handler(
         ArchivoDemasiadoGrandeError, _responder_con(status.HTTP_413_CONTENT_TOO_LARGE)

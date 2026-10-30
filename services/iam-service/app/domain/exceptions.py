@@ -40,6 +40,27 @@ class UltimoAdminError(DominioError):
     default_message = "No se puede dejar la plataforma sin administradores activos."
 
 
+class CuentaSuprimidaError(DominioError):
+    """C-27: la cuenta ya no tiene datos personales; no se reactiva ni cambia de rol."""
+
+    code = "CUENTA_SUPRIMIDA"
+    default_message = "Los datos de esta cuenta fueron suprimidos."
+
+
+class VersionConflictoError(DominioError):
+    """C-49: el perfil cambió desde que el cliente lo leyó (If-Match)."""
+
+    code = "VERSION_CONFLICTO"
+    default_message = "El perfil cambió desde la última vez que se consultó."
+
+
+class TokenRecuperacionInvalidoError(DominioError):
+    """C-28: 400, no 401: no es una sesión vencida. El código es el que espera ResetView.vue."""
+
+    code = "TOKEN_INVALIDO"
+    default_message = "El enlace de recuperación no es válido, expiró o ya se usó."
+
+
 class NoEsPrestadorError(DominioError):
     code = "NO_ES_PRESTADOR"
     default_message = "La cuenta no tiene el rol Prestador."
@@ -125,6 +146,13 @@ class PasswordInvalidaError(DominioValidationError):
     default_message = (
         "La contraseña debe tener entre 8 y 128 caracteres, con al menos una letra y un número."
     )
+
+
+class PasswordActualIncorrectaError(DominioValidationError):
+    """C-52: 422, no 401, para que la PWA no lo confunda con una sesión vencida."""
+
+    code = "PASSWORD_ACTUAL_INCORRECTA"
+    default_message = "La contraseña actual no es correcta."
 
 
 class EmailInvalidoError(DominioValidationError):

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.domain.value_objects.enums import Idioma, Rol
 
@@ -30,7 +30,7 @@ class RegistroRequest(BaseModel):
     rol: Literal["Turista", "Prestador"]
     habeas_data_aceptado: bool
     es_mayor_de_edad: bool
-    # Idioma de los correos (C-06). Se edita en el perfil (bloque 6).
+    # Idioma de los correos (C-06). Se edita en PATCH /api/iam/perfil.
     idioma: Literal["es", "en"] = "es"
 
 
@@ -44,6 +44,21 @@ class LoginRequest(BaseModel):
     )
 
     email: str
+    password: str
+
+
+class RecuperarRequest(BaseModel):
+    # str, no EmailStr: un formato inválido responde el mismo 202 que cualquier otro correo.
+    email: str = Field(max_length=320)
+
+
+class RecuperarResponse(BaseModel):
+    detail: str
+
+
+class RestablecerRequest(BaseModel):
+    # Pydantic ignora los campos extra: ResetView.vue también envía "confirmacion".
+    token: str = Field(max_length=512)
     password: str
 
 

@@ -144,6 +144,7 @@ async def test_si_no_se_puede_revocar_no_queda_ni_el_cambio_ni_el_evento(
     assert activo is True
 
 
+@pytest.mark.usefixtures("sin_pendientes_ajenos")
 async def test_el_lote_marca_lo_confirmado_y_corta_al_primer_fallo(
     session_factory: Sesiones,
 ) -> None:
@@ -209,11 +210,10 @@ async def test_dos_relays_no_toman_el_mismo_evento(engine: AsyncEngine) -> None:
     await agregar(sesiones, evento)
     try:
         async with sesiones() as bloqueante, bloqueante.begin():
-            # Un relay tiene el evento tomado...
+            # Un relay tiene los eventos tomados, también los que dejó pendientes el uso normal
+            # de la base de desarrollo: esta prueba hace commits reales y no debe marcarlos...
             await bloqueante.execute(
-                select(Outbox)
-                .where(Outbox.sobre["payload"]["usuario_id"].astext == str(evento.usuario_id))
-                .with_for_update()
+                select(Outbox).where(Outbox.publicado_en.is_(None)).with_for_update()
             )
             # ...y el otro lo salta en lugar de esperarlo o publicarlo dos veces.
             vistos: list[EventoPendiente] = []

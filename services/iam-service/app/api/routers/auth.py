@@ -10,6 +10,9 @@ from app.api.dependencies import (
     get_iniciar_sesion,
     get_registrar_acceso_denegado,
     get_registrar_usuario,
+    get_restablecer_contrasena,
+    get_solicitar_recuperacion,
+    get_tareas_segundo_plano,
     get_token_service,
     get_verificar_acceso,
 )
@@ -18,17 +21,30 @@ from app.api.schemas.auth import (
     JwksResponse,
     LoginRequest,
     LoginResponse,
+    RecuperarRequest,
+    RecuperarResponse,
     RegistroRequest,
+    RestablecerRequest,
     UsuarioPublicoResponse,
 )
 from app.api.schemas.errors import ErrorResponse
+from app.api.segundo_plano import TareasSegundoPlano
 from app.application.use_cases.cerrar_sesion import CerrarSesion
 from app.application.use_cases.iniciar_sesion import IniciarSesion, IniciarSesionCommand
 from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoDenegado
 from app.application.use_cases.registrar_usuario import RegistrarUsuario, RegistrarUsuarioCommand
+from app.application.use_cases.restablecer_contrasena import (
+    RestablecerContrasena,
+    RestablecerContrasenaCommand,
+)
+from app.application.use_cases.solicitar_recuperacion import (
+    SolicitarRecuperacion,
+    SolicitarRecuperacionCommand,
+)
 from app.application.use_cases.verificar_acceso import VerificarAcceso
 from app.domain.exceptions import TokenInvalidoError
 from app.domain.value_objects.enums import Idioma, Rol
+from app.infrastructure.observabilidad.metricas_recuperacion import SOLICITUDES_RECUPERACION
 from app.infrastructure.security.jwt_token_service import JwtTokenService
 
 router = APIRouter(prefix="/api/iam", tags=["auth"])
@@ -192,6 +208,63 @@ async def verificar(
             "Cache-Control": "no-store",
         },
     )
+
+
+# Mismo cuerpo siempre: la respuesta no dice si el correo existe (C-28).
+_RECUPERAR_RESPUESTA = RecuperarResponse(
+    detail="Si el correo está registrado, recibirá un enlace para restablecer la contraseña."
+)
+
+
+async def _recuperar_y_medir(
+    solicitar: SolicitarRecuperacion, cmd: SolicitarRecuperacionCommand
+) -> None:
+    resultado = await solicitar.execute(cmd)
+    SOLICITUDES_RECUPERACION.labels(resultado=resultado).inc()
+
+
+@router.post("/auth/recuperar", status_code=status.HTTP_202_ACCEPTED)
+async def recuperar(
+    body: RecuperarRequest,
+    request: Request,
+    solicitar: Annotated[SolicitarRecuperacion, Depends(get_solicitar_recuperacion)],
+    tareas: Annotated[TareasSegundoPlano, Depends(get_tareas_segundo_plano)],
+) -> RecuperarResponse:
+    """UC3. Todo el trabajo corre después de responder: ni el tiempo ni un 503 revelan si el
+    correo existe (C-50)."""
+    cmd = SolicitarRecuperacionCommand(email=body.email, ip_origen=ip_origen(request))
+    tareas.lanzar(_recuperar_y_medir(solicitar, cmd))
+    return _RECUPERAR_RESPUESTA
+
+
+@router.post(
+    "/auth/restablecer",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Enlace inválido, vencido o ya usado (TOKEN_INVALIDO).",
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": ErrorResponse,
+            "description": "La contraseña no cumple la política (PASSWORD_INVALIDA); el enlace "
+            "sigue sirviendo.",
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_503,
+    },
+)
+async def restablecer(
+    body: RestablecerRequest,
+    request: Request,
+    restablecer_contrasena: Annotated[RestablecerContrasena, Depends(get_restablecer_contrasena)],
+) -> Response:
+    await restablecer_contrasena.execute(
+        RestablecerContrasenaCommand(
+            token=body.token, password=body.password, ip_origen=ip_origen(request)
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/.well-known/jwks.json", response_model=JwksResponse)

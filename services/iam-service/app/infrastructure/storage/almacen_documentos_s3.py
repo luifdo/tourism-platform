@@ -77,6 +77,32 @@ class AlmacenDocumentosS3:
             logger.error("SeaweedFS no guardó el documento: %s", type(exc).__name__)
             raise ServicioNoDisponibleError() from exc
 
+    async def borrar_prefijo(self, prefijo: str) -> int:
+        try:
+            return await asyncio.to_thread(self._borrar_prefijo, prefijo)
+        except (BotoCoreError, ClientError) as exc:
+            logger.error("SeaweedFS no borró los documentos: %s", type(exc).__name__)
+            raise ServicioNoDisponibleError() from exc
+
+    def _borrar_prefijo(self, prefijo: str) -> int:
+        borrados = 0
+        paginas = self._interno.get_paginator("list_objects_v2").paginate(
+            Bucket=self._bucket, Prefix=prefijo
+        )
+        for pagina in paginas:
+            claves = [{"Key": objeto["Key"]} for objeto in pagina.get("Contents", [])]
+            if not claves:
+                continue
+            respuesta = self._interno.delete_objects(
+                Bucket=self._bucket, Delete={"Objects": claves, "Quiet": True}
+            )
+            # delete_objects responde 200 aunque falle algún objeto: los errores van en el cuerpo.
+            if respuesta.get("Errors"):
+                logger.error("SeaweedFS no borró %d objetos", len(respuesta["Errors"]))
+                raise ServicioNoDisponibleError()
+            borrados += len(claves)
+        return borrados
+
     def url_lectura(self, clave: str, tipo_contenido: str, nombre_archivo: str) -> str:
         return self._publico.generate_presigned_url(
             "get_object",

@@ -2,11 +2,13 @@ import asyncio
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
+from sqlalchemy import func, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
 from app.config import get_settings
 from app.infrastructure.persistence.database import build_engine
+from app.infrastructure.persistence.models import Outbox
 
 
 @pytest.fixture
@@ -30,6 +32,18 @@ async def connection() -> AsyncIterator[AsyncConnection]:
         await transaction.rollback()
         await conn.close()
         await engine.dispose()
+
+
+@pytest.fixture
+async def sin_pendientes_ajenos(connection: AsyncConnection) -> None:
+    """Oculta los eventos pendientes que ya había en la base de desarrollo.
+
+    El relay procesa todo lo pendiente: sin esto, un evento dejado por el smoke test o por usar
+    el servicio sin el worker le cambia el resultado a la prueba. Se deshace con la transacción.
+    """
+    await connection.execute(
+        update(Outbox).where(Outbox.publicado_en.is_(None)).values(publicado_en=func.now())
+    )
 
 
 @pytest.fixture(scope="session")

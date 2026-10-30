@@ -61,6 +61,62 @@ async def test_guardar_y_leer_con_la_url_prefirmada(almacen: AlmacenDocumentosS3
     assert clave.split("/")[-1] in urlparse(url).path
 
 
+async def test_borrar_prefijo_solo_borra_ese_usuario_y_es_idempotente(
+    almacen: AlmacenDocumentosS3,
+) -> None:
+    usuario, otro = uuid.uuid4(), uuid.uuid4()
+    propias = [f"{usuario}/RUT/{uuid.uuid4()}.pdf", f"{usuario}/RNT/{uuid.uuid4()}.pdf"]
+    ajena = f"{otro}/RUT/{uuid.uuid4()}.pdf"
+    for clave in [*propias, ajena]:
+        await almacen.guardar(clave, PDF, "application/pdf")
+
+    assert await almacen.borrar_prefijo(f"{usuario}/") == 2
+    assert await almacen.borrar_prefijo(f"{usuario}/") == 0
+
+    async with httpx.AsyncClient(timeout=5) as http:
+        for clave in propias:
+            url = almacen.url_lectura(clave, "application/pdf", "x.pdf")
+            assert (await http.get(url)).status_code == 404
+        url = almacen.url_lectura(ajena, "application/pdf", "x.pdf")
+        assert (await http.get(url)).status_code == 200
+    await almacen.borrar_prefijo(f"{otro}/")
+
+
+async def test_borrar_prefijo_con_mas_de_una_pagina(almacen: AlmacenDocumentosS3) -> None:
+    # Más de lo que devuelve una página con la prueba forzada a un tamaño pequeño.
+    usuario = uuid.uuid4()
+    claves = [f"{usuario}/RUT/{i}.pdf" for i in range(5)]
+    for clave in claves:
+        await almacen.guardar(clave, PDF, "application/pdf")
+    paginador = almacen._interno.get_paginator("list_objects_v2")
+    original = paginador.paginate
+
+    def en_paginas_de_dos(**kwargs):  # type: ignore[no-untyped-def]
+        return original(**kwargs, PaginationConfig={"PageSize": 2})
+
+    paginador.paginate = en_paginas_de_dos  # type: ignore[method-assign]
+    get_paginator = almacen._interno.get_paginator
+    almacen._interno.get_paginator = lambda _: paginador  # type: ignore[method-assign]
+    try:
+        assert await almacen.borrar_prefijo(f"{usuario}/") == 5
+    finally:
+        almacen._interno.get_paginator = get_paginator  # type: ignore[method-assign]
+
+
+async def test_seaweedfs_caido_al_borrar_es_servicio_no_disponible() -> None:
+    caido = AlmacenDocumentosS3(
+        endpoint_interno="http://127.0.0.1:1",
+        endpoint_publico="http://127.0.0.1:1",
+        region="us-east-1",
+        access_key="x",
+        secret_key="y",
+        bucket=BUCKET,
+    )
+
+    with pytest.raises(ServicioNoDisponibleError):
+        await caido.borrar_prefijo("a/")
+
+
 async def test_seaweedfs_caido_es_servicio_no_disponible() -> None:
     caido = AlmacenDocumentosS3(
         endpoint_interno="http://127.0.0.1:1",

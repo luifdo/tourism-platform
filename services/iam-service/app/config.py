@@ -49,6 +49,18 @@ class Settings(BaseSettings):
     s3_secret_key: str = "iam_secret_dev"
     s3_bucket: str = "documentos-verificacion"
 
+    # Correo de recuperación (C-28). En desarrollo, Mailpit de docker-compose.dev.yml; en k3s,
+    # el usuario y la contraseña van en un Secret y smtp_tls=true (STARTTLS).
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_from: str = "Turismo Santa Marta <no-responder@turismo-santamarta.local>"
+    smtp_usuario: str = ""
+    smtp_password: str = ""
+    smtp_tls: bool = False
+    smtp_timeout_seconds: float = 10.0
+    # Base del enlace del correo: de aquí y nunca del Host de la petición, que lo elige el cliente.
+    pwa_url: str = "http://localhost:5173"
+
     jwt_algorithm: str = "RS256"
     jwt_issuer: str = "iam-service"
     jwt_private_key_path: Path = Path("keys/private.pem")

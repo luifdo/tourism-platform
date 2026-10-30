@@ -23,7 +23,11 @@ from app.infrastructure.persistence.outbox_pendiente import SqlAlchemyOutboxPend
 from app.infrastructure.persistence.outbox_repository import SqlAlchemyOutbox
 from app.worker import construir_relay
 
-pytestmark = [pytest.mark.rabbitmq, pytest.mark.db]
+pytestmark = [
+    pytest.mark.rabbitmq,
+    pytest.mark.db,
+    pytest.mark.usefixtures("sin_pendientes_ajenos"),
+]
 
 EXCHANGE = "turismo.eventos"
 

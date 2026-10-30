@@ -71,6 +71,10 @@ class Usuario(Base):
     idioma: Mapped[str] = mapped_column(String(2), nullable=False, server_default=text("'es'"))
     # C-07: razón social del RUT, para `prestador.aprobado`.
     razon_social: Mapped[str | None] = mapped_column(String(200))
+    # C-49: sube con cada edición del perfil; es el ETag de GET /api/iam/perfil.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    # C-10, C-27: no nulo cuando los datos personales de la cuenta se suprimieron.
+    datos_suprimidos_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     creado_en: Mapped[datetime] = timestamptz_now()
     # El trigger usuario_actualizado_en lo refresca en cada UPDATE, venga o no del ORM.
     actualizado_en: Mapped[datetime] = timestamptz_now()

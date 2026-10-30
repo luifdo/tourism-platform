@@ -8,7 +8,11 @@ from app.domain.entities.documento_verificacion import (
     estado_verificacion,
 )
 from app.domain.entities.usuario import Usuario
-from app.domain.exceptions import NoEsPrestadorError, UsuarioNoEncontradoError
+from app.domain.exceptions import (
+    CuentaSuprimidaError,
+    NoEsPrestadorError,
+    UsuarioNoEncontradoError,
+)
 from app.domain.ports.unit_of_work import UnitOfWork
 from app.domain.value_objects.enums import Rol
 
@@ -30,6 +34,8 @@ class RevisionPrestador:
         prestador = await uow.usuarios.find_by_id_para_actualizar(usuario_id)
         if prestador is None:
             raise UsuarioNoEncontradoError()
+        if prestador.suprimido:
+            raise CuentaSuprimidaError()
         if prestador.rol is not Rol.PRESTADOR:
             raise NoEsPrestadorError()
         return prestador

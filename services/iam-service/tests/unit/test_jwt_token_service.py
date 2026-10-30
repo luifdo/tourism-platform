@@ -70,10 +70,33 @@ def test_token_emitido_no_muestra_el_token_en_repr(token_service: JwtTokenServic
 
 def test_token_expirado(llaves_rsa: LlavesRsa) -> None:
     hace_una_hora = datetime.now(UTC) - timedelta(hours=1)
-    viejo = crear_token_service(llaves_rsa, reloj=hace_una_hora).emitir(usuario())
+    u = usuario()
+    viejo = crear_token_service(llaves_rsa, reloj=hace_una_hora).emitir(u)
 
-    with pytest.raises(TokenInvalidoError):
+    with pytest.raises(TokenInvalidoError) as exc_info:
         crear_token_service(llaves_rsa).verificar(viejo.access_token)
+
+    # La firma es válida aunque haya expirado: se conoce al usuario para la bitácora.
+    assert (exc_info.value.motivo, exc_info.value.usuario_id) == ("expirado", u.id)
+    assert exc_info.value.message == "El token no es válido, expiró o fue revocado."
+
+
+def test_token_expirado_con_sub_que_no_es_uuid(
+    llaves_rsa: LlavesRsa, token_service: JwtTokenService
+) -> None:
+    hace_una_hora = datetime.now(UTC) - timedelta(hours=1)
+    claims = {
+        **_claims_validos(token_service),
+        "sub": "no-es-uuid",
+        "iat": hace_una_hora,
+        "exp": hace_una_hora + timedelta(minutes=15),
+    }
+    token = jwt.encode(claims, llaves_rsa.private_pem, algorithm="RS256")
+
+    with pytest.raises(TokenInvalidoError) as exc_info:
+        token_service.verificar(token)
+
+    assert (exc_info.value.motivo, exc_info.value.usuario_id) == ("expirado", None)
 
 
 def test_expiracion_dentro_del_margen_de_10_segundos(llaves_rsa: LlavesRsa) -> None:
@@ -105,8 +128,23 @@ def test_firma_con_otra_llave(token_service: JwtTokenService) -> None:
         reloj=lambda: datetime.now(UTC),
     ).emitir(usuario())
 
-    with pytest.raises(TokenInvalidoError):
+    with pytest.raises(TokenInvalidoError) as exc_info:
         token_service.verificar(ajeno.access_token)
+
+    # Firma no válida: no se puede confiar en el sub.
+    assert (exc_info.value.motivo, exc_info.value.usuario_id) == ("invalido", None)
+
+
+def test_typ_distinto_de_access(llaves_rsa: LlavesRsa, token_service: JwtTokenService) -> None:
+    claims = {**_claims_validos(token_service), "typ": "refresh"}
+    token = jwt.encode(claims, llaves_rsa.private_pem, algorithm="RS256")
+
+    with pytest.raises(TokenInvalidoError) as exc_info:
+        token_service.verificar(token)
+
+    # La firma es válida: se conoce al usuario para la bitácora.
+    assert exc_info.value.motivo == "tipo"
+    assert exc_info.value.usuario_id == uuid.UUID(claims["sub"])
 
 
 def test_otro_emisor(llaves_rsa: LlavesRsa, token_service: JwtTokenService) -> None:
@@ -147,8 +185,10 @@ def test_hs256_firmado_con_la_llave_publica(
 
 @pytest.mark.parametrize("basura", ["", "abc", "a.b.c", "Bearer x.y.z"])
 def test_tokens_mal_formados(token_service: JwtTokenService, basura: str) -> None:
-    with pytest.raises(TokenInvalidoError):
+    with pytest.raises(TokenInvalidoError) as exc_info:
         token_service.verificar(basura)
+
+    assert exc_info.value.motivo == "invalido"
 
 
 def test_jwks_expone_el_kid_y_sirve_para_verificar(token_service: JwtTokenService) -> None:

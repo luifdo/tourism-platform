@@ -11,6 +11,7 @@ from app.domain.exceptions import (
     CuentaInactivaError,
     DominioError,
     DominioValidationError,
+    RolInsuficienteError,
     ServicioNoDisponibleError,
     TokenInvalidoError,
     UsuarioYaExisteError,
@@ -61,6 +62,7 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(CredencialesInvalidasError, no_autenticado)
     app.add_exception_handler(TokenInvalidoError, no_autenticado)
     app.add_exception_handler(CuentaInactivaError, _responder_con(status.HTTP_403_FORBIDDEN))
+    app.add_exception_handler(RolInsuficienteError, _responder_con(status.HTTP_403_FORBIDDEN))
     app.add_exception_handler(
         ServicioNoDisponibleError, _responder_con(status.HTTP_503_SERVICE_UNAVAILABLE)
     )

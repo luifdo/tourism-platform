@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_revocacion, get_unit_of_work
 from app.domain.entities.usuario import Usuario
-from app.domain.value_objects.enums import Rol
+from app.domain.value_objects.enums import ResultadoAuditoria, Rol
 from app.infrastructure.security.argon2_password_hasher import Argon2PasswordHasher
 from app.main import create_app
 from tests.fakes import AHORA, FakeRevocacion, FakeUnitOfWork
@@ -140,11 +140,17 @@ def test_logout_204_y_luego_401(client: TestClient, revocacion: FakeRevocacion) 
 
 
 @pytest.mark.parametrize(
-    "headers",
-    [{}, {"Authorization": "Bearer no-es-un-jwt"}, {"Authorization": "Basic dXNlcjpwYXNz"}],
+    ("headers", "motivo"),
+    [
+        ({}, "sin_token"),
+        ({"Authorization": "Bearer no-es-un-jwt"}, "invalido"),
+        ({"Authorization": "Basic dXNlcjpwYXNz"}, "sin_token"),
+    ],
     ids=["sin_token", "token_basura", "otro_esquema"],
 )
-def test_logout_401(client: TestClient, headers: dict[str, str]) -> None:
+def test_logout_401(
+    client: TestClient, uow: FakeUnitOfWork, headers: dict[str, str], motivo: str
+) -> None:
     response = client.post(LOGOUT, headers=headers)
 
     assert response.status_code == 401
@@ -153,6 +159,30 @@ def test_logout_401(client: TestClient, headers: dict[str, str]) -> None:
         "code": "TOKEN_INVALIDO",
     }
     assert response.headers["WWW-Authenticate"] == "Bearer"
+    # ESC-04: el 401 del logout también queda en la bitácora.
+    [registro] = uow.auditoria.registros
+    assert (registro.accion, registro.resultado) == ("ACCESS_DENIED", ResultadoAuditoria.DENEGADO)
+    assert registro.usuario_id is None
+    assert registro.detalles == {"motivo": motivo, "metodo": "POST", "uri": LOGOUT}
+
+
+def test_logout_con_token_revocado_audita_con_el_usuario(
+    client: TestClient, uow: FakeUnitOfWork
+) -> None:
+    token = login(client)
+    client.post(LOGOUT, headers=bearer(token))
+
+    response = client.post(LOGOUT, headers=bearer(token))
+
+    assert response.status_code == 401
+    usuario = uow.usuarios.por_email["maria.perez@example.com"]
+    acciones = [(r.accion, r.usuario_id) for r in uow.auditoria.registros]
+    assert acciones == [
+        ("LOGIN_SUCCESS", usuario.id),
+        ("LOGOUT", usuario.id),
+        ("ACCESS_DENIED", usuario.id),
+    ]
+    assert uow.auditoria.registros[-1].detalles["motivo"] == "revocado"
 
 
 def test_logout_503_si_valkey_no_responde(client: TestClient, revocacion: FakeRevocacion) -> None:

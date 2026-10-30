@@ -80,10 +80,36 @@ with httpx.Client(base_url=BASE, timeout=10) as c:
     claims = jwt.decode(token, llave.key, algorithms=["RS256"], issuer="iam-service")
     check("Token verificado con la llave del JWKS", claims["rol"] == "Turista" and "jti" in claims)
 
-    # Logout y revocación
+    # ForwardAuth (RF-09) y RBAC
     auth = {"Authorization": f"Bearer {token}"}
+    traefik = {"X-Forwarded-Method": "GET", "X-Forwarded-Uri": "/api/bookings/reservas"}
+    r = c.get("/api/iam/auth/verificar", headers={**auth, **traefik})
+    check(
+        "Verificar con token válido -> 200 + X-Usuario-*",
+        r.status_code == 200
+        and r.headers.get("x-usuario-id") == claims["sub"]
+        and r.headers.get("x-usuario-rol") == "Turista"
+        and r.headers.get("cache-control") == "no-store",
+        f"{r.status_code} {dict(r.headers)}",
+    )
+    r = c.get("/api/iam/auth/verificar", headers=traefik)
+    check(
+        "Verificar sin token -> 401 TOKEN_INVALIDO",
+        r.status_code == 401 and r.json().get("code") == "TOKEN_INVALIDO",
+        r.text,
+    )
+    r = c.get("/api/iam/admin/ping", headers=auth)
+    check(
+        "admin/ping con Turista -> 403 ROL_INSUFICIENTE",
+        r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
+        r.text,
+    )
+
+    # Logout y revocación
     r = c.post("/api/iam/logout", headers=auth)
     check("Logout -> 204", r.status_code == 204, r.text)
+    r = c.get("/api/iam/auth/verificar", headers={**auth, **traefik})
+    check("Verificar después del logout -> 401", r.status_code == 401, r.text)
     r = c.post("/api/iam/logout", headers=auth)
     check("Token revocado -> 401", r.status_code == 401, r.text)
     r = c.post("/api/iam/logout")

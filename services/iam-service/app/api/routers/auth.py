@@ -1,15 +1,19 @@
-import ipaddress
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request, Response, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials
 
 from app.api.dependencies import (
+    auditar_token_rechazado,
+    bearer,
     get_cerrar_sesion,
     get_iniciar_sesion,
+    get_registrar_acceso_denegado,
     get_registrar_usuario,
     get_token_service,
+    get_verificar_acceso,
 )
+from app.api.ip_origen import ip_origen
 from app.api.schemas.auth import (
     JwksResponse,
     LoginRequest,
@@ -20,22 +24,17 @@ from app.api.schemas.auth import (
 from app.api.schemas.errors import ErrorResponse
 from app.application.use_cases.cerrar_sesion import CerrarSesion
 from app.application.use_cases.iniciar_sesion import IniciarSesion, IniciarSesionCommand
+from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoDenegado
 from app.application.use_cases.registrar_usuario import RegistrarUsuario, RegistrarUsuarioCommand
+from app.application.use_cases.verificar_acceso import VerificarAcceso
 from app.domain.exceptions import TokenInvalidoError
 from app.domain.value_objects.enums import Rol
 from app.infrastructure.security.jwt_token_service import JwtTokenService
 
 router = APIRouter(prefix="/api/iam", tags=["auth"])
 
-
-def _ip_origen(request: Request) -> str | None:
-    # uvicorn --proxy-headers ya pone aquí la IP real si viene de un proxy de confianza.
-    host = request.client.host if request.client else None
-    try:
-        return str(ipaddress.ip_address(host)) if host else None
-    except ValueError:
-        # Clientes que no reportan una IP (p. ej. "testclient"); la columna es INET.
-        return None
+# Tope para la URI que se guarda en la bitácora (la envía el cliente a través de Traefik).
+_MAX_URI = 2048
 
 
 @router.post(
@@ -70,7 +69,7 @@ async def register(
             rol=Rol(body.rol),
             habeas_data_aceptado=body.habeas_data_aceptado,
             es_mayor_de_edad=body.es_mayor_de_edad,
-            ip_origen=_ip_origen(request),
+            ip_origen=ip_origen(request),
         )
     )
     return UsuarioPublicoResponse.model_validate(usuario)
@@ -100,9 +99,7 @@ async def login(
     iniciar: Annotated[IniciarSesion, Depends(get_iniciar_sesion)],
 ) -> LoginResponse:
     token, usuario = await iniciar.execute(
-        IniciarSesionCommand(
-            email=body.email, password=body.password, ip_origen=_ip_origen(request)
-        )
+        IniciarSesionCommand(email=body.email, password=body.password, ip_origen=ip_origen(request))
     )
     return LoginResponse(
         access_token=token.access_token,
@@ -111,8 +108,15 @@ async def login(
     )
 
 
-# auto_error=False: sin token respondemos 401 TOKEN_INVALIDO con el formato de error común.
-_bearer = HTTPBearer(auto_error=False)
+_ERROR_TOKEN_401 = {
+    "model": ErrorResponse,
+    "description": "Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO). "
+    "Incluye el encabezado WWW-Authenticate: Bearer.",
+}
+_ERROR_503 = {
+    "model": ErrorResponse,
+    "description": "No se pudo consultar la lista de revocación (SERVICIO_NO_DISPONIBLE).",
+}
 
 
 @router.post(
@@ -120,25 +124,73 @@ _bearer = HTTPBearer(auto_error=False)
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorResponse,
-            "description": "Token ausente, inválido, expirado o ya revocado (TOKEN_INVALIDO).",
-        },
-        status.HTTP_503_SERVICE_UNAVAILABLE: {
-            "model": ErrorResponse,
-            "description": "No se pudo consultar la lista de revocación (SERVICIO_NO_DISPONIBLE).",
-        },
+        status.HTTP_401_UNAUTHORIZED: _ERROR_TOKEN_401,
+        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_503,
     },
 )
 async def logout(
     request: Request,
-    credenciales: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    credenciales: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     cerrar: Annotated[CerrarSesion, Depends(get_cerrar_sesion)],
+    registrar: Annotated[RegistrarAccesoDenegado, Depends(get_registrar_acceso_denegado)],
 ) -> Response:
-    if credenciales is None:
-        raise TokenInvalidoError()
-    await cerrar.execute(credenciales.credentials, _ip_origen(request))
+    try:
+        await cerrar.execute(credenciales.credentials if credenciales else None, ip_origen(request))
+    except TokenInvalidoError as exc:
+        # ESC-04: todo rechazo queda en la bitácora, también el del logout.
+        await auditar_token_rechazado(registrar, exc, request, request.method, request.url.path)
+        raise
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _sin_query(uri: str | None) -> str | None:
+    # El query string puede traer datos personales o tokens: no va a la bitácora.
+    if uri is None:
+        return None
+    return uri.split("?", 1)[0].split("#", 1)[0][:_MAX_URI]
+
+
+@router.get(
+    "/auth/verificar",
+    response_class=Response,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Token válido. Cuerpo vacío; la identidad va en los encabezados "
+            "X-Usuario-Id y X-Usuario-Rol, que Traefik reenvía al servicio de destino.",
+            "content": None,
+        },
+        status.HTTP_401_UNAUTHORIZED: _ERROR_TOKEN_401,
+        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_503,
+    },
+)
+async def verificar(
+    request: Request,
+    credenciales: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    verificar_acceso: Annotated[VerificarAcceso, Depends(get_verificar_acceso)],
+    registrar: Annotated[RegistrarAccesoDenegado, Depends(get_registrar_acceso_denegado)],
+    x_forwarded_method: Annotated[str | None, Header()] = None,
+    x_forwarded_uri: Annotated[str | None, Header()] = None,
+) -> Response:
+    """RF-09: ForwardAuth de Traefik. Pública: la validación es este mismo endpoint.
+
+    No consulta PostgreSQL en el camino feliz; solo escribe en la bitácora al rechazar.
+    """
+    try:
+        claims = await verificar_acceso.execute(credenciales.credentials if credenciales else None)
+    except TokenInvalidoError as exc:
+        # Traefik envía el método y la URI de la petición original en X-Forwarded-*.
+        await auditar_token_rechazado(
+            registrar, exc, request, x_forwarded_method, _sin_query(x_forwarded_uri)
+        )
+        raise
+    return Response(
+        status_code=status.HTTP_200_OK,
+        headers={
+            "X-Usuario-Id": claims.sub,
+            "X-Usuario-Rol": claims.rol.value,
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/.well-known/jwks.json", response_model=JwksResponse)

@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from types import TracebackType
 from typing import Any, Self
 
+from redis.exceptions import ConnectionError as RedisConnectionError
+
 from app.domain.entities.usuario import Usuario
 from app.domain.exceptions import ServicioNoDisponibleError, UsuarioYaExisteError
 from app.domain.value_objects.email import Email
@@ -73,6 +75,7 @@ class FakeRevocacion:
 
     def __init__(self, caida: bool = False) -> None:
         self.revocados: dict[str, datetime] = {}
+        self.revocados_desde: dict[uuid.UUID, int] = {}
         self.caida = caida
 
     async def revocar(self, jti: str, expira_en: datetime) -> None:
@@ -80,10 +83,40 @@ class FakeRevocacion:
             raise ServicioNoDisponibleError()
         self.revocados[jti] = expira_en
 
-    async def esta_revocado(self, jti: str) -> bool:
+    async def revocar_usuario(self, usuario_id: uuid.UUID, desde: datetime) -> None:
         if self.caida:
             raise ServicioNoDisponibleError()
-        return jti in self.revocados
+        self.revocados_desde[usuario_id] = int(desde.timestamp())
+
+    async def esta_revocado_token(self, jti: str, usuario_id: uuid.UUID, iat: datetime) -> bool:
+        if self.caida:
+            raise ServicioNoDisponibleError()
+        desde = self.revocados_desde.get(usuario_id)
+        return jti in self.revocados or (desde is not None and int(iat.timestamp()) <= desde)
+
+
+class FakeRedisClient:
+    """Lo mínimo de redis.asyncio.Redis que usa ValkeyRevocacionTokens (sin expiración real)."""
+
+    def __init__(self, caido: bool = False) -> None:
+        self.valores: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+        self.llamadas_mget = 0
+        self.caido = caido
+
+    def _comprobar(self) -> None:
+        if self.caido:
+            raise RedisConnectionError("Valkey caído")
+
+    async def set(self, key: str, value: Any, ex: int) -> None:
+        self._comprobar()
+        self.valores[key] = str(value)
+        self.ttls[key] = ex
+
+    async def mget(self, *keys: str) -> list[str | None]:
+        self._comprobar()
+        self.llamadas_mget += 1
+        return [self.valores.get(key) for key in keys]
 
 
 @dataclass
@@ -111,16 +144,23 @@ class FakeAuditoriaRepository:
 
 
 class FakeUnitOfWork:
-    """Cuenta commits y rollbacks. Los repositorios persisten entre usos, como una base real."""
+    """Cuenta entradas, commits y rollbacks. Los repositorios persisten entre usos, como una
+    base real. caida=True simula PostgreSQL sin responder al abrir la transacción.
+    """
 
-    def __init__(self) -> None:
+    def __init__(self, caida: bool = False) -> None:
         self.usuarios = FakeUsuarioRepository()
         self.auditoria = FakeAuditoriaRepository()
+        self.entradas = 0
         self.commits = 0
         self.rollbacks = 0
+        self.caida = caida
         self._committed = False
 
     async def __aenter__(self) -> Self:
+        self.entradas += 1
+        if self.caida:
+            raise ConnectionRefusedError("PostgreSQL caído")
         self._committed = False
         return self
 

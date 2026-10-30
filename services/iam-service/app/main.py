@@ -7,7 +7,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.dependencies import get_reloj
 from app.api.errors import register_error_handlers
-from app.api.routers import auth, health
+from app.api.routers import admin, auth, health
 from app.config import Settings, get_settings
 from app.infrastructure.cache.valkey_revocacion import build_valkey_client
 from app.infrastructure.persistence.database import build_engine, build_session_factory
@@ -41,6 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(admin.router)
     Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
     return app
 

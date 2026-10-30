@@ -155,6 +155,46 @@ Requiere `Authorization: Bearer <token>`. Revoca el token (por su `jti`) hasta q
 | 401 | `TOKEN_INVALIDO` | Sin token, token inválido, expirado o ya revocado (con `WWW-Authenticate: Bearer`) |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Valkey no responde |
 
+Cada `401` deja una fila `ACCESS_DENIED` en la bitácora (ver `GET /api/iam/auth/verificar`), con `uri` igual a la ruta del logout.
+
+### `GET /api/iam/auth/verificar` (RF-09, ForwardAuth)
+
+Lo llama el middleware ForwardAuth de Traefik antes de reenviar cada petición protegida. Es público: la validación es el propio endpoint. Lee `Authorization: Bearer <token>` y valida la firma RS256, el emisor, la expiración (con 10 s de margen), `typ = access` y la revocación en Valkey (por `jti` y por usuario). En el camino feliz no consulta PostgreSQL.
+
+| HTTP | `code` | Causa |
+|---|---|---|
+| 200 | — | Token válido. Cuerpo vacío con `X-Usuario-Id` (el `sub`), `X-Usuario-Rol` (`Turista`, `Prestador`, `Entidad` o `Admin`) y `Cache-Control: no-store` |
+| 401 | `TOKEN_INVALIDO` | Sin token, mal formado, firma de otra llave, expirado, `typ` distinto o revocado. Mismo cuerpo siempre, con `WWW-Authenticate: Bearer` |
+| 503 | `SERVICIO_NO_DISPONIBLE` | Valkey no responde (falla cerrado) |
+
+Cada `401` inserta en la bitácora, en una transacción propia, una fila `ACCESS_DENIED` / `Denegado` con:
+
+* `usuario_id`: solo si la firma del token era válida (motivos `expirado`, `tipo` y `revocado`); queda nulo sin token o con una firma que no es válida.
+* `ip_origen`: la IP real del cliente (vía `--proxy-headers`).
+* `detalles`: `{"motivo", "metodo", "uri"}`. El motivo (`sin_token`, `invalido`, `expirado`, `revocado` o `tipo`) es interno y nunca sale en la respuesta. `metodo` y `uri` son los `X-Forwarded-Method` y `X-Forwarded-Uri` que envía Traefik (`null` si faltan); a la `uri` se le quita el query string.
+
+Si la bitácora no se puede escribir, se registra un log de error y la respuesta sigue siendo `401`, nunca `500`.
+
+#### Revocación por usuario
+
+`RevocacionTokens.revocar_usuario(usuario_id, desde)` guarda `iam:revocado-desde:<usuario_id>` con el segundo del cambio y TTL igual a la vida del token más el margen (15 min + 10 s). Un token queda revocado si su `jti` está en `iam:revoked:<jti>` o si su `iat <= revocado-desde`; las dos llaves se leen en un solo `MGET`. Se usa `<=` porque `iat` va en segundos: un token emitido en el mismo segundo del cambio también queda revocado (el usuario vuelve a iniciar sesión). La usarán el cambio de rol y la desactivación de cuentas.
+
+### RBAC en los endpoints del IAM: `require_role`
+
+```python
+@router.get("/admin/usuarios")
+async def listar(claims: Annotated[ClaimsToken, Depends(require_role(Rol.ADMIN))]): ...
+```
+
+`require_role(*roles)` (en `app/api/dependencies.py`) aplica las mismas reglas que `verificar` sobre el Bearer de la petición y devuelve los `ClaimsToken` para que el endpoint sepa quién es el usuario.
+
+| HTTP | `code` | Causa | `detalles` en la bitácora |
+|---|---|---|---|
+| 401 | `TOKEN_INVALIDO` | Igual que en `verificar` | `{"motivo", "metodo", "uri"}` (método y ruta de la propia petición) |
+| 403 | `ROL_INSUFICIENTE` | El rol del token no está en la lista | `{"rol", "requeridos", "metodo", "ruta", "plantilla"}`; `plantilla` es la ruta declarada (p. ej. `/api/iam/admin/usuarios/{id}`) para agrupar por endpoint |
+
+`GET /api/iam/admin/ping` (solo `Admin`, responde `{"ok": true}`) es **temporal**: existe para probar el RBAC hasta que estén los endpoints de administración.
+
 ### `GET /api/iam/.well-known/jwks.json`
 
 Público. Devuelve las llaves públicas (`{"keys": [{"kty", "n", "e", "kid", "use": "sig", "alg": "RS256"}]}`) para que el Gateway y los demás servicios verifiquen los tokens. Responde `200` con `Cache-Control: public, max-age=300`.
@@ -170,9 +210,14 @@ Las llaves JWT (`keys/private.pem`, `keys/public.pem`) no se versionan ni se cop
 
 ## Decisiones y riesgos conocidos
 
-* **Enumeración de cuentas.** El `409` de `POST /register` permite saber si un correo ya está registrado. Se acepta en el prototipo por usabilidad y se mitiga con rate limiting en Traefik (UC32). Alternativa futura: responder siempre `202` y avisar por correo.
-* **IP de origen.** La IP que se guarda en la bitácora solo se toma de `X-Forwarded-For` cuando la petición viene de un proxy listado en `FORWARDED_ALLOW_IPS` (uvicorn con `--proxy-headers`). De cualquier otro cliente se ignora el encabezado y se usa la IP de la conexión.
-* **Tokens de acceso cortos, sin refresh token.** Los tokens RS256 duran 15 minutos y por ahora no hay refresh token: al vencer, el usuario vuelve a iniciar sesión.
-* **Revocación por `jti` en Valkey, falla cerrado.** El logout guarda `iam:revoked:<jti>` con TTL igual al tiempo restante del token. Si Valkey no responde, se devuelve `503`: nunca se asume que un token "no está revocado" sin poder comprobarlo.
-* **El login no revela si un correo existe.** Correo inexistente y contraseña incorrecta devuelven el mismo `401` con el mismo cuerpo, y el primero verifica igual contra un hash Argon2 de relleno para que el tiempo de respuesta sea similar.
-* **Bitácora inmutable y sin borrado de usuarios.** `bitacora_auditoria` es de solo inserción (trigger + `REVOKE`, RNF-10). Los usuarios se desactivan (`activo = false`), no se borran: la FK con `RESTRICT` desde la bitácora lo impide.
+El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](docs/cambios-frente-al-srs.md): ahí se documenta, con su causa, su efecto y su estado, todo lo que este servicio hace distinto, adicional o pendiente frente al SRS, el Plan, el Laboratorio 3 y `contracts/`. Resumen de lo que más afecta al uso del servicio:
+
+* **El Gateway valida con `verificar` y no con el JWKS** (C-16): así se ven la revocación y los 401 quedan en la bitácora (ESC-04).
+* **Identidad con `X-Usuario-Id` y `X-Usuario-Rol`** (C-13). **Riesgo:** en las rutas sin ForwardAuth un cliente puede enviarlos falsos; el gateway debe eliminarlos y ningún servicio debe leerlos en sus rutas públicas.
+* **Cada 401 y 403 escribe una fila `ACCESS_DENIED`** (C-23, C-34, C-35), también en el logout, contenida por el rate limiting de Traefik (C-26). Un fallo de la bitácora nunca convierte el rechazo en un 500.
+* **401 para token inválido y 403 `ROL_INSUFICIENTE` para rol insuficiente** (C-36).
+* **Revocación por `jti` y por usuario en Valkey, fallando cerrado** (C-21, C-22): con Valkey caído, `verificar` y las rutas protegidas responden 503.
+* **IP de origen solo desde proxies de confianza** (C-37).
+* **Tokens de acceso de 15 minutos, sin refresh token** (C-20).
+* **Enumeración de cuentas en el registro** (C-24): el `409` revela si un correo existe; el login no.
+* **Bitácora inmutable y usuarios que se desactivan en lugar de borrarse** (C-01, C-03, C-27).

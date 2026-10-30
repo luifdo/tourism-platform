@@ -1,3 +1,10 @@
+import uuid
+from typing import Literal
+
+# Motivo interno de un 401: va a la bitácora, nunca a la respuesta.
+MotivoRechazo = Literal["sin_token", "invalido", "expirado", "revocado", "tipo"]
+
+
 class DominioError(Exception):
     """Error de negocio. La capa HTTP lo traduce a {"detail": message, "code": code}."""
 
@@ -27,8 +34,29 @@ class CuentaInactivaError(DominioError):
 
 
 class TokenInvalidoError(DominioError):
+    """El cliente siempre recibe el mismo mensaje; motivo y usuario_id son solo para auditar.
+
+    usuario_id solo se conoce si la firma del token fue válida.
+    """
+
     code = "TOKEN_INVALIDO"
     default_message = "El token no es válido, expiró o fue revocado."
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        motivo: MotivoRechazo | None = None,
+        usuario_id: uuid.UUID | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.motivo = motivo
+        self.usuario_id = usuario_id
+
+
+class RolInsuficienteError(DominioError):
+    code = "ROL_INSUFICIENTE"
+    default_message = "No tiene permisos para realizar esta acción."
 
 
 class ServicioNoDisponibleError(DominioError):

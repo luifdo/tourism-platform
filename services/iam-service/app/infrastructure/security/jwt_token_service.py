@@ -58,6 +58,13 @@ def huella_rfc7638(public_key: RSAPublicKey) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
+def _uuid_o_none(valor: object) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(valor))
+    except ValueError:
+        return None
+
+
 class JwtTokenService:
     """Implementa TokenService con PyJWT y RS256."""
 
@@ -116,8 +123,17 @@ class JwtTokenService:
                 leeway=LEEWAY_SEGUNDOS,
                 options={"require": CLAIMS_OBLIGATORIOS},
             )
-            if payload.get("typ") != "access":
-                raise TokenInvalidoError()
+        except jwt.ExpiredSignatureError as exc:
+            raise TokenInvalidoError(
+                motivo="expirado", usuario_id=self._sub_de_expirado(token)
+            ) from exc
+        except jwt.PyJWTError as exc:
+            raise TokenInvalidoError(motivo="invalido") from exc
+
+        # La firma ya es válida: desde aquí se conoce al usuario para la bitácora.
+        if payload.get("typ") != "access":
+            raise TokenInvalidoError(motivo="tipo", usuario_id=_uuid_o_none(payload["sub"]))
+        try:
             return ClaimsToken(
                 sub=payload["sub"],
                 rol=Rol(payload["rol"]),
@@ -125,8 +141,23 @@ class JwtTokenService:
                 iat=datetime.fromtimestamp(payload["iat"], UTC),
                 exp=datetime.fromtimestamp(payload["exp"], UTC),
             )
-        except (jwt.PyJWTError, KeyError, ValueError, TypeError) as exc:
-            raise TokenInvalidoError() from exc
+        except (KeyError, ValueError, TypeError) as exc:
+            raise TokenInvalidoError(motivo="invalido") from exc
+
+    def _sub_de_expirado(self, token: str) -> uuid.UUID | None:
+        # Solo para la bitácora: se omite exp pero la firma y el emisor se siguen verificando,
+        # así que el sub es confiable. Si algo más falla, el intento queda sin usuario.
+        try:
+            payload = jwt.decode(
+                token,
+                self._public_key,
+                algorithms=[ALGORITMO],
+                issuer=self._issuer,
+                options={"verify_exp": False},
+            )
+        except jwt.PyJWTError:
+            return None
+        return _uuid_o_none(payload.get("sub"))
 
     def jwks(self) -> dict[str, list[dict[str, Any]]]:
         jwk = {**_jwk_publica(self._public_key), "kid": self.kid, "use": "sig", "alg": ALGORITMO}

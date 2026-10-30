@@ -1,17 +1,16 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import pytest
-from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.application.use_cases.cerrar_sesion import CerrarSesion
+from app.application.use_cases.verificar_acceso import VerificarAcceso
 from app.domain.entities.usuario import Usuario
 from app.domain.exceptions import ServicioNoDisponibleError, TokenInvalidoError
 from app.domain.value_objects.enums import ResultadoAuditoria, Rol
 from app.infrastructure.cache.valkey_revocacion import ValkeyRevocacionTokens
 from tests.conftest import LlavesRsa, crear_token_service
-from tests.fakes import FakeUnitOfWork
+from tests.fakes import FakeRedisClient, FakeUnitOfWork
 
 AHORA = datetime.now(UTC).replace(microsecond=0)
 USUARIO = Usuario(
@@ -25,38 +24,26 @@ USUARIO = Usuario(
 )
 
 
-class FakeRedisClient:
-    """Lo mínimo de redis.asyncio.Redis que usa ValkeyRevocacionTokens."""
-
-    def __init__(self, caido: bool = False) -> None:
-        self.ttls: dict[str, int] = {}
-        self.caido = caido
-
-    async def set(self, key: str, value: Any, ex: int) -> None:
-        if self.caido:
-            raise RedisConnectionError("Valkey caído")
-        self.ttls[key] = ex
-
-    async def exists(self, key: str) -> int:
-        if self.caido:
-            raise RedisConnectionError("Valkey caído")
-        return int(key in self.ttls)
-
-
 @pytest.fixture
 def uow() -> FakeUnitOfWork:
     return FakeUnitOfWork()
+
+
+def revocacion(redis: FakeRedisClient, segundos_despues: int = 60) -> ValkeyRevocacionTokens:
+    return ValkeyRevocacionTokens(
+        redis,  # type: ignore[arg-type]
+        reloj=lambda: AHORA + timedelta(seconds=segundos_despues),
+        ttl_revocado_desde=910,
+    )
 
 
 def cerrar(
     llaves: LlavesRsa, uow: FakeUnitOfWork, redis: FakeRedisClient, segundos_despues: int = 60
 ) -> CerrarSesion:
     # La revocación ocurre `segundos_despues` de emitido el token.
-    revocacion = ValkeyRevocacionTokens(
-        redis,  # type: ignore[arg-type]
-        reloj=lambda: AHORA + timedelta(seconds=segundos_despues),
-    )
-    return CerrarSesion(uow=uow, tokens=crear_token_service(llaves), revocacion=revocacion)
+    rev = revocacion(redis, segundos_despues)
+    verificar = VerificarAcceso(tokens=crear_token_service(llaves), revocacion=rev)
+    return CerrarSesion(uow=uow, verificar=verificar, revocacion=rev)
 
 
 def token(llaves: LlavesRsa) -> tuple[str, str]:
@@ -79,11 +66,12 @@ async def test_revoca_con_el_ttl_restante(llaves_rsa: LlavesRsa, uow: FakeUnitOf
     assert registro.ip_origen == "190.0.0.1"
 
 
-async def test_ttl_minimo_de_un_segundo(llaves_rsa: LlavesRsa) -> None:
+async def test_ttl_minimo_de_un_segundo() -> None:
     redis = FakeRedisClient()
-    revocacion = ValkeyRevocacionTokens(redis, reloj=lambda: AHORA)  # type: ignore[arg-type]
 
-    await revocacion.revocar("jti-ya-vencido", expira_en=AHORA - timedelta(seconds=30))
+    await revocacion(redis, segundos_despues=0).revocar(
+        "jti-ya-vencido", expira_en=AHORA - timedelta(seconds=30)
+    )
 
     assert redis.ttls == {"iam:revoked:jti-ya-vencido": 1}
 
@@ -94,18 +82,36 @@ async def test_token_ya_revocado(llaves_rsa: LlavesRsa, uow: FakeUnitOfWork) -> 
     caso = cerrar(llaves_rsa, uow, redis)
     await caso.execute(access_token, None)
 
-    with pytest.raises(TokenInvalidoError):
+    with pytest.raises(TokenInvalidoError) as exc_info:
         await caso.execute(access_token, None)
 
+    assert exc_info.value.motivo == "revocado"
     assert [r.accion for r in uow.auditoria.registros] == ["LOGOUT"]
 
 
-async def test_token_invalido(llaves_rsa: LlavesRsa, uow: FakeUnitOfWork) -> None:
+async def test_token_revocado_por_usuario(llaves_rsa: LlavesRsa, uow: FakeUnitOfWork) -> None:
+    redis = FakeRedisClient()
+    access_token, _ = token(llaves_rsa)
+    assert USUARIO.id is not None
+    await revocacion(redis).revocar_usuario(USUARIO.id, desde=AHORA)
+
+    with pytest.raises(TokenInvalidoError) as exc_info:
+        await cerrar(llaves_rsa, uow, redis).execute(access_token, None)
+
+    assert (exc_info.value.motivo, exc_info.value.usuario_id) == ("revocado", USUARIO.id)
+    assert uow.auditoria.registros == []
+
+
+@pytest.mark.parametrize(("valor", "motivo"), [(None, "sin_token"), ("no-es-un-token", "invalido")])
+async def test_token_invalido(
+    llaves_rsa: LlavesRsa, uow: FakeUnitOfWork, valor: str | None, motivo: str
+) -> None:
     redis = FakeRedisClient()
 
-    with pytest.raises(TokenInvalidoError):
-        await cerrar(llaves_rsa, uow, redis).execute("no-es-un-token", None)
+    with pytest.raises(TokenInvalidoError) as exc_info:
+        await cerrar(llaves_rsa, uow, redis).execute(valor, None)
 
+    assert exc_info.value.motivo == motivo
     assert redis.ttls == {}
     assert uow.auditoria.registros == []
 

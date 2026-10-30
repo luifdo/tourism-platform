@@ -18,7 +18,11 @@ scrape_configs:
     static_configs:
       - targets: ["catalog-worker:9102"]
 
+  - job_name: booking-service
+    static_configs:
+      - targets: ["booking-service:8003"]
+
   # Agregar un job por microservicio cuando exponga métricas, por ejemplo:
-  # - job_name: booking-service
+  # - job_name: review-service
   #   static_configs:
-  #     - targets: ["booking-service:8003"]
+  #     - targets: ["review-service:8004"]

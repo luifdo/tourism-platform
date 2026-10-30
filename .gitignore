@@ -222,6 +222,12 @@ node_modules/
 target/
 *.class
 .gradle/
+<<<<<<< HEAD
+# Secrets: RS256 keys and local env files
+*.pem
+.env
+=======
 
 # Secretos de Kubernetes que genera Kustomize (se sube solo el .example)
 secretos.env
+>>>>>>> origin/develop

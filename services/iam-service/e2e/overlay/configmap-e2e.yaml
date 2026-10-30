@@ -1,0 +1,13 @@
+# ENTORNO DE PRUEBA, NO DE PRODUCCIÓN.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iam-config
+data:
+  ENVIRONMENT: e2e
+  S3_ENDPOINT_PUBLICO: http://documentos.localhost:18080
+  SMTP_HOST: mailpit.turismo-datos.svc
+  SMTP_PORT: "1025"
+  SMTP_TLS: "false"
+  SMTP_FROM: Turismo Santa Marta <no-responder@turismo-santamarta.local>
+  PWA_URL: http://localhost:5173

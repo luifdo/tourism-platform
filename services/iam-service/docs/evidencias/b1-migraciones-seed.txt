@@ -1,0 +1,12 @@
+# B1: seed_admin idempotente y bucket, tras alembic upgrade head desde base vacia (ver alembic current)
+# Fecha: 2026-10-30 11:34 UTC
+# Commit: 3c09bac + cambios locales del bloque 8
+# Comando: bash -c uv run alembic current && uv run python -m scripts.seed_admin && uv run python -m scripts.crear_bucket
+
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+d4a9e2c7b1f3 (head)
+Ya existe un usuario con el email admin.verif@example.com; no se hizo ningún cambio.
+Bucket documentos-verificacion ya existía.
+
+# Codigo de salida: 0

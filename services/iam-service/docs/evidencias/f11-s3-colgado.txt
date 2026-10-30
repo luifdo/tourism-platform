@@ -1,0 +1,15 @@
+# F-11: SeaweedFS en pausa (docker pause), imagen real en solo lectura, 9 cargas y logins en paralelo
+# Fecha: 2026-10-30 15:06 UTC
+# Commit: 3c09bac + cambios locales de los arreglos previos al PR
+# Comando: uv run python <scratchpad>/s3_colgado.py <contenedor de SeaweedFS>
+
+Carga con SeaweedFS funcionando: 201
+SeaweedFS en pausa
+Cargas simultaneas: 9
+Codigos: [(503, 'SERVICIO_NO_DISPONIBLE')]
+Duracion maxima de una carga: 9.4 s
+Logins durante la pausa: 11; codigos: [200]; el mas lento: 0.31 s
+SeaweedFS reanudado
+Carga tras reanudar: 201
+
+# Codigo de salida: 0

@@ -1,0 +1,122 @@
+# API REST y ForwardAuth de toda la plataforma. Antes de atender, el initContainer aplica las
+# migraciones; si varios pods arrancan a la vez, el candado de migrations/env.py hace que esperen
+# al primero (C-55). Las migraciones deben ser compatibles hacia atrás: durante el rolling update
+# los pods viejos siguen atendiendo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam-service
+  labels:
+    app.kubernetes.io/name: iam-service
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2 # el HPA lo ajusta entre 2 y 4
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iam-service
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iam-service
+        app.kubernetes.io/component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: /metrics
+    spec:
+      automountServiceAccountToken: false
+      # preStop (5 s) + peticiones en curso + hasta 15 s de tareas en segundo plano (C-50).
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000 # sin esto, el usuario 1000 no puede leer las llaves con modo 0440
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migraciones
+          image: iam-service
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: iam-config
+            - secretRef:
+                name: iam-secretos
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 1000m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: api
+          image: iam-service
+          ports:
+            - name: http
+              containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: iam-config
+            - secretRef:
+                name: iam-secretos
+          resources:
+            requests: { cpu: 100m, memory: 256Mi } # el HPA calcula el 70 % sobre este request
+            # 1 Gi: la app, los hashes Argon2 de 64 MiB por cupo (C-53) y cargas de hasta 5 MB.
+            limits: { cpu: 1000m, memory: 1Gi }
+          # Mientras la app arranca no corren las otras sondas: hasta 90 s en un nodo lento.
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 2
+            failureThreshold: 45
+            timeoutSeconds: 2
+          # /health/live no depende de PostgreSQL ni de Valkey (C-32). Una réplica caída sale del
+          # enrutamiento en 4 s y una colgada en 5 s (ESC-01): con timeoutSeconds 2 serían 6 s.
+          # Medido con 40 logins simultáneos y 1 CPU: nunca dos fallos seguidos (C-53).
+          readinessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 2
+            failureThreshold: 2
+            timeoutSeconds: 1
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              # Da tiempo a que Traefik saque el pod de sus endpoints antes de apagarlo.
+              exec:
+                command: ["python", "-c", "import time; time.sleep(5)"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: llaves-jwt
+              mountPath: /srv/keys # keys/private.pem y keys/public.pem, relativas a WORKDIR
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            # Las cargas de más de 1 MB pasan por /tmp; pasarse del límite expulsa el pod.
+            sizeLimit: 256Mi
+        - name: llaves-jwt
+          secret:
+            secretName: iam-jwt-keys
+            defaultMode: 0440

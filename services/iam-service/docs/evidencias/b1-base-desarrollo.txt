@@ -1,0 +1,11 @@
+# Conteo de la base de desarrollo ANTES (solo lectura)
+# Fecha: 2026-10-30 11:33 UTC
+# Commit: 3c09bac + cambios locales del bloque 8
+usuario|26
+bitacora_auditoria|688
+outbox|4
+
+# Conteo DESPUES (solo lectura), 2026-10-30 13:05 UTC
+usuario|26
+bitacora_auditoria|688
+outbox|4

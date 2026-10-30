@@ -10,7 +10,26 @@ scrape_configs:
     static_configs:
       - targets: ["rabbitmq:15692"]
 
+  - job_name: catalog-service
+    static_configs:
+      - targets: ["catalog-service:8002"]
+
+  - job_name: catalog-worker
+    static_configs:
+      - targets: ["catalog-worker:9102"]
+
+  - job_name: review-service
+    static_configs:
+      - targets: ["review-service:8004"]
+
+  - job_name: review-worker
+    static_configs:
+      - targets: ["review-worker:9104"]
+  - job_name: booking-service
+    static_configs:
+      - targets: ["booking-service:8003"]
+
   # Agregar un job por microservicio cuando exponga métricas, por ejemplo:
-  # - job_name: booking-service
+  # - job_name: review-service
   #   static_configs:
-  #     - targets: ["booking-service:8003"]
+  #     - targets: ["review-service:8004"]

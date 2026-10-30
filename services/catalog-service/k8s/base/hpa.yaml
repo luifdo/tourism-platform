@@ -1,0 +1,24 @@
+# Plan §7.3: catalog es el servicio más presionado en temporada alta (ESC-02, ESC-08).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: catalog-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: catalog-service
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0 # en un pico sube de una vez
+    scaleDown:
+      stabilizationWindowSeconds: 300 # baja despacio para no oscilar

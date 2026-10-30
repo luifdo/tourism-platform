@@ -1,0 +1,53 @@
+openapi: 3.0.3
+info:
+  title: iam-service — API interna de contacto (Módulo 1)
+  version: 0.1.0
+  description: |
+    **Propuesto por catalog-service; lo implementa iam-service** (@nievesita).
+
+    Datos de contacto de un usuario para los correos transaccionales de catalog (UC36 y
+    avisos de reservas). Los eventos solo llevan identificadores y los datos personales no
+    viajan por el bus (Plan §4.2): el consumidor los pide aquí al momento de enviar y no los
+    guarda.
+
+    * **Ruta interna:** no pasa por Traefik ni lleva `/api`. La NetworkPolicy solo permite
+      llegar desde catalog-service (Plan §4.1, excepción de contacto).
+    * Lo llama el worker de catalog, no la API: si iam no responde, el correo se reintenta
+      (1 s, 5 s, 25 s) y luego va a la DLQ; los turistas no se ven afectados.
+servers:
+  - url: http://iam-service:8001
+    description: Dentro del clúster (Service de Kubernetes)
+
+paths:
+  /internal/usuarios/{usuario_id}/contacto:
+    get:
+      summary: Datos de contacto de un usuario
+      operationId: contactoUsuario
+      parameters:
+        - name: usuario_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Contacto del usuario.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContactoUsuario' }
+        '404':
+          description: El usuario no existe o fue eliminado (catalog no envía el correo).
+
+components:
+  schemas:
+    ContactoUsuario:
+      type: object
+      required: [usuario_id, nombre, email]
+      properties:
+        usuario_id: { type: string, format: uuid }
+        nombre: { type: string, description: Nombre para el saludo del correo. }
+        email: { type: string, format: email }
+        idioma:
+          type: string
+          enum: [es, en]
+          default: es
+          description: Idioma preferido del usuario para sus correos.

@@ -366,7 +366,7 @@ A continuación se detalla la especificación completa de los requerimientos fun
 | **RF-11** | Enviar notificaciones por correo de confirmación/cancelación de reservas. | **Should** | Módulo 2 (consume eventos de reservas) | Turista, Prestador | Tras confirmarse la reserva (UC20), se despacha un correo formateado en menos de 10s. |
 | **RF-12** | Permitir a prestadores adjuntar documentos de verificación legal (RNT, RUT). | **Should** | Módulo 1: Seguridad & IAM | Prestador, Admin | El prestador sube archivos PDF/imagen que son auditados por el administrador antes de publicar. |
 | **RF-13** | Exportar reportes analíticos e indicadores en formatos estándar (CSV / PDF). | **Could** | Módulo 2: Catálogo, GIS & Destino | Entidad | Descarga funcional de archivos estructurados con métricas del destino. |
-| **RF-14** | Calificar y reseñar servicios utilizados, con respuesta pública del prestador y moderación del contenido reportado. | **Should** | Módulo 4: Reseñas & Moderación | Turista, Prestador, Admin | Solo un turista con una reserva `Finalizada` del servicio puede reseñarlo; una reseña reportada pasa a `En_Revision` hasta la decisión del Administrador. |
+| **RF-14** | Calificar y reseñar servicios utilizados, con respuesta pública del prestador y moderación del contenido reportado. | **Should** | Módulo 4: Reseñas & Moderación | Turista, Prestador, Admin | Solo un turista con una reserva `Finalizada` del servicio puede reseñarlo (una reseña por turista y servicio); un reporte no oculta la reseña: entra en la cola del Administrador y pasa a `En_Revision` al tercer reporte o si la reporta el prestador dueño del servicio, hasta la decisión del Administrador. |
 
 ---
 
@@ -421,7 +421,7 @@ Las relaciones siguen la semántica UML: `«include»` indica que el caso base *
 | **UC36** | Despachar notificación de confirmación por correo | Sistema / SysExt | Disparado por UC20 (evento `reserva.confirmada`) | Módulo 2: Catálogo, GIS & Destino |
 | **UC37** | Cargar documentos de verificación (RNT, RUT) | Prestador | Precondición de UC28 | Módulo 1: Seguridad & IAM |
 | **UC38** | Exportar reportes analíticos (CSV / PDF) | Entidad | `<<extend>>` UC25 | Módulo 2: Catálogo, GIS & Destino |
-| **UC39** | Reportar reseña inapropiada | Turista, Prestador | Activa la revisión de UC29; la reseña pasa a `En_Revision` | Módulo 4: Reseñas & Moderación |
+| **UC39** | Reportar reseña inapropiada | Turista, Prestador | Activa la revisión de UC29; la reseña pasa a `En_Revision` al tercer reporte o si la reporta el prestador dueño | Módulo 4: Reseñas & Moderación |
 
 > [!NOTE]
 > Los códigos UC34 y UC35 (pagos en línea) quedan reservados y fuera de alcance por la decisión de la Sección 1.2.1.
@@ -911,7 +911,7 @@ Conforme a las directrices de verificación del estándar ISO/IEC/IEEE 29148:201
 | **RF-11** | Funcional | **Prueba** | Despacho asíncrono y entrega efectiva de correo MIME multipart tras la confirmación de reserva (UC20) en un tiempo $\le 10$ segundos. |
 | **RF-12** | Funcional | **Demostración** | Carga de archivos PDF/imagen (RNT y RUT) en almacenamiento seguro y transición de estado en panel administrativo de validación. |
 | **RF-13** | Funcional | **Prueba** | Generación y descarga íntegra de archivos estructurados en formato CSV y PDF con métricas analíticas del destino sin errores de serialización. |
-| **RF-14** | Funcional | **Prueba** | Un turista sin reserva `Finalizada` del servicio recibe HTTP 403 al intentar reseñarlo; con reserva finalizada la reseña queda `Publicado`; una reseña reportada (UC39) pasa a `En_Revision` y solo el Administrador la publica u oculta. |
+| **RF-14** | Funcional | **Prueba** | Un turista sin reserva `Finalizada` del servicio recibe HTTP 403 al intentar reseñarlo; con reserva finalizada la reseña queda `Publicado`; con uno o dos reportes de turistas (UC39) la reseña sigue visible y aparece en la cola del Administrador; al tercer reporte o con el reporte del prestador dueño pasa a `En_Revision`, y solo el Administrador la publica u oculta. |
 | **RNF-01** a **RNF-13** | No Funcional | **Prueba / Análisis** | Verificación empírica contra los escenarios formales de calidad (ESC-01 a ESC-09), pruebas de carga con k6 ($p95 < 2.0$s), auditorías WCAG 2.1 AA, despliegue reproducible en k3s y pruebas de la PWA en modo sin conexión. |
 
 ---

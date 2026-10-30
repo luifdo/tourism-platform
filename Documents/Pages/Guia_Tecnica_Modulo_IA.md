@@ -1,6 +1,6 @@
 # Guía Técnica del Módulo 5: IA & Recomendación
 
-**Chatbot turístico con Gemini y tools** · Plataforma Digital de Turismo, Santa Marta
+**Chatbot turístico con Groq y tools** · Plataforma Digital de Turismo, Santa Marta
 
 > Documento de trabajo interno del equipo (guion de implementación). El nivel de detalle de arquitectura vive en el [Plan de Implementación](./Plan_de_Implementacion.md) y los requerimientos en el [SRS](./Requirements_docIEEE.md); si algo cambia, se actualiza primero allí.
 
@@ -8,7 +8,7 @@
 
 Ofrecer al turista un **chatbot** al que puede consultar en lenguaje natural (español e inglés) sobre la oferta turística de Santa Marta y recibir recomendaciones personalizadas y explicables (RF-06, UC14, RNF-08).
 
-El chatbot usa la **API de Gemini** como modelo de lenguaje. Cuando para responder necesita información de otros sistemas de la plataforma (catálogo y analítica, reservas, reseñas), el modelo la solicita mediante **tools** y el servicio las ejecuta. No se entrena ni se mantiene un modelo propio.
+El chatbot usa la **API de Groq** como proveedor del modelo de lenguaje (reemplaza a Gemini, el proveedor previsto al inicio, por los problemas que tuvo el equipo al integrar su API). Cuando para responder necesita información de otros sistemas de la plataforma (catálogo y analítica, reservas, reseñas), el modelo la solicita mediante **tools** y el servicio las ejecuta. No se entrena ni se mantiene un modelo propio.
 
 ## 2. Principios
 
@@ -18,8 +18,8 @@ El chatbot usa la **API de Gemini** como modelo de lenguaje. Cuando para respond
 * **Acotado al turismo.** Responde sobre turismo en Santa Marta y sobre la plataforma; rechaza con cortesía lo demás.
 * **Explicable (RNF-08).** Cada recomendación va acompañada de su justificación basada en los datos consultados.
 * **Identidad controlada por el servidor.** El `turista_id` sale del token JWT; el modelo nunca lo decide.
-* **Modelo configurable.** El nombre del modelo de Gemini se define por variable de entorno, de modo que se puede cambiar sin tocar el código.
-* **Desacoplado.** Si Gemini no está disponible, solo falla el chatbot; el resto de la plataforma sigue funcionando (ESC-01).
+* **Modelo y proveedor configurables.** El modelo de Groq se define por variable de entorno, y el proveedor se conecta mediante una interfaz propia: cambiar de modelo o de proveedor no toca el dominio ni los casos de uso.
+* **Desacoplado.** Si Groq no está disponible, solo falla el chatbot; el resto de la plataforma sigue funcionando (ESC-01).
 
 ## 3. Alcance
 
@@ -36,16 +36,16 @@ El chatbot usa la **API de Gemini** como modelo de lenguaje. Cuando para respond
 
 * **Lenguaje y framework:** Python 3.12 con FastAPI, igual que los demás servicios, con la estructura hexagonal de la plantilla del monorepo.
 * **Despliegue:** Contenedor en Kubernetes (k3s) con al menos una réplica siempre activa (RNF-12) y HPA para escalar con la demanda.
-* **Modelo:** API de Gemini, usando su capacidad de llamada a funciones (function calling). La clave se guarda en una variable de entorno y nunca en el repositorio.
+* **Modelo:** API de Groq (SDK `groq`, compatible con la API de OpenAI), usando su capacidad de llamada a funciones (tools) con un modelo que la admita. La clave se guarda en una variable de entorno y nunca en el repositorio.
 * **Interacción:** el turista envía un mensaje por el API Gateway y recibe la respuesta; la respuesta puede entregarse en streaming para que el texto aparezca mientras se genera.
 * **Sesión:** la conversación reciente (últimos 10 mensajes) se guarda en Valkey con un TTL de 24 horas.
 * **Registro:** las recomendaciones entregadas se guardan en la tabla `recomendacion_log` de la base propia `recommendation_db` (PostgreSQL), con la justificación, las herramientas usadas y la versión del modelo (RNF-08). No se guarda el texto completo de la conversación.
 * **Endpoints:** `POST /api/recommendations/chat` para enviar un mensaje y `GET /health` para el estado del servicio.
-* **Configuración:** `GEMINI_API_KEY` y `GEMINI_MODEL` (como `Secret` y `ConfigMap` de Kubernetes), `VALKEY_URL`, `DB_URL` y las URLs internas de catalog, booking y review.
+* **Configuración:** `LLM_PROVIDER=groq`, `LLM_API_KEY` y `LLM_MODEL` (la clave como `Secret` y el modelo como `ConfigMap` de Kubernetes), `VALKEY_URL`, `DB_URL` y las URLs internas de catalog, booking y review.
 
 ## 5. Tools
 
-Las tools son funciones que el servicio declara a Gemini y ejecuta cuando el modelo las solicita. Todas son de solo lectura y consumen los contratos REST de cada servicio.
+Las tools son funciones que el servicio declara al modelo y ejecuta cuando el modelo las solicita. Todas son de solo lectura y consumen los contratos REST de cada servicio.
 
 | Tool | Servicio | Caso de uso | Cuándo la usa el modelo |
 |---|---|---|---|
@@ -92,8 +92,8 @@ Los resultados de las tools y los mensajes del turista se tratan como datos, nun
 
 * **Sostenibilidad:** el chatbot prioriza destinos con baja presión de capacidad de carga y evita zonas con alertas oficiales (§2.4.4).
 * **Equidad (§2.4.6):** las instrucciones del modelo prohíben favorecer a un operador sobre otro; se verifica con pruebas.
-* **Privacidad:** la conversación y los resultados de las tools viajan a la API de Gemini, un servicio externo. Por eso al modelo se le envía el mínimo necesario: nunca nombre, correo ni documento del turista, solo el contenido de la conversación y los datos públicos del catálogo. Se deben revisar las condiciones de uso de datos del plan de Gemini que se utilice antes de enviar información de turistas reales (Ley 1581).
-* **Uso del servicio externo:** la API de Gemini es la única dependencia propietaria del sistema; el SRS (§2.4.1, §3.6.4) y el ADR-010 recogen esta excepción a la prioridad de software libre.
+* **Privacidad:** la conversación y los resultados de las tools viajan a la API de Groq, un servicio externo. Por eso al modelo se le envía el mínimo necesario: nunca nombre, correo ni documento del turista, solo el contenido de la conversación y los datos públicos del catálogo. Se deben revisar las condiciones de uso y retención de datos del plan de Groq que se utilice antes de enviar información de turistas reales (Ley 1581).
+* **Uso del servicio externo:** la API de Groq es la única dependencia propietaria del sistema (aunque sirve modelos abiertos); el SRS (§2.4.1, §3.6.4) y el ADR-010 recogen esta excepción a la prioridad de software libre.
 
 ## 8. Pruebas
 
@@ -102,7 +102,7 @@ Los resultados de las tools y los mensajes del turista se tratan como datos, nun
 * Pruebas de seguridad: intentos de inyección de instrucciones, de pedir datos de otro turista, de salirse del tema y de extraer las instrucciones internas.
 * Pruebas de equidad: el mismo perfil no debe favorecer sistemáticamente a un operador.
 * Pruebas en español e inglés.
-* Pruebas de integración con `pytest`, con la API de Gemini y los demás servicios simulados.
+* Pruebas de integración con `pytest`, con la API de Groq y los demás servicios simulados.
 * Datos sintéticos solo para probar el chatbot, no para entrenar.
 
 ## 9. Qué se necesita de los demás módulos

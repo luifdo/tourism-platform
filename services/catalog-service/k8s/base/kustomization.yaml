@@ -1,0 +1,25 @@
+# Manifiestos de catalog-service (Plan §7.2-7.4). La base no trae el Secret `catalog-secretos`:
+# cada entorno lo genera en su overlay desde un archivo que no se sube (ver overlays/local).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: turismo-app
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: turismo-santa-marta
+    includeSelectors: false
+
+resources:
+  - configmap.yaml
+  - deployment-api.yaml
+  - deployment-worker.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: catalog-service
+    newName: ghcr.io/turismo-santa-marta/catalog-service
+    newTag: latest # CI la cambia por el commit: kustomize edit set image catalog-service=...:<sha>

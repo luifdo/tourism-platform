@@ -1,0 +1,18 @@
+# Configuración que no es secreta. Las credenciales van en el Secret `catalog-secretos`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-config
+data:
+  ENVIRONMENT: production
+  LOG_LEVEL: INFO
+  EVENTS_EXCHANGE: turismo.eventos
+  IAM_URL_INTERNA: http://iam-service:8001
+  SMTP_HOST: smtp.turismo-santamarta.gov.co
+  SMTP_PORT: "587"
+  SMTP_STARTTLS: "true"
+  SMTP_REMITENTE: Turismo Santa Marta <no-responder@turismo-santamarta.gov.co>
+  S3_ENDPOINT_PUBLICO: https://imagenes.turismo-santamarta.gov.co
+  S3_BUCKET_IMAGENES: catalogo-imagenes
+  IMAGENES_URL_PUBLICA: https://imagenes.turismo-santamarta.gov.co/catalogo-imagenes
+  WORKER_METRICS_PORT: "9102"

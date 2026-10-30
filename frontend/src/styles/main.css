@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/* Tokens de DESIGN.md (identidad costera) */
+@theme {
+  --color-navy: #006798;
+  --color-navy-deep: #0E3064;
+  --color-navy-darkest: #021F39;
+  --color-blue: #0189C7;
+  --color-teal: #5D9A92;
+  --color-teal-hover: #55A699;
+  --color-sand: #C7A781;
+  --color-cream: #FAF6ED;
+  --color-ink: #1A1A2E;
+  --color-ink-control: #294C5B;
+  --color-muted: #536F79;
+  --color-border-input: #D5DFDE;
+  --color-ok: #009767;
+  --color-ok-bg: #ECFDF5;
+  --color-warn: #F99C00;
+  --color-warn-bg: #FFFBEB;
+  --color-danger: #E40014;
+  --color-danger-bg: #FEF2F2;
+
+  --font-sans: 'Geist', 'Geist Fallback', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback', monospace;
+
+  --radius-card: 16px;
+  --radius-panel: 24px;
+
+  /* Sombras teñidas de azul océano, nunca negro puro */
+  --shadow-card: 0 18px 40px -30px rgba(0, 103, 152, 0.55);
+  --shadow-elevated: 0 24px 60px -34px rgba(0, 103, 152, 0.55);
+  --shadow-cta: 0 18px 36px -18px rgba(0, 103, 152, 0.65);
+}
+
+:root { --nav-h: 76px; --ticker-h: 34px; }
+html { scroll-behavior: smooth; scroll-padding-top: var(--nav-h); }
+/* Como app instalada: sin parpadeo al tocar, sin rebote al final de la página y respeta el notch */
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+body { overscroll-behavior-y: none; }
+button, a, input, select, textarea { touch-action: manipulation; }
+
+/* El hero llena la pantalla bajo la barra fija (svh: sin saltos cuando el navegador móvil esconde su barra) */
+.hero-pin {
+  position: sticky;
+  top: var(--nav-h);
+  min-height: 540px;
+  height: calc(100vh - var(--nav-h));
+  height: calc(100svh - var(--nav-h));
+}
+
+body { margin: 0; font-family: var(--font-sans); color: var(--color-ink); background: #fff; }
+.kicker { font-family: var(--font-mono); font-weight: 600; font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: var(--color-teal); }
+.glass { background: rgba(255,255,255,.85); backdrop-filter: blur(8px); border: 1px solid rgba(0,103,152,.1); }
+:focus-visible { outline: 3px solid var(--color-teal); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

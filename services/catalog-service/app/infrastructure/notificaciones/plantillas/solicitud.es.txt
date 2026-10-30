@@ -1,0 +1,9 @@
+Hola, {{ nombre }}:
+
+Tienes una nueva solicitud de reserva.
+
+Servicio: {{ servicio }}
+Fecha: {{ fecha }}
+Personas: {{ personas }}
+
+Tienes 48 horas para confirmarla o rechazarla desde tu panel. Si no respondes, la solicitud vence sola y se avisa al turista.

@@ -78,8 +78,9 @@ paths:
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409':
           description: |
-            `CUPOS_INSUFICIENTES`, `DIA_NO_DISPONIBLE` o `RESERVA_DUPLICADA`
-            (ya existe una reserva activa del turista para ese servicio y fecha).
+            `CUPOS_INSUFICIENTES`, `DIA_NO_DISPONIBLE` (el día no está abierto o el servicio
+            está inactivo en el catálogo) o `RESERVA_DUPLICADA` (ya existe una reserva activa
+            del turista para ese servicio y fecha).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -368,10 +369,12 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409':
-          description: '`DIA_EXISTENTE` (crear sin `If-Match`), `CUPOS_COMPROMETIDOS` (totales menores que lo reservado) o `VERSION_DISTINTA` (el día cambió en el servidor; la PWA muestra el conflicto).'
+          description: '`DIA_EXISTENTE` (crear sin `If-Match`), `CUPOS_COMPROMETIDOS` (totales menores que lo reservado) o `VERSION_DISTINTA` (el día cambió en el servidor: `version_actual` y el día completo en `actual`, para que la PWA muestre el conflicto sin otro GET).'
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+              schema: { $ref: '#/components/schemas/ErrorConflicto' }
         '422':
           description: '`SUPERA_AFORO`.'
           content:
@@ -389,11 +392,23 @@ paths:
       responses:
         '200':
           description: El servicio y su base de datos responden.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Salud' }
+        '503':
+          description: La base de datos no responde; Kubernetes deja de enviarle tráfico a esta réplica.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Salud' }
 
   /metrics:
     get:
       tags: [Operación]
       summary: Métricas para Prometheus
+      description: |
+        Las genera prometheus-fastapi-instrumentator, como en los demás servicios:
+        `http_requests_total` y `http_request_duration_seconds` (etiquetas `handler`, `method`,
+        `status`). Además, `booking_eventos_consumidos_total` del consumidor de RabbitMQ.
       operationId: metrics
       security: []
       servers:
@@ -461,7 +476,11 @@ components:
       name: Idempotency-Key
       in: header
       required: false
-      description: Clave única por intento de envío; un reintento con la misma clave devuelve la misma respuesta sin repetir la operación (48 h).
+      description: |
+        Clave única por intento de envío; un reintento con la misma clave devuelve la misma respuesta
+        sin repetir la operación (48 h). Si la primera petición aún no termina, responde 409
+        `PETICION_EN_PROCESO` (reintentar en unos segundos con la misma clave). Si el almacén de
+        claves no responde, 503 `IDEMPOTENCIA_NO_DISPONIBLE` (no se ejecutó nada).
       schema: { type: string, format: uuid }
     IfMatch:
       name: If-Match
@@ -492,10 +511,10 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     Conflicto:
-      description: '`TRANSICION_INVALIDA`, `PLAZO_VENCIDO`, `CUPOS_INSUFICIENTES` o `VERSION_DISTINTA` (el recurso cambió en el servidor; la versión actual va en `ETag`). El mensaje indica el estado actual.'
+      description: '`TRANSICION_INVALIDA`, `PLAZO_VENCIDO`, `CUPOS_INSUFICIENTES` o `VERSION_DISTINTA` (la reserva cambió en el servidor: la versión actual va en `ETag` y en `version_actual`, y la reserva completa en `actual`). El mensaje indica el estado actual.'
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema: { $ref: '#/components/schemas/ErrorConflicto' }
     FaltaIfMatch:
       description: '`FALTA_IF_MATCH`.'
       content:
@@ -503,6 +522,17 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    Salud:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        checks:
+          type: object
+          description: '`postgres` en el clúster; `almacen_memoria` en el modo de demostración.'
+          additionalProperties: { type: string, enum: [up, down] }
+          example: { postgres: up }
+
     Error:
       type: object
       required: [error, message, correlation_id]
@@ -510,6 +540,21 @@ components:
         error: { type: string, example: CUPOS_INSUFICIENTES }
         message: { type: string, example: Solo quedan 1 cupos para el 2026-11-05. }
         correlation_id: { type: string }
+
+    ErrorConflicto:
+      description: |
+        Error común de un 409. Solo con `VERSION_DISTINTA` agrega `version_actual` y `actual`:
+        el registro tal como está en el servidor, con el mismo formato que su GET
+        (`Reserva` en `PATCH /{reserva_id}`; `DiaCalendario` en `PUT /prestador/calendario/...`).
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            version_actual: { type: integer, minimum: 1, example: 2 }
+            actual:
+              oneOf:
+                - $ref: '#/components/schemas/Reserva'
+                - $ref: '#/components/schemas/DiaCalendario'
 
     EstadoReserva:
       type: string
@@ -522,7 +567,10 @@ components:
         id: { type: string, format: uuid }
         servicio_id: { type: string, format: uuid }
         turista_id: { type: string, format: uuid }
-        prestador_id: { type: string, format: uuid }
+        prestador_id:
+          type: string
+          format: uuid
+          description: Id del perfil del prestador en el catálogo (el mismo de los eventos `reserva.*`).
         fecha_reserva: { type: string, format: date }
         numero_personas: { type: integer, minimum: 1 }
         estado: { $ref: '#/components/schemas/EstadoReserva' }

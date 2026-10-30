@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prestador.suspendido.v1.json",
+  "title": "prestador.suspendido (payload v1)",
+  "description": "Publicado por iam-service cuando el administrador suspende o revoca a un prestador; iam deja de permitirle el acceso. catalog-service desactiva su perfil y sus servicios activos (que dejan de mostrarse) y publica servicio.publicado con activo=false. Si iam lo vuelve a habilitar, publica de nuevo prestador.aprobado y catalog reactiva solo los servicios que había desactivado por la suspensión.",
+  "type": "object",
+  "required": ["prestador_id", "usuario_id", "suspendido_por"],
+  "properties": {
+    "prestador_id": { "type": "string", "format": "uuid" },
+    "usuario_id": { "type": "string", "format": "uuid" },
+    "suspendido_por": { "type": "string", "format": "uuid", "description": "Administrador que suspendió." },
+    "motivo": { "type": "string", "maxLength": 500 }
+  },
+  "additionalProperties": false
+}

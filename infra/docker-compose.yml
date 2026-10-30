@@ -7,6 +7,44 @@
 
 name: tourism-platform
 
+# Variables comunes de catalog-service (API, worker y migraciones). Los hosts son los nombres
+# de los contenedores de este archivo; las credenciales salen de infra/.env.
+x-catalog-entorno: &catalog-entorno
+  ENVIRONMENT: development
+  LOG_LEVEL: INFO
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/catalog_db
+  VALKEY_URL: redis://valkey:6379/0
+  RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+  IAM_URL_INTERNA: http://iam-service:8001
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  INTENCION_VISITA_SECRETO: ${CATALOG_INTENCION_VISITA_SECRETO}
+  # El navegador sube las imágenes directo a SeaweedFS: el endpoint es el que ve el host.
+  S3_ENDPOINT_PUBLICO: http://localhost:8333
+  S3_ACCESS_KEY: catalog_access_dev
+  S3_SECRET_KEY: catalog_secret_dev
+  IMAGENES_URL_PUBLICA: http://localhost:8333/catalogo-imagenes
+
+# Variables comunes de review-service (API, worker y migraciones). No usa Valkey ni llama a
+# otros servicios: solo PostgreSQL (review_db) y RabbitMQ.
+x-review-entorno: &review-entorno
+  ENVIRONMENT: development
+  LOG_LEVEL: INFO
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/review_db
+  RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+# Variables comunes de booking-service (API y migraciones).
+x-booking-entorno: &booking-entorno
+  ENVIRONMENT: development
+  LOG_LEVEL: INFO
+  TZ: America/Bogota
+  MODO_PERSISTENCIA: postgres
+  DATOS_DEMO: "false"
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/booking_db
+  RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+  VALKEY_URL: redis://valkey:6379/1   # base 1: separada de la caché de catalog (base 0)
+  EVENTS_EXCHANGE: turismo.eventos
+  PLAZO_RESPUESTA_HORAS: "48"
+
 services:
   # ---------- Persistencia ----------
   postgres:
@@ -27,7 +65,26 @@ services:
     image: valkey/valkey:8
     ports: ["6379:6379"]
 
-  # review-service usa PostgreSQL con JSONB (base review_db), ver ADR-003.
+  # Imágenes del catálogo (API S3). Credenciales de desarrollo en el archivo de catalog-service.
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.80
+    command: server -ip.bind=0.0.0.0 -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -volume.max=5
+    ports: ["8333:8333"]
+    volumes:
+      - seaweedfs-data:/data
+      - ../services/catalog-service/dev/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9333/cluster/status || exit 1"]
+      interval: 10s
+      retries: 10
+
+  seaweedfs-init:
+    image: chrislusf/seaweedfs:3.80
+    depends_on:
+      seaweedfs: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c", "echo 's3.bucket.create -name catalogo-imagenes' | weed shell -master=seaweedfs:9333"]
+    restart: "no"
+
 
   # ---------- Mensajería ----------
   rabbitmq:
@@ -35,6 +92,9 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      # Sin esto la máquina virtual de Erlang hace espera activa y gasta 70-115 % de CPU sin
+      # trabajo, quitándosela al resto del entorno local (se vio al medir ESC-01).
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+sbwt none +sbwtdcpu none +sbwtdio none"
     ports:
       - "5672:5672"     # AMQP
       - "15672:15672"   # consola web
@@ -42,6 +102,13 @@ services:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       retries: 5
+
+  # Correos de desarrollo: Mailpit los recibe por SMTP y los muestra en http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # bandeja web
 
   # ---------- Observabilidad ----------
   prometheus:
@@ -58,10 +125,89 @@ services:
     depends_on: [prometheus]
 
   # ---------- Microservicios ----------
+  # catalog-service (Módulo 2): las migraciones corren una vez y luego arrancan API y worker.
+  catalog-migraciones:
+    build: ../services/catalog-service
+    image: catalog-service:local
+    command: ["alembic", "upgrade", "head"]
+    environment: *catalog-entorno
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  catalog-service:
+    image: catalog-service:local
+    environment: *catalog-entorno
+    ports: ["8002:8002"]
+    depends_on:
+      catalog-migraciones: { condition: service_completed_successfully }
+      valkey: { condition: service_started }
+      rabbitmq: { condition: service_healthy }
+
+  catalog-worker:
+    image: catalog-service:local
+    command: ["python", "-m", "app.worker"]
+    environment: *catalog-entorno
+    ports: ["9102:9102"]   # /metrics
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9102/metrics')"]
+      interval: 30s
+      retries: 3
+    depends_on:
+      catalog-migraciones: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+
+  # review-service (Módulo 4): igual que catalog, migraciones una vez y luego API y worker.
+  # El worker declara sus colas (review.elegibilidad, review.servicios) al arrancar.
+  review-migraciones:
+    build: ../services/review-service
+    image: review-service:local
+    command: ["alembic", "upgrade", "head"]
+    environment: *review-entorno
+  # booking-service (Módulo 3): las migraciones corren una vez y luego arranca la API, que lleva
+  # dentro el relay del outbox y el consumidor de servicio.publicado.
+  booking-migraciones:
+    build: ../services/booking-service
+    image: booking-service:local
+    command: ["alembic", "upgrade", "head"]
+    environment: *booking-entorno
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  review-service:
+    image: review-service:local
+    environment: *review-entorno
+    ports: ["8004:8004"]
+    depends_on:
+      review-migraciones: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+
+  review-worker:
+    image: review-service:local
+    command: ["python", "-m", "app.worker"]
+    environment: *review-entorno
+    ports: ["9104:9104"]   # /metrics
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9104/metrics')"]
+      interval: 30s
+      retries: 3
+    depends_on:
+      review-migraciones: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+  booking-service:
+    image: booking-service:local
+    environment: *booking-entorno
+    ports: ["8003:8003"]
+    depends_on:
+      booking-migraciones: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+      valkey: { condition: service_started }
+
   # Plantilla para agregar un servicio:
-  # booking-service:
-  #   build: ../services/booking-service
-  #   env_file: ../services/booking-service/.env
+  # review-service:
+  #   build: ../services/review-service
+  #   env_file: ../services/review-service/.env
   #   depends_on:
   #     postgres: { condition: service_healthy }
   #     rabbitmq: { condition: service_healthy }
@@ -71,3 +217,4 @@ services:
 
 volumes:
   postgres-data:
+  seaweedfs-data:

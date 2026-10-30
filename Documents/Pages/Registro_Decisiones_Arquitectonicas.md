@@ -20,9 +20,10 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 | [ADR-005](#adr-005-plataforma-de-despliegue) | Plataforma de despliegue: contenedores en Kubernetes (k3s) | No | Aceptada |
 | [ADR-006](#adr-006-lenguaje-y-framework-de-los-microservicios) | Lenguaje y framework: Python + FastAPI en los 5 servicios | No | Aceptada |
 | [ADR-007](#adr-007-api-gateway) | API Gateway: Traefik con ForwardAuth | No | Aceptada |
-| [ADR-008](#adr-008-mensajería-asíncrona-y-auditoría) | Mensajería: RabbitMQ y auditoría asíncrona centralizada en el Módulo 1 | No | Aceptada |
+| [ADR-008](#adr-008-mensajería-asíncrona-y-auditoría) | Mensajería: RabbitMQ y auditoría asíncrona centralizada en el Módulo 1 | No | Aceptada (actualizada: outbox) |
 | [ADR-009](#adr-009-observabilidad) | Observabilidad: Prometheus, Grafana y Loki | No | Aceptada |
 | [ADR-010](#adr-010-componente-de-inteligencia-artificial) | IA: chatbot sobre la API de Gemini con herramientas de solo lectura | No | Aceptada |
+| [ADR-011](#adr-011-proveedor-del-modelo-de-lenguaje-groq-en-lugar-de-gemini) | Proveedor del modelo de lenguaje: Groq en lugar de Gemini | No | Propuesta |
 
 ---
 
@@ -126,13 +127,17 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 
 ## ADR-008: Mensajería asíncrona y auditoría
 
-* **Estado:** Aceptada. Elimina la alternativa "RabbitMQ o Redis Streams".
+* **Estado:** Aceptada. Elimina la alternativa "RabbitMQ o Redis Streams". Actualizada en la implementación del Módulo 2: patrón outbox e idempotencia en la base del consumidor.
 * **Contexto:** Correos, métricas, habilitación de reseñas y bitácora de auditoría no deben bloquear al usuario. La bitácora debe registrar el 100% de los accesos indebidos (ESC-04) y ser inmutable (RNF-10).
 * **Decisión:** **RabbitMQ** con el exchange `turismo.eventos` (topic), una cola por consumidor, *publisher confirms*, idempotencia por `event_id` y DLQ tras 3 intentos. La auditoría tiene un único dueño, el Módulo 1: escribe sus eventos en la misma transacción de la acción y consume `auditoria.registrada` de los demás módulos; la tabla solo admite inserciones.
+* **Actualización (implementación del Módulo 2, octubre de 2026):** al programar catalog-service nos dimos cuenta de que era más sencillo y más seguro guardar los eventos y los `event_id` procesados en tablas de la propia base del servicio:
+  * **Patrón outbox adoptado:** el evento se guarda en la tabla `outbox` en la misma transacción que el cambio, y un proceso aparte (*worker*, otro Deployment con la misma imagen) lo publica con *publisher confirms* y lo marca como publicado. Si RabbitMQ está caído, el evento espera en la tabla; si la transacción se deshace, el evento no existe. Varios workers no publican el mismo evento (`SELECT … FOR UPDATE SKIP LOCKED`).
+  * **Idempotencia en la base, no en Valkey:** el consumidor registra el `event_id` en la tabla `evento_procesado` en la misma transacción que aplica el efecto. Con Valkey, una caída entre el efecto y el registro (o el vencimiento del TTL de 24 h) podía aplicar un evento dos veces; en la tabla, efecto y registro se confirman juntos.
+  * Se recomienda el mismo esquema a booking-service y review-service.
 * **Alternativas consideradas:**
   * *Redis/Valkey Streams:* descartada; evita un componente, pero carece del enrutamiento por *topic*, las DLQ y la consola de administración que facilitan la operación y la depuración.
   * *Escritura directa de cada módulo en la bitácora del Módulo 1:* descartada; viola *Database-per-Service*.
-  * *Patrón outbox desde el inicio:* pospuesta; garantiza la entrega pero agrega una tabla y un proceso por servicio. Se adoptará si las pruebas de ESC-04 muestran pérdidas.
+  * *Publicar directamente después de confirmar la transacción (sin outbox):* era la opción inicial; se reemplazó en la implementación del Módulo 2 porque un fallo entre el commit y la publicación perdía el evento (ESC-04 exige registrar el 100% de los accesos indebidos).
 * **Consecuencias:** Desacople y resiliencia ante fallos transitorios, con consistencia eventual. Los consumidores deben ser idempotentes y los contratos de eventos se versionan en `contracts/events/`.
 * **Trazabilidad:** RF-09, RF-11, RF-14, RNF-10, ESC-04, SRS §3.6.2, Plan §4.2 a §4.4.
 
@@ -157,3 +162,27 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 * **Alternativas consideradas:** *Filtrado híbrido propio entrenado con un dataset sintético:* descartado; exige construir y validar un modelo y un dataset, fuera del foco del curso (R-03). *Modelo abierto alojado por el equipo:* descartado por el costo de GPU y de operación.
 * **Consecuencias:** Única dependencia propietaria del sistema (excepción justificada a la prioridad FOSS), con costos por consumo y límites de solicitudes (R-04). La indisponibilidad de Gemini solo afecta al chatbot.
 * **Trazabilidad:** RF-06, RNF-08, UC14, ESC-05, R-03, R-04, [Guía Técnica del Módulo 5](./Guia_Tecnica_Modulo_IA.md).
+
+---
+
+## ADR-011: Proveedor del modelo de lenguaje: Groq en lugar de Gemini
+
+* **Estado:** Propuesta (Alvaro Ospino, responsable del Módulo 5). Si se acepta, reemplaza al ADR-010 **solo en el proveedor**; el resto del ADR-010 (chatbot, herramientas de solo lectura, registro en `recommendation_db`, sesión en Valkey) se mantiene.
+* **Contexto:** Al empezar la integración del Módulo 5 con la API de Gemini, el equipo tuvo dos problemas:
+  1. **La API no respondía** a las solicitudes de prueba, así que no se pudo validar el flujo del chatbot.
+  2. **Exigía registrar un método de pago** al crear la aplicación, algo que un proyecto académico sin presupuesto para servicios de IA no puede asumir.
+
+  El Módulo 5 ya está construido sobre una interfaz propia (`ModeloDeLenguaje`), de modo que el proveedor es un adaptador intercambiable y cambiarlo no toca el dominio, los casos de uso ni el contrato REST.
+* **Decisión:** El Módulo 5 usa la **API de Groq** (SDK `groq`) como proveedor del modelo de lenguaje, con llamada a funciones (tools) y un modelo abierto que la admita. El proveedor y el modelo se eligen por configuración con variables genéricas: `LLM_PROVIDER=groq`, `LLM_API_KEY` (como `Secret`) y `LLM_MODEL` (como `ConfigMap`). Reemplazan a `GEMINI_API_KEY` y `GEMINI_MODEL`.
+* **Alternativas consideradas:**
+  * *Seguir con Gemini:* descartada por los dos problemas del contexto.
+  * *API de OpenAI:* descartada; también exige un método de pago y cobra por consumo desde el primer uso.
+  * *Modelo abierto alojado por el equipo (por ejemplo, con Ollama):* sigue descartada por la misma razón que en el ADR-010, el costo de GPU y de operación en el clúster.
+  * *Groq (elegida):* tiene un plan gratuito para desarrollo (se confirma al crear la clave que no pide método de pago), una API compatible con la de OpenAI con llamada a funciones, respuestas de baja latencia y modelos abiertos.
+* **Consecuencias:**
+  * Groq sigue siendo un **servicio externo propietario**: se mantiene la excepción justificada a la prioridad FOSS del ADR-010, ahora con Groq como única dependencia propietaria.
+  * El plan gratuito tiene **límites de solicitudes** (R-04). Bastan para el desarrollo y las pruebas de calidad (unas 30 conversaciones tipo), pero en producción se revisarían. El servicio responde 503 `ASISTENTE_NO_DISPONIBLE` al superar el límite y el resto de la plataforma sigue operando (ESC-01).
+  * **Privacidad (Ley 1581):** la conversación y los resultados de las tools viajan a Groq. Se le envía el mínimo necesario (nunca nombre, correo ni documento), y antes de usarlo con turistas reales hay que revisar sus condiciones de uso y retención de datos.
+  * **Impacto en otros módulos:** ninguno. El contrato `recommendation.yaml` no cambia y ningún otro servicio depende del proveedor.
+  * **Documentos a actualizar al aceptarse:** el ADR-010 (estado "Reemplazada parcialmente por ADR-011"), el SRS, el Plan de Implementación (§4 y flujo 6), la Comparación de Alternativas, el README raíz y los diagramas que mencionan Gemini. La Guía Técnica del Módulo 5 y `docs/modulo-ia/` se actualizan en la rama del módulo.
+* **Trazabilidad:** RF-06, RNF-08, UC14, ESC-01, ESC-05, R-04, ADR-010, [Guía Técnica del Módulo 5](./Guia_Tecnica_Modulo_IA.md).

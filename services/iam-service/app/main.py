@@ -8,6 +8,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.api.dependencies import get_reloj
 from app.api.errors import register_error_handlers
 from app.api.middleware.correlacion_middleware import CorrelacionMiddleware
+from app.api.openapi import esquema_openapi
 from app.api.routers import admin, auth, health, internal, perfil, prestador
 from app.api.segundo_plano import TareasSegundoPlano
 from app.config import Settings, get_settings
@@ -15,6 +16,7 @@ from app.infrastructure.cache.valkey_revocacion import build_valkey_client
 from app.infrastructure.correo.enviador_smtp import EnviadorSmtp
 from app.infrastructure.observabilidad.configurar_logs import configurar_logs
 from app.infrastructure.persistence.database import build_engine, build_session_factory
+from app.infrastructure.security.argon2_password_hasher import Argon2PasswordHasher
 from app.infrastructure.security.jwt_token_service import JwtTokenService, leer_llaves
 from app.infrastructure.storage.almacen_documentos_s3 import AlmacenDocumentosS3
 
@@ -37,6 +39,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             issuer=settings.jwt_issuer,
             ttl=timedelta(minutes=settings.jwt_access_token_ttl_minutes),
             reloj=get_reloj(),
+        )
+        app.state.password_hasher = Argon2PasswordHasher(
+            settings.argon2_concurrencia_maxima, settings.argon2_espera_maxima_segundos
         )
         app.state.engine = build_engine(settings.database_url)
         app.state.session_factory = build_session_factory(app.state.engine)
@@ -75,6 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(prestador.router)
     app.include_router(internal.router)
     Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+    app.openapi = lambda: esquema_openapi(app)  # type: ignore[method-assign]
     return app
 
 

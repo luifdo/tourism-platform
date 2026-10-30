@@ -56,6 +56,12 @@ class ValkeyTokensRecuperacion:
         except _FALLAS_DE_CONEXION as exc:
             raise self._no_disponible() from exc
 
+    async def esta_vigente(self, token: str) -> bool:
+        try:
+            return bool(await self._client.exists(PREFIJO_TOKEN + _huella(token)))
+        except _FALLAS_DE_CONEXION as exc:
+            raise self._no_disponible() from exc
+
     async def consumir(self, token: str) -> uuid.UUID | None:
         try:
             # GETDEL: de dos peticiones con el mismo enlace, solo una recibe el usuario.

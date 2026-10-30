@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from dataclasses import dataclass, field
 
@@ -46,26 +45,41 @@ class IniciarSesion:
             # Un formato inválido se trata igual que un correo inexistente (401, no 422).
             email = None
 
+        # La conexión se devuelve antes de Argon2: las peticiones en la cola del semáforo no
+        # deben agotar el pool, que verificar necesita para auditar sus rechazos (C-53).
         async with self._uow as uow:
-            usuario = await uow.usuarios.find_by_email(email) if email is not None else None
+            encontrado = await uow.usuarios.find_by_email(email) if email is not None else None
 
-            if usuario is None:
-                await self._verify(cmd.password, HASH_RELLENO)
-                await self._fallo(uow, None, "usuario_no_existe", cmd.ip_origen)
-                raise CredencialesInvalidasError()
+        if encontrado is None:
+            await self._hasher.verify_limitado(cmd.password, HASH_RELLENO)
+            await self._registrar_fallo(None, "usuario_no_existe", cmd.ip_origen)
+            raise CredencialesInvalidasError()
 
-            if not await self._verify(cmd.password, usuario.password_hash):
-                await self._fallo(uow, usuario.id, "password_incorrecta", cmd.ip_origen)
+        if not await self._hasher.verify_limitado(cmd.password, encontrado.password_hash):
+            await self._registrar_fallo(encontrado.id, "password_incorrecta", cmd.ip_origen)
+            raise CredencialesInvalidasError()
+
+        nuevo_hash = None
+        if encontrado.activo and self._hasher.needs_rehash(encontrado.password_hash):
+            nuevo_hash = await self._hasher.hash_limitado(cmd.password)
+
+        assert encontrado.id is not None
+        async with self._uow as uow:
+            # Se lee otra vez porque la cola puede durar segundos: el token debe llevar el rol y
+            # el estado de ahora, y no salir después de la segunda revocación de un cambio
+            # que ya no vio (C-21, C-53).
+            usuario = await uow.usuarios.find_by_id(encontrado.id)
+            if usuario is None or usuario.password_hash != encontrado.password_hash:
+                # La contraseña verificada ya no es la vigente.
+                await self._fallo(uow, encontrado.id, "password_incorrecta", cmd.ip_origen)
                 raise CredencialesInvalidasError()
 
             if not usuario.activo:
                 await self._fallo(uow, usuario.id, "cuenta_inactiva", cmd.ip_origen)
                 raise CuentaInactivaError()
 
-            assert usuario.id is not None
-            if self._hasher.needs_rehash(usuario.password_hash):
-                nuevo_hash = await asyncio.to_thread(self._hasher.hash, cmd.password)
-                await uow.usuarios.actualizar_password_hash(usuario.id, nuevo_hash)
+            if nuevo_hash is not None:
+                await uow.usuarios.actualizar_password_hash(encontrado.id, nuevo_hash)
 
             token = self._tokens.emitir(usuario)
             await uow.auditoria.registrar(
@@ -78,9 +92,11 @@ class IniciarSesion:
             await uow.commit()
         return token, usuario
 
-    async def _verify(self, password: str, password_hash: str) -> bool:
-        # Argon2 es costoso en CPU: fuera del event loop.
-        return await asyncio.to_thread(self._hasher.verify, password, password_hash)
+    async def _registrar_fallo(
+        self, usuario_id: uuid.UUID | None, motivo: str, ip_origen: str | None
+    ) -> None:
+        async with self._uow as uow:
+            await self._fallo(uow, usuario_id, motivo, ip_origen)
 
     @staticmethod
     async def _fallo(

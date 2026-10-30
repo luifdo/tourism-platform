@@ -27,6 +27,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN useradd --create-home --uid 1000 iam
 
+# La imagen oficial borra los .pyc de la biblioteca estándar y en k8s el sistema de archivos es
+# de solo lectura: sin esto, cada arranque recompila toda la stdlib.
+RUN python -m compileall -q /usr/local/lib/python3.12
+
+# La misma imagen corre la API, el worker (python -m app.worker) y las migraciones
+# (alembic upgrade head). Las llaves JWT no van aquí: se montan en /srv/keys. Lo único que se
+# escribe va a /tmp, un emptyDir en k8s.
 WORKDIR /srv
 COPY --from=builder /opt/venv /opt/venv
 COPY alembic.ini ./
@@ -39,4 +46,5 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/live')"
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--proxy-headers"]
+# Uvicorn lee FORWARDED_ALLOW_IPS del entorno; en k3s la fija el ConfigMap (C-37, C-56).
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--proxy-headers"]

@@ -162,6 +162,7 @@ Errores, con cuerpo `{"detail": "<mensaje>", "code": "<code>", "correlation_id":
 | 422 | `MAYORIA_DE_EDAD_REQUERIDA` | No declaró ser mayor de edad |
 | 422 | `PASSWORD_INVALIDA` | La contraseña no tiene entre 8 y 128 caracteres con al menos una letra y un número |
 | 422 | `NOMBRE_INVALIDO` | El nombre no tiene entre 2 y 150 caracteres |
+| 503 | `SERVICIO_OCUPADO` | Demasiadas peticiones calculando contraseñas; incluye `Retry-After: 2` (C-53). No crea la cuenta |
 
 Los 422 de `VALIDACION` nunca devuelven el valor enviado, para no repetir la contraseña.
 
@@ -189,6 +190,7 @@ Cuerpo JSON (no formulario OAuth2):
 | 401 | `CREDENCIALES_INVALIDAS` | Correo inexistente o mal formado, o contraseña incorrecta: siempre el mismo cuerpo, con `WWW-Authenticate: Bearer` |
 | 403 | `CUENTA_INACTIVA` | Credenciales correctas pero la cuenta está desactivada |
 | 422 | `VALIDACION` | Falta `email` o `password` |
+| 503 | `SERVICIO_OCUPADO` | Demasiadas peticiones calculando contraseñas; incluye `Retry-After: 2` (C-53). No deja fila `LOGIN_FAIL` |
 
 El token lleva `sub` (id del usuario), `rol`, `jti`, `iat`, `exp`, `iss` (`iam-service`) y `typ` (`access`), y en el encabezado `kid` (huella RFC 7638 de la llave pública). Cada intento queda en la bitácora: `LOGIN_SUCCESS` o `LOGIN_FAIL` con el motivo.
 
@@ -336,7 +338,7 @@ Solo `Admin`. Consulta la bitácora inmutable (RNF-10): las filas propias del IA
 
 ### `GET /internal/usuarios/{usuario_id}/contacto` (C-15)
 
-Ruta **interna** ([`contracts/openapi/iam-interno.yaml`](../../contracts/openapi/iam-interno.yaml)): sin `/api`, nunca expuesta por Traefik y fuera de `/docs`. La llama el worker de catalog para enviar sus correos; la NetworkPolicy solo deja llegar desde catalog-service.
+Ruta **interna** ([`contracts/openapi/iam-interno.yaml`](../../contracts/openapi/iam-interno.yaml)): sin `/api`, nunca expuesta por Traefik y fuera de `/docs`. La llama el worker de catalog para enviar sus correos; de los demás servicios, la NetworkPolicy solo deja llegar a ese worker (C-54).
 
 `200`, también para un usuario inactivo:
 
@@ -372,6 +374,7 @@ Cualquier rol autenticado, con la validación de token de `require_role`.
 | 422 | `PASSWORD_ACTUAL_INCORRECTA` | Contraseña actual incorrecta (no 401: no es una sesión vencida) |
 | 422 | `PASSWORD_INVALIDA` | La contraseña nueva no cumple la política |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Valkey no responde |
+| 503 | `SERVICIO_OCUPADO` | Solo al cambiar la contraseña: demasiadas peticiones calculando contraseñas; incluye `Retry-After: 2` (C-53). No cambia nada |
 
 El cambio de contraseña y la supresión no se hacen sin conexión: exigen confirmación en línea (C-49).
 
@@ -387,6 +390,7 @@ Rutas públicas (C-28).
 | 400 | `TOKEN_INVALIDO` | Enlace inválido, vencido o ya usado, o cuenta desactivada o suprimida después de pedirlo |
 | 422 | `PASSWORD_INVALIDA` | No cumple la política; el enlace **no** se gasta |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Valkey no responde al restablecer |
+| 503 | `SERVICIO_OCUPADO` | Demasiadas peticiones calculando contraseñas; incluye `Retry-After: 2`. El enlace **no** se gasta (C-53) |
 
 Si el SMTP o Valkey fallan al recuperar, el usuario recibe `202` igual y solo le queda volver a pedirlo: queda un log de error, sin el correo, y `iam_recuperacion_solicitudes_total{resultado}` (C-50). Variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USUARIO`, `SMTP_PASSWORD`, `SMTP_TLS` y `PWA_URL`.
 
@@ -401,6 +405,7 @@ Con `{"password"}` en el cuerpo. **Irreversible.** Reemplaza el correo, el nombr
 | 401 | `TOKEN_INVALIDO` | Token inválido, expirado o revocado |
 | 409 | `ULTIMO_ADMIN` | Es el último Admin activo |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Valkey o SeaweedFS no responden. **Los tokens ya se revocaron:** hay que iniciar sesión y repetir la petición |
+| 503 | `SERVICIO_OCUPADO` | Demasiadas peticiones calculando contraseñas; incluye `Retry-After: 2`. No se borró ni se revocó nada: basta con repetir la petición (C-53) |
 
 Después: login e `recuperar` se comportan como si la cuenta no existiera, el contacto interno y la URL de los documentos responden `404`, la cola de prestadores la excluye, y el Admin recibe `409 CUENTA_SUPRIMIDA` si intenta reactivarla, cambiarle el rol o revisarla.
 
@@ -408,14 +413,244 @@ Después: login e `recuperar` se comportan como si la cuenta no existiera, el co
 
 Público. Devuelve las llaves públicas (`{"keys": [{"kty", "n", "e", "kid", "use": "sig", "alg": "RS256"}]}`) para que el Gateway y los demás servicios verifiquen los tokens. Responde `200` con `Cache-Control: public, max-age=300`.
 
-Imagen de contenedor (multi-stage):
+## Contrato OpenAPI
+
+[`contracts/openapi/iam.yaml`](../../contracts/openapi/iam.yaml) se genera desde la app, con las rutas públicas y protegidas, los esquemas y los errores de cada ruta (C-57):
 
 ```bash
-docker build -t iam-service:dev .
-docker run --env-file .env -p 8001:8001 iam-service:dev
+uv run python -m scripts.exportar_openapi
 ```
 
-Las llaves JWT (`keys/private.pem`, `keys/public.pem`) no se versionan ni se copian en la imagen; se montan en tiempo de ejecución.
+Una prueba falla si quedó desactualizado: después de cambiar una ruta, un esquema o un error, hay que volver a generarlo. `/internal`, `/health`, `/health/live` y `/metrics` no aparecen.
+
+## Despliegue
+
+### Imagen
+
+La misma imagen sirve para la API, el worker (`python -m app.worker`) y las migraciones (`alembic upgrade head`). Corre como usuario 1000, con el sistema de archivos de solo lectura; lo único que escribe va a `/tmp`. Las llaves JWT no van en la imagen: se montan en `/srv/keys`.
+
+```bash
+docker build -t iam-service:local .
+docker run --read-only --tmpfs /tmp --env-file .env -v "$PWD/keys:/srv/keys:ro" -p 8001:8001 iam-service:local
+```
+
+### Manifiestos (k3s)
+
+`k8s/base` tiene la API, el worker, el Service, el HPA (2 a 4 réplicas), el PDB, el ConfigMap y las NetworkPolicy. `k8s/overlays/local` lo adapta al Kubernetes de Docker Desktop, con la infraestructura de `docker-compose.dev.yml`. El namespace es `turismo-app`.
+
+```bash
+# 1. Variables secretas: el overlay genera `iam-secretos` desde este archivo, que no se sube.
+cp k8s/overlays/local/secretos.env.example k8s/overlays/local/secretos.env
+
+# 2. Imagen
+docker build -t iam-service:local .
+
+# 3. Namespace y llaves JWT (ver abajo)
+kubectl create namespace turismo-app
+kubectl create secret generic iam-jwt-keys -n turismo-app \
+  --from-file=private.pem=keys/private.pem --from-file=public.pem=keys/public.pem
+
+# 4. Aplicar
+kubectl apply -k k8s/overlays/local
+kubectl -n turismo-app rollout status deploy/iam-service
+```
+
+Sin `secretos.env`, `kubectl kustomize` y `kubectl apply -k` fallan.
+
+| Secret | Claves | Quién lo usa |
+|---|---|---|
+| `iam-secretos` | `DATABASE_URL`, `VALKEY_URL`, `RABBITMQ_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `SMTP_USUARIO`, `SMTP_PASSWORD` | API, worker y migraciones |
+| `iam-jwt-keys` | `private.pem`, `public.pem` | Solo la API, en `/srv/keys` con modo `0440` |
+
+El usuario de `DATABASE_URL` debe coincidir con `DB_APP_ROLE` del ConfigMap (`iam_user`): la migración inicial le revoca permisos y falla si ese rol no existe.
+
+#### Generar `iam-jwt-keys`
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
+openssl rsa -in private.pem -pubout -out public.pem
+kubectl create secret generic iam-jwt-keys -n turismo-app \
+  --from-file=private.pem=private.pem --from-file=public.pem=public.pem
+rm private.pem public.pem
+```
+
+Las réplicas comparten el par. Se crea aparte y no con `secretGenerator` para no copiar llaves dentro de `k8s/`. Por eso, al cambiarlas hay que reiniciar los pods (`kubectl -n turismo-app rollout restart deploy/iam-service`), y los tokens ya emitidos dejan de valer.
+
+Valores **por confirmar** antes de producción, marcados en `k8s/base/configmap.yaml`: `FORWARDED_ALLOW_IPS` (C-56), `S3_ENDPOINT_URL`, `S3_ENDPOINT_PUBLICO` y `PWA_URL`. Y la etiqueta de Blackbox en `k8s/base/networkpolicy.yaml` (C-54).
+
+### Para Juan Francisco (`gateway/`)
+
+Ejemplo, **solo como documentación**: el IngressRoute y los middlewares reales son de `gateway/`.
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: iam-forward-auth, namespace: turismo-app }
+spec:
+  forwardAuth:
+    address: http://iam-service.turismo-app.svc:8001/api/iam/auth/verificar
+    # Reemplazan lo que traiga el cliente (C-13). Sin trustForwardHeader: Traefik fija él mismo
+    # X-Forwarded-Method y X-Forwarded-Uri, que van a la bitácora (C-34).
+    authResponseHeaders: [X-Usuario-Id, X-Usuario-Rol]
+---
+# En TODAS las rutas de la plataforma, también en las públicas (C-13).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: quitar-identidad, namespace: turismo-app }
+spec:
+  headers:
+    customRequestHeaders:
+      X-Usuario-Id: ""
+      X-Usuario-Rol: ""
+---
+# Login y recuperación (UC32, C-26, C-50).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: iam-rate-limit, namespace: turismo-app }
+spec:
+  rateLimit: { average: 5, period: 1m, burst: 5 }
+---
+# La carga de documentos: el IAM rechaza más de 5 MB, pero aquí se corta antes de recibir todo (C-30).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: iam-limite-documentos, namespace: turismo-app }
+spec:
+  buffering: { maxRequestBodyBytes: 6291456 } # 6 MB
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata: { name: iam-service, namespace: turismo-app }
+spec:
+  entryPoints: [websecure]
+  routes:
+    # Públicas con límite de peticiones
+    - match: Path(`/api/iam/login`) || Path(`/api/iam/auth/recuperar`)
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }, { name: iam-rate-limit }]
+      services: [{ name: iam-service, port: 8001 }]
+    # Públicas
+    - match: Path(`/api/iam/register`) || Path(`/api/iam/auth/restablecer`) || Path(`/api/iam/.well-known/jwks.json`)
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }]
+      services: [{ name: iam-service, port: 8001 }]
+    # Carga de documentos
+    - match: Method(`POST`) && Path(`/api/iam/prestador/documentos`)
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }, { name: iam-limite-documentos }, { name: iam-forward-auth }]
+      services: [{ name: iam-service, port: 8001 }]
+    # Todo lo demás. Solo este prefijo: /internal, /health y /metrics no se enrutan nunca.
+    - match: PathPrefix(`/api/iam`)
+      kind: Rule
+      priority: 10
+      middlewares: [{ name: quitar-identidad }, { name: iam-forward-auth }]
+      services: [{ name: iam-service, port: 8001 }]
+```
+
+También hace falta:
+
+* Omitir el query string de `/restablecer-contrasena` en los logs de acceso: lleva el token de recuperación (C-28).
+* Que Traefik vea la IP real del cliente: `externalTrafficPolicy: Local` en su Service o `forwardedHeaders.trustedIPs` si hay otro proxy delante. Confirmar también el rango de pods de `FORWARDED_ALLOW_IPS` (C-56).
+* Que el Blackbox consulte directamente `http://iam-service.turismo-app.svc:8001/health`, porque el gateway no lo enruta, y confirmar su etiqueta `app.kubernetes.io/name` (C-54).
+* Definir los dominios de `PWA_URL` y `S3_ENDPOINT_PUBLICO`. Este último debe llegar a SeaweedFS desde el navegador del Admin, porque va dentro de la firma de la URL (C-30).
+
+### Para Luis Fernando (`infra/`)
+
+Bloque para `infra/docker-compose.yml`, siguiendo el patrón de catalog:
+
+```yaml
+x-iam-entorno: &iam-entorno
+  ENVIRONMENT: development
+  LOG_LEVEL: INFO
+  DATABASE_URL: postgresql+asyncpg://iam_user:${IAM_DB_PASSWORD}@postgres:5432/iam_db
+  DB_APP_ROLE: iam_user
+  VALKEY_URL: redis://valkey:6379/2   # base 2: separada de catalog (0) y booking (1)
+  RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+  S3_ENDPOINT_URL: http://seaweedfs:8333
+  S3_ENDPOINT_PUBLICO: http://localhost:8333   # el host que ve el navegador: va en la firma
+  S3_ACCESS_KEY: iam_access_dev
+  S3_SECRET_KEY: iam_secret_dev
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  PWA_URL: http://localhost:5173
+
+services:
+  # iam-service (Módulo 1): las migraciones corren una vez y luego arrancan API y worker.
+  iam-migraciones:
+    build: ../services/iam-service
+    image: iam-service:local
+    command: ["alembic", "upgrade", "head"]
+    environment: *iam-entorno
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  iam-service:
+    image: iam-service:local
+    environment: *iam-entorno
+    ports: ["8001:8001"]
+    volumes:
+      - ../services/iam-service/keys:/srv/keys:ro   # no se versionan; ver "Generar iam-jwt-keys"
+    depends_on:
+      iam-migraciones: { condition: service_completed_successfully }
+      valkey: { condition: service_started }
+      rabbitmq: { condition: service_healthy }
+
+  iam-worker:
+    image: iam-service:local
+    command: ["python", "-m", "app.worker"]
+    environment: *iam-entorno
+    ports: ["9101:9101"]   # /metrics
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9101/metrics')"]
+      interval: 30s
+      retries: 3
+    depends_on:
+      iam-migraciones: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+```
+
+Lo que falta en `infra/`:
+
+**Base de datos.** `iam_db` ya se crea en `postgres/init/01-create-databases.sql`, pero `iam_user` no existe. Agregar lo siguiente, teniendo en cuenta que ese script solo corre con un volumen nuevo; en uno existente hay que ejecutarlo a mano:
+
+```sql
+CREATE ROLE iam_user LOGIN PASSWORD '<IAM_DB_PASSWORD>';
+ALTER DATABASE iam_db OWNER TO iam_user;
+```
+
+**SeaweedFS.** El archivo de identidades debe quedar así. **El cambio en `anonymous` es obligatorio:** con el `"Read"` actual, sin bucket, cualquiera lee un RUT sin firma con solo conocer su llave; está probado (C-46). `Write` incluye el borrado y `List` hace falta para la supresión. El permiso de `catalog` no cambia.
+
+```json
+{
+  "identities": [
+    {
+      "name": "iam",
+      "credentials": [{ "accessKey": "iam_access_dev", "secretKey": "iam_secret_dev" }],
+      "actions": ["Read:documentos-verificacion", "Write:documentos-verificacion", "List:documentos-verificacion"]
+    },
+    { "name": "anonymous", "actions": ["Read:catalogo-imagenes"] }
+  ]
+}
+```
+
+Y crear el bucket en `seaweedfs-init`: `s3.bucket.create -name documentos-verificacion`. En k3s, las llaves van en `iam-secretos` y el Service se llama, por ahora, `seaweedfs.turismo-datos.svc:8333` en el ConfigMap; confirmar el nombre.
+
+**Prometheus.** En `prometheus/prometheus.yml`:
+
+```yaml
+  - job_name: iam-service
+    static_configs:
+      - targets: ["iam-service:8001"]
+
+  - job_name: iam-worker
+    static_configs:
+      - targets: ["iam-worker:9101"]
+```
+
+Conviene agregar alertas sobre `iam_recuperacion_solicitudes_total{resultado="fallo_smtp"}` y `iam_eventos_consumidos_total{resultado="dlq"}` (C-40, C-50).
 
 ## Decisiones y riesgos conocidos
 
@@ -442,5 +677,8 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **Recuperación sin enumeración de cuentas** (C-28, C-50): todo corre después de responder `202`. **Costo:** si el correo no sale, el usuario no se entera; solo queda el log y la métrica.
 * **El perfil usa `If-Match` sin `Idempotency-Key`** (C-49), y **el correo y la razón social no se editan** (C-51). **`POST /perfil/contrasena` y el 422** difieren de lo comunicado al frontend (C-52).
 * **Readiness y liveness en `/health/live`, sin dependencias** (C-32, distinto del Plan §7.3): una caída de PostgreSQL o Valkey no saca a todas las réplicas a la vez; `/health` sigue mostrando la falla al monitoreo.
+* **Argon2 en un hilo, con cupos por réplica y sin ocupar conexiones** (C-53). En k3s, 1 cupo para proteger a `verificar` (medido en el registro; una sola corrida en Docker Desktop, se repite en la Fase 5). **Costo:** tras 10 s de espera, los logins válidos reciben `503 SERVICIO_OCUPADO` con `Retry-After: 2` y deben reintentar.
+* **Salida de red sin restringir, y Blackbox entra directo a `/health`** (C-54). **Migraciones en el initContainer, con candado** y con las mismas credenciales de la app (C-55). **`FORWARDED_ALLOW_IPS` en k3s, por confirmar** (C-56). **`iam.yaml` generado, en OpenAPI 3.1** (C-57).
+* **Riesgo: el `anonymous` actual de `infra/` deja leer los documentos sin firma** (C-46); hay que limitarlo antes de desplegar.
 * **Contacto interno con 404 si llega por Traefik** (C-15). **Riesgo:** catalog todavía no envía `X-Correlation-ID` en esa llamada, así que su log no se cruza con el evento.
 * **El 500 de una excepción no controlada sale sin `X-Correlation-ID`** (C-05).

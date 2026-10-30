@@ -19,7 +19,26 @@ from app.domain.value_objects.archivo_documento import TAMANO_MAXIMO
 from app.domain.value_objects.enums import Rol, TipoDocumento
 from app.domain.value_objects.token import ClaimsToken
 
-router = APIRouter(prefix="/api/iam/prestador", tags=["prestador"])
+router = APIRouter(
+    prefix="/api/iam/prestador",
+    tags=["prestador"],
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse, "description": "TOKEN_INVALIDO"},
+        status.HTTP_403_FORBIDDEN: {
+            "model": ErrorResponse,
+            "description": "El rol no es Prestador (ROL_INSUFICIENTE).",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorResponse,
+            "description": "La cuenta ya no existe (USUARIO_NO_ENCONTRADO).",
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Valkey no responde: no se puede comprobar la revocación del token "
+            "(SERVICIO_NO_DISPONIBLE).",
+        },
+    },
+)
 
 Prestador = Annotated[ClaimsToken, Depends(require_role(Rol.PRESTADOR))]
 
@@ -29,14 +48,10 @@ Prestador = Annotated[ClaimsToken, Depends(require_role(Rol.PRESTADOR))]
     status_code=status.HTTP_201_CREATED,
     response_model=DocumentoResponse,
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse, "description": "TOKEN_INVALIDO"},
-        status.HTTP_403_FORBIDDEN: {
-            "model": ErrorResponse,
-            "description": "El rol no es Prestador (ROL_INSUFICIENTE).",
-        },
         status.HTTP_409_CONFLICT: {
             "model": ErrorResponse,
-            "description": "El documento vigente de ese tipo ya fue aprobado (DOCUMENTO_APROBADO).",
+            "description": "El documento vigente de ese tipo ya fue aprobado (DOCUMENTO_APROBADO) "
+            "o la cuenta suprimió sus datos durante la carga (CUENTA_SUPRIMIDA).",
         },
         status.HTTP_413_CONTENT_TOO_LARGE: {
             "model": ErrorResponse,
@@ -50,7 +65,7 @@ Prestador = Annotated[ClaimsToken, Depends(require_role(Rol.PRESTADOR))]
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": ErrorResponse,
-            "description": "SeaweedFS no responde (SERVICIO_NO_DISPONIBLE).",
+            "description": "Valkey o SeaweedFS no responden (SERVICIO_NO_DISPONIBLE).",
         },
     },
 )

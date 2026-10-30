@@ -80,6 +80,20 @@ async def test_consumir_es_de_un_solo_uso(
     assert await tokens.consumir(token) is None
 
 
+async def test_esta_vigente_no_gasta_el_token(
+    tokens: ValkeyTokensRecuperacion, usuario_id: uuid.UUID
+) -> None:
+    token = f"secreto-{uuid.uuid4()}"
+    await tokens.guardar(token, usuario_id)
+
+    assert await tokens.esta_vigente(token) is True
+    assert await tokens.esta_vigente(token) is True
+    assert await tokens.esta_vigente("no-existe") is False
+
+    assert await tokens.consumir(token) == usuario_id
+    assert await tokens.esta_vigente(token) is False
+
+
 async def test_dos_peticiones_simultaneas_solo_una_lo_consume(
     tokens: ValkeyTokensRecuperacion, usuario_id: uuid.UUID
 ) -> None:
@@ -144,6 +158,7 @@ async def test_valkey_caido_es_servicio_no_disponible() -> None:
     for llamada in (
         caido.reservar_envio(usuario),
         caido.guardar("t", usuario),
+        caido.esta_vigente("t"),
         caido.consumir("t"),
         caido.descartar(usuario),
     ):

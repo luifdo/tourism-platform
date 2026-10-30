@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -66,6 +67,12 @@ class Settings(BaseSettings):
     jwt_private_key_path: Path = Path("keys/private.pem")
     jwt_public_key_path: Path = Path("keys/public.pem")
     jwt_access_token_ttl_minutes: int = 15
+
+    # Hashes Argon2 simultáneos por réplica (C-53). Cada uno reserva 64 MiB: va de la mano con
+    # el límite de memoria del Deployment.
+    argon2_concurrencia_maxima: int = Field(default=4, ge=1)
+    # Tope de la espera por un cupo; si se pasa, 503 SERVICIO_OCUPADO.
+    argon2_espera_maxima_segundos: float = Field(default=10.0, gt=0)
 
 
 @lru_cache

@@ -32,12 +32,28 @@ from app.domain.entities.usuario import Usuario
 from app.domain.value_objects.enums import Idioma, Rol
 from app.domain.value_objects.token import ClaimsToken
 
-router = APIRouter(prefix="/api/iam/perfil", tags=["perfil"])
+_ERROR_401 = {"model": ErrorResponse, "description": "TOKEN_INVALIDO"}
+_ERROR_404 = {
+    "model": ErrorResponse,
+    "description": "La cuenta ya no existe o suprimió sus datos (USUARIO_NO_ENCONTRADO).",
+}
+_ERROR_503 = {"model": ErrorResponse, "description": "SERVICIO_NO_DISPONIBLE"}
+_ERROR_503_CON_HASH = {
+    "model": ErrorResponse,
+    "description": "SERVICIO_NO_DISPONIBLE, o SERVICIO_OCUPADO con Retry-After: 2 si hay "
+    "demasiadas peticiones calculando contraseñas.",
+}
+
+router = APIRouter(
+    prefix="/api/iam/perfil",
+    tags=["perfil"],
+    responses={
+        status.HTTP_401_UNAUTHORIZED: _ERROR_401,
+        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_503,
+    },
+)
 
 Autenticado = Annotated[ClaimsToken, Depends(require_role(*Rol))]
-
-_ERROR_401 = {"model": ErrorResponse, "description": "TOKEN_INVALIDO"}
-_ERROR_503 = {"model": ErrorResponse, "description": "SERVICIO_NO_DISPONIBLE"}
 
 
 def _responder(response: Response, usuario: Usuario) -> PerfilResponse:
@@ -47,7 +63,7 @@ def _responder(response: Response, usuario: Usuario) -> PerfilResponse:
     return PerfilResponse.de(usuario)
 
 
-@router.get("", response_model=PerfilResponse, responses={401: _ERROR_401})
+@router.get("", response_model=PerfilResponse, responses={status.HTTP_404_NOT_FOUND: _ERROR_404})
 async def mi_perfil(
     response: Response,
     claims: Autenticado,
@@ -60,7 +76,7 @@ async def mi_perfil(
     "",
     response_model=PerfilResponse,
     responses={
-        status.HTTP_401_UNAUTHORIZED: _ERROR_401,
+        status.HTTP_404_NOT_FOUND: _ERROR_404,
         status.HTTP_409_CONFLICT: {
             "model": ErrorResponse,
             "description": "If-Match no coincide con la versión actual (VERSION_CONFLICTO).",
@@ -96,12 +112,12 @@ async def editar_perfil(
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
     responses={
-        status.HTTP_401_UNAUTHORIZED: _ERROR_401,
+        status.HTTP_404_NOT_FOUND: _ERROR_404,
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": ErrorResponse,
             "description": "PASSWORD_ACTUAL_INCORRECTA o PASSWORD_INVALIDA.",
         },
-        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_503,
+        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_503_CON_HASH,
     },
 )
 async def cambiar_contrasena(
@@ -135,7 +151,7 @@ async def cambiar_contrasena(
             "model": ErrorResponse,
             "description": "Es el último Admin activo (ULTIMO_ADMIN).",
         },
-        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_503,
+        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_503_CON_HASH,
     },
 )
 async def suprimir_datos(

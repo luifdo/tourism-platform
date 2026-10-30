@@ -1,0 +1,1991 @@
+# Generado por services/iam-service/scripts/exportar_openapi.py: no editar a mano.
+openapi: 3.1.0
+info:
+  title: iam-service
+  version: 0.1.0
+paths:
+  /api/iam/register:
+    post:
+      tags:
+      - auth
+      summary: Register
+      operationId: register_api_iam_register_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistroRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioPublicoResponse'
+        '409':
+          description: El correo ya está registrado (EMAIL_EN_USO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Petición inválida (VALIDACION, con la lista 'errores') o regla de negocio incumplida
+            (HABEAS_DATA_REQUERIDO, MAYORIA_DE_EDAD_REQUERIDA, PASSWORD_INVALIDA, NOMBRE_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 'Demasiadas peticiones calculando contraseñas (SERVICIO_OCUPADO). Incluye el encabezado
+            Retry-After: 2.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/iam/login:
+    post:
+      tags:
+      - auth
+      summary: Login
+      operationId: login_api_iam_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: 'Correo o contraseña incorrectos (CREDENCIALES_INVALIDAS). Incluye el encabezado
+            WWW-Authenticate: Bearer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: La cuenta está desactivada (CUENTA_INACTIVA).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 'Demasiadas peticiones calculando contraseñas (SERVICIO_OCUPADO). Incluye el encabezado
+            Retry-After: 2.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': &id001
+          description: La petición no cumple el esquema (VALIDACION, con la lista 'errores').
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/iam/logout:
+    post:
+      tags:
+      - auth
+      summary: Logout
+      operationId: logout_api_iam_logout_post
+      responses:
+        '204':
+          description: Successful Response
+        '401':
+          description: 'Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO). Incluye el encabezado
+            WWW-Authenticate: Bearer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: No se pudo consultar la lista de revocación (SERVICIO_NO_DISPONIBLE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - HTTPBearer: []
+  /api/iam/auth/verificar:
+    get:
+      tags:
+      - auth
+      summary: Verificar
+      description: 'RF-09: ForwardAuth de Traefik. Pública: la validación es este mismo endpoint.
+
+
+        No consulta PostgreSQL en el camino feliz; solo escribe en la bitácora al rechazar.'
+      operationId: verificar_api_iam_auth_verificar_get
+      responses:
+        '200':
+          description: Token válido. Cuerpo vacío; la identidad va en los encabezados X-Usuario-Id y X-Usuario-Rol,
+            que Traefik reenvía al servicio de destino.
+        '401':
+          description: 'Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO). Incluye el encabezado
+            WWW-Authenticate: Bearer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: No se pudo consultar la lista de revocación (SERVICIO_NO_DISPONIBLE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - HTTPBearer: []
+  /api/iam/auth/recuperar:
+    post:
+      tags:
+      - auth
+      summary: Recuperar
+      description: 'UC3. Todo el trabajo corre después de responder: ni el tiempo ni un 503 revelan si
+        el
+
+        correo existe (C-50).'
+      operationId: recuperar_api_iam_auth_recuperar_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecuperarRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecuperarResponse'
+        '422': *id001
+  /api/iam/auth/restablecer:
+    post:
+      tags:
+      - auth
+      summary: Restablecer
+      operationId: restablecer_api_iam_auth_restablecer_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestablecerRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '400':
+          description: Enlace inválido, vencido o ya usado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: La contraseña no cumple la política (PASSWORD_INVALIDA); el enlace sigue sirviendo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 'Valkey no responde (SERVICIO_NO_DISPONIBLE) o demasiadas peticiones calculando
+            contraseñas (SERVICIO_OCUPADO, con Retry-After: 2 y el enlace intacto).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/iam/.well-known/jwks.json:
+    get:
+      tags:
+      - auth
+      summary: Jwks
+      description: Llaves públicas para que el Gateway y los demás servicios verifiquen los tokens.
+      operationId: jwks_api_iam__well_known_jwks_json_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JwksResponse'
+  /api/iam/admin/usuarios:
+    get:
+      tags:
+      - admin
+      summary: Listar Usuarios
+      operationId: listar_usuarios_api_iam_admin_usuarios_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: rol
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - Turista
+            - Prestador
+            - Entidad
+            - Admin
+            type: string
+          - type: 'null'
+          title: Rol
+      - name: activo
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Activo
+      - name: q
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          description: Busca en el nombre y en el correo.
+          title: Q
+        description: Busca en el nombre y en el correo.
+      - name: pagina
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Pagina
+      - name: tamano
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Tamano
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaUsuariosResponse'
+        '503':
+          description: 'Valkey no responde: no se puede comprobar la revocación del token (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/admin/usuarios/{usuario_id}:
+    get:
+      tags:
+      - admin
+      summary: Obtener Usuario
+      operationId: obtener_usuario_api_iam_admin_usuarios__usuario_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: usuario_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Usuario Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioAdminResponse'
+        '503':
+          description: 'Valkey no responde: no se puede comprobar la revocación del token (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta no existe (USUARIO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/admin/usuarios/{usuario_id}/rol:
+    patch:
+      tags:
+      - admin
+      summary: Cambiar Rol
+      description: Revoca los tokens del usuario. Si deja de ser Prestador, publica `prestador.suspendido`.
+      operationId: cambiar_rol_api_iam_admin_usuarios__usuario_id__rol_patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: usuario_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Usuario Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CambioRolRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioAdminResponse'
+        '503':
+          description: 'Valkey no responde: no se pudo revocar y no se cambió nada (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta no existe (USUARIO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Cambio sobre la propia cuenta (AUTOGESTION_NO_PERMITIDA), la plataforma quedaría
+            sin Admins activos (ULTIMO_ADMIN) o la cuenta suprimió sus datos (CUENTA_SUPRIMIDA).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/admin/usuarios/{usuario_id}/estado:
+    patch:
+      tags:
+      - admin
+      summary: Cambiar Estado
+      description: Desactivar revoca los tokens y, si es Prestador, publica `prestador.suspendido`.
+      operationId: cambiar_estado_api_iam_admin_usuarios__usuario_id__estado_patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: usuario_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Usuario Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CambioEstadoRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioAdminResponse'
+        '503':
+          description: 'Valkey no responde: no se pudo revocar y no se cambió nada (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta no existe (USUARIO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Cambio sobre la propia cuenta (AUTOGESTION_NO_PERMITIDA), la plataforma quedaría
+            sin Admins activos (ULTIMO_ADMIN) o la cuenta suprimió sus datos (CUENTA_SUPRIMIDA).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/admin/bitacora:
+    get:
+      tags:
+      - admin
+      summary: Consultar Bitacora
+      description: 'UC33: de la más reciente a la más antigua (por `fecha`, el momento del hecho).
+
+
+        Cada consulta deja una fila `AUDIT_VIEW` con los filtros usados (C-43).'
+      operationId: consultar_bitacora_api_iam_admin_bitacora_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: usuario_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Usuario Id
+      - name: accion
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 50
+          - type: 'null'
+          title: Accion
+      - name: resultado
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - Exito
+            - Denegado
+            - Error
+            type: string
+          - type: 'null'
+          title: Resultado
+      - name: servicio_origen
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 50
+          - type: 'null'
+          title: Servicio Origen
+      - name: desde
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Inclusive. ISO 8601 con zona horaria.
+          title: Desde
+        description: Inclusive. ISO 8601 con zona horaria.
+      - name: hasta
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Exclusive. ISO 8601 con zona horaria.
+          title: Hasta
+        description: Exclusive. ISO 8601 con zona horaria.
+      - name: pagina
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Pagina
+      - name: tamano
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Tamano
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaBitacoraResponse'
+        '503':
+          description: 'Valkey no responde: no se puede comprobar la revocación del token (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Filtro inválido (VALIDACION; por ejemplo, una fecha sin zona horaria) o `desde`
+            no es anterior a `hasta` (RANGO_FECHAS_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/iam/admin/prestadores:
+    get:
+      tags:
+      - admin
+      summary: Listar Prestadores
+      description: 'UC28: cola de revisión (`estado=pendiente`), de la cuenta más antigua a la más nueva.'
+      operationId: listar_prestadores_api_iam_admin_prestadores_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: estado
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - incompleto
+            - pendiente
+            - rechazado
+            - aprobado
+            type: string
+          - type: 'null'
+          title: Estado
+      - name: pagina
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Pagina
+      - name: tamano
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Tamano
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaPrestadoresResponse'
+        '503':
+          description: 'Valkey no responde: no se puede comprobar la revocación del token (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/admin/prestadores/{usuario_id}/documentos:
+    get:
+      tags:
+      - admin
+      summary: Documentos De Prestador
+      description: 'Historial completo, incluidos los documentos reemplazados (`vigente: false`).'
+      operationId: documentos_de_prestador_api_iam_admin_prestadores__usuario_id__documentos_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: usuario_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Usuario Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificacionAdminResponse'
+        '503':
+          description: 'Valkey no responde: no se puede comprobar la revocación del token (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta no existe (USUARIO_NO_ENCONTRADO) o no hay un documento vigente de ese
+            tipo (DOCUMENTO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: No es Prestador (NO_ES_PRESTADOR), le falta el RNT o el RUT (DOCUMENTOS_INCOMPLETOS),
+            el documento ya se revisó (DOCUMENTO_YA_REVISADO) o la cuenta suprimió sus datos (CUENTA_SUPRIMIDA).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/admin/documentos/{documento_id}/url:
+    get:
+      tags:
+      - admin
+      summary: Abrir Documento
+      description: URL de 5 minutos para ver el documento. Cada consulta queda como `DOCUMENT_VIEW`.
+      operationId: abrir_documento_api_iam_admin_documentos__documento_id__url_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: documento_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Documento Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnlaceDocumentoResponse'
+        '503':
+          description: 'Valkey no responde: no se puede comprobar la revocación del token (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: El documento no existe (DOCUMENTO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/admin/prestadores/{usuario_id}/aprobar:
+    post:
+      tags:
+      - admin
+      summary: Aprobar Prestador
+      description: 'Aprueba el RNT y el RUT vigentes y, si la cuenta está activa, publica
+
+        `prestador.aprobado`.'
+      operationId: aprobar_prestador_api_iam_admin_prestadores__usuario_id__aprobar_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: usuario_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Usuario Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificacionAdminResponse'
+        '503':
+          description: 'Valkey no responde: no se puede comprobar la revocación del token (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta no existe (USUARIO_NO_ENCONTRADO) o no hay un documento vigente de ese
+            tipo (DOCUMENTO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: No es Prestador (NO_ES_PRESTADOR), le falta el RNT o el RUT (DOCUMENTOS_INCOMPLETOS),
+            el documento ya se revisó (DOCUMENTO_YA_REVISADO) o la cuenta suprimió sus datos (CUENTA_SUPRIMIDA).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/admin/prestadores/{usuario_id}/rechazar:
+    post:
+      tags:
+      - admin
+      summary: Rechazar Prestador
+      description: Rechaza los documentos indicados, con el motivo que verá el prestador.
+      operationId: rechazar_prestador_api_iam_admin_prestadores__usuario_id__rechazar_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: usuario_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Usuario Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RechazoRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificacionAdminResponse'
+        '503':
+          description: 'Valkey no responde: no se puede comprobar la revocación del token (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token ausente, inválido, expirado o revocado (TOKEN_INVALIDO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol del usuario no es Admin (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta no existe (USUARIO_NO_ENCONTRADO) o no hay un documento vigente de ese
+            tipo (DOCUMENTO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: No es Prestador (NO_ES_PRESTADOR), le falta el RNT o el RUT (DOCUMENTOS_INCOMPLETOS),
+            el documento ya se revisó (DOCUMENTO_YA_REVISADO) o la cuenta suprimió sus datos (CUENTA_SUPRIMIDA).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/perfil:
+    get:
+      tags:
+      - perfil
+      summary: Mi Perfil
+      operationId: mi_perfil_api_iam_perfil_get
+      security:
+      - HTTPBearer: []
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerfilResponse'
+        '401':
+          description: TOKEN_INVALIDO
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: SERVICIO_NO_DISPONIBLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta ya no existe o suprimió sus datos (USUARIO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+      - perfil
+      summary: Editar Perfil
+      operationId: editar_perfil_api_iam_perfil_patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: if-match
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: If-Match
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditarPerfilRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerfilResponse'
+        '401':
+          description: TOKEN_INVALIDO
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: SERVICIO_NO_DISPONIBLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta ya no existe o suprimió sus datos (USUARIO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: If-Match no coincide con la versión actual (VERSION_CONFLICTO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: NOMBRE_INVALIDO, o idioma o campo no editable (VALIDACION).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - perfil
+      summary: Suprimir Datos
+      description: 'Irreversible. Ante un 503 los tokens ya se revocaron: hay que iniciar sesión y repetirla.'
+      operationId: suprimir_datos_api_iam_perfil_delete
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuprimirDatosRequest'
+      responses:
+        '204':
+          description: Successful Response
+        '401':
+          description: TOKEN_INVALIDO, o la contraseña no coincide (CREDENCIALES_INVALIDAS).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 'SERVICIO_NO_DISPONIBLE, o SERVICIO_OCUPADO con Retry-After: 2 si hay demasiadas
+            peticiones calculando contraseñas.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Es el último Admin activo (ULTIMO_ADMIN).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
+  /api/iam/perfil/contrasena:
+    post:
+      tags:
+      - perfil
+      summary: Cambiar Contrasena
+      description: 'Revoca todas las sesiones, también esta: la PWA debe iniciar sesión otra vez.'
+      operationId: cambiar_contrasena_api_iam_perfil_contrasena_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CambiarContrasenaRequest'
+        required: true
+      responses:
+        '204':
+          description: Successful Response
+        '401':
+          description: TOKEN_INVALIDO
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 'SERVICIO_NO_DISPONIBLE, o SERVICIO_OCUPADO con Retry-After: 2 si hay demasiadas
+            peticiones calculando contraseñas.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta ya no existe o suprimió sus datos (USUARIO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: PASSWORD_ACTUAL_INCORRECTA o PASSWORD_INVALIDA.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - HTTPBearer: []
+  /api/iam/prestador/documentos:
+    get:
+      tags:
+      - prestador
+      summary: Mis Documentos
+      description: Documentos vigentes, con su estado y el motivo si se rechazaron.
+      operationId: mis_documentos_api_iam_prestador_documentos_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificacionResponse'
+        '401':
+          description: TOKEN_INVALIDO
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol no es Prestador (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta ya no existe (USUARIO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 'Valkey no responde: no se puede comprobar la revocación del token (SERVICIO_NO_DISPONIBLE).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - prestador
+      summary: Subir Documento
+      operationId: subir_documento_api_iam_prestador_documentos_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_subir_documento_api_iam_prestador_documentos_post'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentoResponse'
+        '401':
+          description: TOKEN_INVALIDO
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: El rol no es Prestador (ROL_INSUFICIENTE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: La cuenta ya no existe (USUARIO_NO_ENCONTRADO).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Valkey o SeaweedFS no responden (SERVICIO_NO_DISPONIBLE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: El documento vigente de ese tipo ya fue aprobado (DOCUMENTO_APROBADO) o la cuenta
+            suprimió sus datos durante la carga (CUENTA_SUPRIMIDA).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: El archivo supera los 5 MB (ARCHIVO_DEMASIADO_GRANDE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: No es PDF, JPG ni PNG (TIPO_ARCHIVO_NO_PERMITIDO), falta la razón social con el
+            RUT (RAZON_SOCIAL_INVALIDA) o el formulario no es válido (VALIDACION).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - HTTPBearer: []
+components:
+  schemas:
+    Body_subir_documento_api_iam_prestador_documentos_post:
+      properties:
+        tipo:
+          type: string
+          enum:
+          - RNT
+          - RUT
+          title: Tipo
+        archivo:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Archivo
+          description: PDF, JPG o PNG de hasta 5 MB.
+        razon_social:
+          anyOf:
+          - type: string
+            maxLength: 200
+          - type: 'null'
+          title: Razon Social
+          description: Obligatoria con el RUT (C-07).
+      type: object
+      required:
+      - tipo
+      - archivo
+      title: Body_subir_documento_api_iam_prestador_documentos_post
+    CambiarContrasenaRequest:
+      properties:
+        password_actual:
+          type: string
+          title: Password Actual
+        password_nueva:
+          type: string
+          title: Password Nueva
+      type: object
+      required:
+      - password_actual
+      - password_nueva
+      title: CambiarContrasenaRequest
+    CambioEstadoRequest:
+      properties:
+        activo:
+          type: boolean
+          title: Activo
+        motivo:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Motivo
+      type: object
+      required:
+      - activo
+      title: CambioEstadoRequest
+      examples:
+      - activo: false
+        motivo: RNT vencido
+    CambioRolRequest:
+      properties:
+        rol:
+          type: string
+          enum:
+          - Turista
+          - Prestador
+          - Entidad
+          - Admin
+          title: Rol
+        motivo:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Motivo
+      type: object
+      required:
+      - rol
+      title: CambioRolRequest
+      examples:
+      - motivo: Funcionario de la Alcaldía
+        rol: Entidad
+    DocumentoAdminResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        tipo_documento:
+          $ref: '#/components/schemas/TipoDocumento'
+        estado:
+          $ref: '#/components/schemas/EstadoDocumento'
+        vigente:
+          type: boolean
+          title: Vigente
+        tipo_contenido:
+          type: string
+          title: Tipo Contenido
+        tamano_bytes:
+          type: integer
+          title: Tamano Bytes
+        motivo_rechazo:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Motivo Rechazo
+        fecha_subida:
+          type: string
+          format: date-time
+          title: Fecha Subida
+        revisado_en:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revisado En
+        revisado_por:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Revisado Por
+      type: object
+      required:
+      - id
+      - tipo_documento
+      - estado
+      - vigente
+      - tipo_contenido
+      - tamano_bytes
+      - motivo_rechazo
+      - fecha_subida
+      - revisado_en
+      - revisado_por
+      title: DocumentoAdminResponse
+    DocumentoRechazadoRequest:
+      properties:
+        tipo:
+          type: string
+          enum:
+          - RNT
+          - RUT
+          title: Tipo
+        motivo:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Motivo
+      type: object
+      required:
+      - tipo
+      - motivo
+      title: DocumentoRechazadoRequest
+    DocumentoResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        tipo_documento:
+          $ref: '#/components/schemas/TipoDocumento'
+        estado:
+          $ref: '#/components/schemas/EstadoDocumento'
+        vigente:
+          type: boolean
+          title: Vigente
+        tipo_contenido:
+          type: string
+          title: Tipo Contenido
+        tamano_bytes:
+          type: integer
+          title: Tamano Bytes
+        motivo_rechazo:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Motivo Rechazo
+        fecha_subida:
+          type: string
+          format: date-time
+          title: Fecha Subida
+        revisado_en:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revisado En
+      type: object
+      required:
+      - id
+      - tipo_documento
+      - estado
+      - vigente
+      - tipo_contenido
+      - tamano_bytes
+      - motivo_rechazo
+      - fecha_subida
+      - revisado_en
+      title: DocumentoResponse
+      description: Nunca incluye la llave del objeto en SeaweedFS.
+    EditarPerfilRequest:
+      properties:
+        nombre:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Nombre
+        idioma:
+          anyOf:
+          - type: string
+            enum:
+            - es
+            - en
+          - type: 'null'
+          title: Idioma
+      additionalProperties: false
+      type: object
+      title: EditarPerfilRequest
+    EnlaceDocumentoResponse:
+      properties:
+        url:
+          type: string
+          title: Url
+        expira_en:
+          type: string
+          format: date-time
+          title: Expira En
+      type: object
+      required:
+      - url
+      - expira_en
+      title: EnlaceDocumentoResponse
+    EntradaBitacoraResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        fecha:
+          type: string
+          format: date-time
+          title: Fecha
+        usuario_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Usuario Id
+        accion:
+          type: string
+          title: Accion
+        resultado:
+          $ref: '#/components/schemas/ResultadoAuditoria'
+        servicio_origen:
+          type: string
+          title: Servicio Origen
+        ip_origen:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ip Origen
+        detalles:
+          additionalProperties: true
+          type: object
+          title: Detalles
+        correlation_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Correlation Id
+        event_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Event Id
+      type: object
+      required:
+      - id
+      - fecha
+      - usuario_id
+      - accion
+      - resultado
+      - servicio_origen
+      - ip_origen
+      - detalles
+      - correlation_id
+      - event_id
+      title: EntradaBitacoraResponse
+      description: Una fila de la bitácora (UC33). `event_id` solo existe en las de otros servicios.
+    ErrorCampo:
+      properties:
+        campo:
+          type: string
+          title: Campo
+        mensaje:
+          type: string
+          title: Mensaje
+      type: object
+      required:
+      - campo
+      - mensaje
+      title: ErrorCampo
+    ErrorResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+        code:
+          type: string
+          title: Code
+        errores:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ErrorCampo'
+            type: array
+          - type: 'null'
+          title: Errores
+        correlation_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Correlation Id
+      type: object
+      required:
+      - detail
+      - code
+      title: ErrorResponse
+    EstadoDocumento:
+      type: string
+      enum:
+      - Pendiente
+      - Aprobado
+      - Rechazado
+      title: EstadoDocumento
+    EstadoVerificacion:
+      type: string
+      enum:
+      - incompleto
+      - pendiente
+      - rechazado
+      - aprobado
+      title: EstadoVerificacion
+      description: Estado del prestador, derivado de sus documentos vigentes (UC28).
+    Idioma:
+      type: string
+      enum:
+      - es
+      - en
+      title: Idioma
+      description: Idioma de los correos del usuario (RF-10, C-06).
+    Jwk:
+      properties:
+        kty:
+          type: string
+          title: Kty
+        n:
+          type: string
+          title: N
+        e:
+          type: string
+          title: E
+        kid:
+          type: string
+          title: Kid
+        use:
+          type: string
+          title: Use
+        alg:
+          type: string
+          title: Alg
+      type: object
+      required:
+      - kty
+      - n
+      - e
+      - kid
+      - use
+      - alg
+      title: Jwk
+    JwksResponse:
+      properties:
+        keys:
+          items:
+            $ref: '#/components/schemas/Jwk'
+          type: array
+          title: Keys
+      type: object
+      required:
+      - keys
+      title: JwksResponse
+    LoginRequest:
+      properties:
+        email:
+          type: string
+          title: Email
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - email
+      - password
+      title: LoginRequest
+      examples:
+      - email: maria.perez@example.com
+        password: Tayrona2026
+    LoginResponse:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        token_type:
+          type: string
+          const: bearer
+          title: Token Type
+          default: bearer
+        expires_in:
+          type: integer
+          title: Expires In
+        usuario:
+          $ref: '#/components/schemas/UsuarioPublicoResponse'
+      type: object
+      required:
+      - access_token
+      - expires_in
+      - usuario
+      title: LoginResponse
+    PaginaBitacoraResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/EntradaBitacoraResponse'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        pagina:
+          type: integer
+          title: Pagina
+        tamano:
+          type: integer
+          title: Tamano
+      type: object
+      required:
+      - items
+      - total
+      - pagina
+      - tamano
+      title: PaginaBitacoraResponse
+    PaginaPrestadoresResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ResumenPrestadorResponse'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        pagina:
+          type: integer
+          title: Pagina
+        tamano:
+          type: integer
+          title: Tamano
+      type: object
+      required:
+      - items
+      - total
+      - pagina
+      - tamano
+      title: PaginaPrestadoresResponse
+    PaginaUsuariosResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/UsuarioAdminResponse'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        pagina:
+          type: integer
+          title: Pagina
+        tamano:
+          type: integer
+          title: Tamano
+      type: object
+      required:
+      - items
+      - total
+      - pagina
+      - tamano
+      title: PaginaUsuariosResponse
+    PerfilResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        email:
+          type: string
+          title: Email
+        nombre:
+          type: string
+          title: Nombre
+        rol:
+          $ref: '#/components/schemas/Rol'
+        idioma:
+          $ref: '#/components/schemas/Idioma'
+        razon_social:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Razon Social
+        creado_en:
+          type: string
+          format: date-time
+          title: Creado En
+      type: object
+      required:
+      - id
+      - email
+      - nombre
+      - rol
+      - idioma
+      - razon_social
+      - creado_en
+      title: PerfilResponse
+    RechazoRequest:
+      properties:
+        documentos:
+          items:
+            $ref: '#/components/schemas/DocumentoRechazadoRequest'
+          type: array
+          maxItems: 2
+          minItems: 1
+          title: Documentos
+      type: object
+      required:
+      - documentos
+      title: RechazoRequest
+      examples:
+      - documentos:
+        - motivo: El RUT está ilegible.
+          tipo: RUT
+    RecuperarRequest:
+      properties:
+        email:
+          type: string
+          maxLength: 320
+          title: Email
+      type: object
+      required:
+      - email
+      title: RecuperarRequest
+    RecuperarResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - detail
+      title: RecuperarResponse
+    RegistroRequest:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        password:
+          type: string
+          title: Password
+        nombre_completo:
+          type: string
+          title: Nombre Completo
+        rol:
+          type: string
+          enum:
+          - Turista
+          - Prestador
+          title: Rol
+        habeas_data_aceptado:
+          type: boolean
+          title: Habeas Data Aceptado
+        es_mayor_de_edad:
+          type: boolean
+          title: Es Mayor De Edad
+        idioma:
+          type: string
+          enum:
+          - es
+          - en
+          title: Idioma
+          default: es
+      type: object
+      required:
+      - email
+      - password
+      - nombre_completo
+      - rol
+      - habeas_data_aceptado
+      - es_mayor_de_edad
+      title: RegistroRequest
+      examples:
+      - email: maria.perez@example.com
+        es_mayor_de_edad: true
+        habeas_data_aceptado: true
+        idioma: es
+        nombre_completo: María Pérez
+        password: Tayrona2026
+        rol: Turista
+    RestablecerRequest:
+      properties:
+        token:
+          type: string
+          maxLength: 512
+          title: Token
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - token
+      - password
+      title: RestablecerRequest
+    ResultadoAuditoria:
+      type: string
+      enum:
+      - Exito
+      - Denegado
+      - Error
+      title: ResultadoAuditoria
+    ResumenPrestadorResponse:
+      properties:
+        usuario_id:
+          type: string
+          format: uuid
+          title: Usuario Id
+        nombre_completo:
+          type: string
+          title: Nombre Completo
+        email:
+          type: string
+          title: Email
+        activo:
+          type: boolean
+          title: Activo
+        razon_social:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Razon Social
+        estado:
+          $ref: '#/components/schemas/EstadoVerificacion'
+        documentos:
+          items:
+            $ref: '#/components/schemas/DocumentoAdminResponse'
+          type: array
+          title: Documentos
+      type: object
+      required:
+      - usuario_id
+      - nombre_completo
+      - email
+      - activo
+      - razon_social
+      - estado
+      - documentos
+      title: ResumenPrestadorResponse
+    Rol:
+      type: string
+      enum:
+      - Turista
+      - Prestador
+      - Entidad
+      - Admin
+      title: Rol
+    SuprimirDatosRequest:
+      properties:
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - password
+      title: SuprimirDatosRequest
+    TipoDocumento:
+      type: string
+      enum:
+      - RNT
+      - RUT
+      title: TipoDocumento
+    UsuarioAdminResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        email:
+          type: string
+          title: Email
+        nombre_completo:
+          type: string
+          title: Nombre Completo
+        rol:
+          $ref: '#/components/schemas/Rol'
+        activo:
+          type: boolean
+          title: Activo
+        email_verificado:
+          type: boolean
+          title: Email Verificado
+        idioma:
+          $ref: '#/components/schemas/Idioma'
+        creado_en:
+          type: string
+          format: date-time
+          title: Creado En
+        actualizado_en:
+          type: string
+          format: date-time
+          title: Actualizado En
+      type: object
+      required:
+      - id
+      - email
+      - nombre_completo
+      - rol
+      - activo
+      - email_verificado
+      - idioma
+      - creado_en
+      - actualizado_en
+      title: UsuarioAdminResponse
+      description: Cuenta vista por el Admin (UC27). Nunca incluye la contraseña ni su hash.
+    UsuarioPublicoResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        email:
+          type: string
+          title: Email
+        nombre_completo:
+          type: string
+          title: Nombre Completo
+        rol:
+          $ref: '#/components/schemas/Rol'
+        email_verificado:
+          type: boolean
+          title: Email Verificado
+        idioma:
+          $ref: '#/components/schemas/Idioma'
+        creado_en:
+          type: string
+          format: date-time
+          title: Creado En
+      type: object
+      required:
+      - id
+      - email
+      - nombre_completo
+      - rol
+      - email_verificado
+      - idioma
+      - creado_en
+      title: UsuarioPublicoResponse
+      description: Datos públicos de una cuenta. Nunca incluye la contraseña ni su hash.
+    VerificacionAdminResponse:
+      properties:
+        usuario_id:
+          type: string
+          format: uuid
+          title: Usuario Id
+        razon_social:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Razon Social
+        estado:
+          $ref: '#/components/schemas/EstadoVerificacion'
+        documentos:
+          items:
+            $ref: '#/components/schemas/DocumentoAdminResponse'
+          type: array
+          title: Documentos
+      type: object
+      required:
+      - usuario_id
+      - razon_social
+      - estado
+      - documentos
+      title: VerificacionAdminResponse
+    VerificacionResponse:
+      properties:
+        usuario_id:
+          type: string
+          format: uuid
+          title: Usuario Id
+        razon_social:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Razon Social
+        estado:
+          $ref: '#/components/schemas/EstadoVerificacion'
+        documentos:
+          items:
+            $ref: '#/components/schemas/DocumentoResponse'
+          type: array
+          title: Documentos
+      type: object
+      required:
+      - usuario_id
+      - razon_social
+      - estado
+      - documentos
+      title: VerificacionResponse
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer

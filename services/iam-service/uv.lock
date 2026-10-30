@@ -468,6 +468,7 @@ dev = [
     { name = "jsonschema" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pyyaml" },
     { name = "ruff" },
     { name = "testcontainers", extra = ["rabbitmq"] },
 ]
@@ -498,6 +499,7 @@ dev = [
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", specifier = ">=0.8" },
     { name = "testcontainers", extras = ["rabbitmq"], specifier = ">=4.8" },
 ]

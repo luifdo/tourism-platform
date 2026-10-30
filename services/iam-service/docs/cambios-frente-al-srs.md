@@ -61,7 +61,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** `idioma VARCHAR(2) NOT NULL DEFAULT 'es'` con `CHECK (idioma IN ('es', 'en'))`; las cuentas existentes quedan en `es`. Es opcional en `POST /api/iam/register` (otro valor responde 422 `VALIDACION`) y se devuelve en su respuesta; como el login usa el mismo esquema, también aparece en su `usuario`. La ruta interna de contacto (C-15) lo entrega a catalog. Se edita con `PATCH /api/iam/perfil` (C-49).
 - **Por qué:** RF-10 exige la plataforma en dos idiomas, pero el idioma de la PWA vive en el navegador. Los correos los envía el worker de catálogo, que no tiene acceso al navegador.
 - **Para qué:** que los correos de reservas (UC36) y de recuperación (UC3) lleguen en el idioma del usuario.
-- **Estado:** ✅ `dcf6496` (columna, registro y contacto). 🔨 bloque 6: edición en el perfil, implementada y probada, pendiente del commit.
+- **Estado:** ✅ `dcf6496` (columna, registro y contacto). ✅ `47308f4`: edición en el perfil.
 
 ### C-07 ★ `razon_social` guardada en `iam_db`
 - **Referencia:** SRS Tabla XVIII (`razon_social` pertenece a `PRESTADOR_PERFIL`, en `catalog_db`); contrato `prestador.aprobado.v1`.
@@ -89,7 +89,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** `datos_suprimidos_en TIMESTAMPTZ`, nula salvo en las cuentas suprimidas, y `version INTEGER NOT NULL DEFAULT 1`, que sube con cada edición del perfil.
 - **Por qué:** una cuenta suprimida debe distinguirse de una simplemente inactiva, que el Admin puede reactivar. El formulario de perfil de RNF-13 necesita una versión para detectar conflictos.
 - **Para qué:** bloquear todo cambio posterior sobre una cuenta suprimida (`CUENTA_SUPRIMIDA`) y responder 409 si el perfil cambió mientras el formulario esperaba la conexión.
-- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit.
+- **Estado:** ✅ `47308f4`.
 
 ---
 
@@ -164,7 +164,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** se usan los nombres del SRS. Las acciones nuevas siguen su mismo estilo (inglés, mayúsculas con guion bajo): `LOGIN_SUCCESS`, `LOGOUT`, `USER_REGISTER`, `USER_STATUS_CHANGE`, `PROVIDER_APPROVED`, `PROVIDER_REJECTED`, `DOCUMENT_UPLOAD`, `DOCUMENT_VIEW`, `PROFILE_UPDATE`, `PASSWORD_CHANGE`, `PASSWORD_RESET_REQUEST`, `PASSWORD_RESET`, `DATA_SUPPRESSION`, `AUDIT_VIEW`. Las que llegan de otros módulos (`ZONA_CREADA`, etc.) se guardan tal como vienen.
 - **Por qué:** los tres documentos no coinciden entre sí. El SRS es el acuerdo de mayor jerarquía.
 - **Para qué:** un vocabulario consistente para filtrar en UC33. El filtro `accion` de `GET /api/iam/admin/bitacora` compara el nombre exacto (C-43): con nombres mezclados (`ROLE_CHANGE` y `ROL_MODIFICADO`), una búsqueda dejaría fuera parte de los cambios de rol. Las acciones de otros módulos se guardan como vienen, así que se filtran con su propio nombre (`ZONA_CREADA`). El Plan y el laboratorio deberían actualizarse con estos nombres.
-- **Estado:** ✅ los existentes; ✅ `8583e38`: `ROLE_CHANGE` (del SRS), `USER_STATUS_CHANGE` y `AUDIT_VIEW`; ✅ `951bdc4`: `DOCUMENT_UPLOAD`, `DOCUMENT_VIEW`, `PROVIDER_APPROVED` y `PROVIDER_REJECTED`; 🔨 bloque 6: `PROFILE_UPDATE`, `PASSWORD_CHANGE`, `PASSWORD_RESET_REQUEST`, `PASSWORD_RESET` y `DATA_SUPPRESSION`, pendiente del commit.
+- **Estado:** ✅ los existentes; ✅ `8583e38`: `ROLE_CHANGE` (del SRS), `USER_STATUS_CHANGE` y `AUDIT_VIEW`; ✅ `951bdc4`: `DOCUMENT_UPLOAD`, `DOCUMENT_VIEW`, `PROVIDER_APPROVED` y `PROVIDER_REJECTED`; ✅ `47308f4`: `PROFILE_UPDATE`, `PASSWORD_CHANGE`, `PASSWORD_RESET_REQUEST`, `PASSWORD_RESET` y `DATA_SUPPRESSION`.
 
 ### C-41 · `prestador.suspendido` sin `motivo`
 - **Referencia:** `contracts/events/prestador.suspendido.v1.json` (admite `motivo` opcional, hasta 500 caracteres); Plan §4.2 (los eventos llevan solo identificadores).
@@ -217,8 +217,9 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   1. **Antes del commit**, con `desde` = el momento del cambio. Si Valkey no responde, 503 `SERVICIO_NO_DISPONIBLE` y la transacción se deshace: ni el cambio, ni la bitácora, ni el evento quedan confirmados (falla cerrado, como C-22).
   2. **Después del commit**, con un `desde` nuevo. Si esta falla, solo queda un log de error: el cambio ya está confirmado y la primera marca sigue vigente.
 - **Ventana que cierra la segunda revocación:** entre la primera marca y el commit pasan milisegundos, pero el login de ese usuario puede caer en ese intervalo. Como la transacción del Admin aún no es visible, el login lee el rol o el estado viejos, y si el `iat` cae en el segundo siguiente al de la marca, el token queda fuera de ella (`iat > desde`): un usuario degradado o desactivado conservaría un token válido por 15 minutos. La segunda marca, tomada después del commit, es posterior a ese `iat` y lo revoca. Un login posterior al commit ya lee el cambio.
+- **El login vuelve a leer la cuenta después del hash (bloque 7, C-53):** la espera de Argon2 puede durar segundos y, si el token saliera con lo leído antes, llevaría el rol viejo con un `iat` posterior a la segunda marca. Ahora lee la cuenta justo antes de emitir: usa el rol vigente, rechaza una cuenta desactivada y rechaza si la contraseña cambió mientras esperaba.
 - **Quién más la llama (bloque 6):** el cambio de contraseña (C-52), el restablecimiento (C-28) y la supresión (C-48), con el componente `RevocacionDoble`, extraído de `CambioAdministrativo` sin cambiar su comportamiento. Por la regla `<=`, un token emitido en el mismo segundo también quedaría revocado: por eso el cambio de contraseña no entrega un token nuevo y la PWA inicia sesión otra vez.
-- **Estado:** ✅ `d30aef8`: el mecanismo y la verificación (probados también con integración `valkey`). ✅ `8583e38`: UC27 con la doble revocación. 🔨 bloque 6: cambio y restablecimiento de contraseña y supresión, pendiente del commit.
+- **Estado:** ✅ `d30aef8`: el mecanismo y la verificación (probados también con integración `valkey`). ✅ `8583e38`: UC27 con la doble revocación. ✅ `47308f4`: cambio y restablecimiento de contraseña y supresión.
 
 ### C-22 · Logout por revocación del `jti`, fallando cerrado
 - **Referencia:** SRS RNF-04; Plan §2.3.
@@ -248,7 +249,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Referencia:** SRS Tabla XVII.
 - **Se hizo:** el campo existe, siempre en `false`, y no hay flujo de verificación. Como consecuencia, el correo no se edita en el perfil (C-51). La recuperación (C-28) no lo tiene en cuenta ni lo cambia: envía el enlace a cualquier cuenta activa.
 - **Por qué:** ningún caso de uso del SRS lo exige, y no cabe en la Fase 4. Sin verificación, cambiar el correo permitiría apuntar la recuperación de una cuenta a una dirección que nadie comprobó.
-- **Estado:** ⏸ fuera de alcance del prototipo. 🔨 bloque 6: el correo no editable, pendiente del commit.
+- **Estado:** ⏸ fuera de alcance del prototipo. ✅ `47308f4`: el correo no editable.
 
 ### C-26 · Rate limiting (UC32) configurado en el gateway
 - **Referencia:** SRS Tabla VI (UC32 asignado al Módulo 1); Plan §2.3 (lo aplica Traefik).
@@ -275,7 +276,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Límite:** la supresión solo alcanza a `iam_db` y al bucket del IAM. `prestador.suspendido` oculta el perfil en catalog, pero `PRESTADOR_PERFIL` conserva su `razon_social`, `telefono` y `direccion` en `catalog_db`. Para cumplir la Ley 1581 de punta a punta, catalog debe borrarlos, y hoy no recibe ninguna señal que distinga una supresión de una suspensión reversible. Se coordina con Luis Fernando.
 - **Por qué:** la bitácora inmutable (RNF-10) referencia al usuario con una llave foránea `RESTRICT`, y borrar la fila rompería la trazabilidad exigida por ESC-04.
 - **Para qué:** cumplir la supresión de datos personales conservando la auditoría sin datos que identifiquen a la persona.
-- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit. ⏸ El borrado del perfil en `catalog_db`, por coordinar con Luis Fernando.
+- **Estado:** ✅ `47308f4`. ⏸ El borrado del perfil en `catalog_db`, por coordinar con Luis Fernando.
 
 ### C-28 · Detalle del flujo de recuperación (UC3)
 - **Referencia:** SRS UC3 ("verificación vía correo"), sin más detalle.
@@ -285,13 +286,13 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - **Enfriamiento:** `iam:reset-espera:<usuario_id>`, 60 s con `SET NX`. Dentro de ese plazo no sale otro correo, no se invalida el enlace vigente y no se audita.
   - **Correo:** con `aiosmtplib`, en el idioma del usuario (`es` o `en`), en texto plano y HTML, con el nombre escapado, la duración y el aviso de ignorarlo si no lo pidió. El enlace es `{PWA_URL}/restablecer-contrasena?token=<token>`, nunca armado con el `Host` de la petición.
   - **Bitácora:** `PASSWORD_RESET_REQUEST` con el `usuario_id`, antes de enviar: no sale ningún correo sin su fila. Si el correo no existe, no se audita y nunca se registra el correo intentado.
-  - **`POST /api/iam/auth/restablecer {token, password}`:** ignora campos extra como `confirmacion`. Valida la política antes de consumir el token (422 `PASSWORD_INVALIDA`, sin gastar el enlace). Consume con `GETDEL` atómico (inválido, vencido o ya usado: 400 `TOKEN_INVALIDO`, el código que espera `ResetView.vue`). La misma respuesta si la cuenta se desactivó o se suprimió después de pedirlo. Calcula el hash solo después de consumir, para que un token falso en esta ruta pública no gaste Argon2. Guarda el hash, audita `PASSWORD_RESET` y aplica la doble revocación (C-21). 204.
+  - **`POST /api/iam/auth/restablecer {token, password}`:** ignora campos extra como `confirmacion`. Valida la política antes de tocar el token (422 `PASSWORD_INVALIDA`, sin gastar el enlace). Comprueba que el token sirve sin gastarlo (inválido, vencido o ya usado: 400 `TOKEN_INVALIDO`, el código que espera `ResetView.vue`), para que un token falso en esta ruta pública no gaste Argon2. Calcula el hash y **después** consume con `GETDEL` atómico: desde el bloque 7, un 503 `SERVICIO_OCUPADO` (C-53) deja el enlace intacto y el reintento funciona; de dos peticiones con el mismo enlace, solo una sigue. La misma respuesta 400 si la cuenta se desactivó o se suprimió después de pedirlo. Guarda el hash, audita `PASSWORD_RESET` y aplica la doble revocación (C-21). 204.
 - **Es 400 y no 401:** el 401 `TOKEN_INVALIDO` de las rutas protegidas significa "sesión vencida"; aquí nadie tiene sesión.
 - **Costo:** si la base o Valkey fallan después de consumir el token, el enlace ya se gastó y hay que pedir otro.
 - **Riesgo:** el token viaja en el query string del enlace. Si Traefik registra la URL completa al servir la PWA, queda en sus logs de acceso; `gateway/` debe omitir el query string de `/restablecer-contrasena`. Se coordina con Juan Francisco.
 - **Por qué:** sin estas reglas, el flujo permite averiguar qué correos existen, reutilizar enlaces, llenar el correo de otra persona o envenenar el enlace con un `Host` falso.
 - **Para qué:** recuperar la cuenta (UC3) sin revelar quién está registrado y sin que una copia de Valkey sirva para restablecer contraseñas.
-- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit. ⏸ El límite de peticiones (C-26) y el query string en los logs de Traefik, por coordinar con Juan Francisco.
+- **Estado:** ✅ `47308f4`. 🔨 bloque 7: consumir el token después del hash (C-53), pendiente del commit. ⏸ El límite de peticiones (C-26) y el query string en los logs de Traefik, por coordinar con Juan Francisco.
 
 ### C-29 · Reglas de la administración de usuarios
 - **Referencia:** SRS UC27 (sin reglas).
@@ -365,7 +366,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Por qué:** lo único irreversible fuera de la transacción es el borrado del paso 3. Va después de la primera revocación para que un Valkey caído no deje documentos borrados sin efecto alguno. Va antes del commit para que un fallo de SeaweedFS no deje una cuenta marcada como suprimida con sus documentos todavía en el bucket. Se hace con la cuenta bloqueada para que una carga simultánea no se cuele (C-27). Bloquear los Admins en el mismo orden que UC27 evita interbloqueos y que dos Admins se supriman a la vez y dejen la plataforma sin ninguno.
 - **Para qué:** que un fallo nunca deje a la persona creyendo que sus datos se borraron cuando no fue así, sin una tabla ni un proceso más para reintentar.
 - **Costo:** el bloqueo de los Admins se mantiene durante la llamada a SeaweedFS (hasta unos segundos si responde lento), y sin SeaweedFS nadie puede suprimir sus datos, ni siquiera quien nunca subió un documento.
-- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit.
+- **Estado:** ✅ `47308f4`.
 
 ### C-49 · RNF-13 en el perfil: `If-Match` sin `Idempotency-Key`
 - **Referencia:** SRS RNF-13 y §3.6 (formularios diferidos: "cada envío lleva una clave de idempotencia" y "las ediciones llevan la versión del registro"); ADR de operación sin conexión; UC4.
@@ -375,7 +376,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Sin conexión no:** el cambio de contraseña (C-52) y la supresión (C-48) exigen confirmar en línea la contraseña y su respuesta, y no deben encolarse.
 - **`version` cubre solo lo editable:** cambiar el rol, el estado o la razón social no la sube, para que un cambio del Admin o una carga del RUT no le cause un conflicto a un formulario que no los toca.
 - **Para qué:** cumplir la detección de conflictos de RNF-13 sin almacenar claves de idempotencia.
-- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit.
+- **Estado:** ✅ `47308f4`.
 
 ### C-50 · Fallos del SMTP y trabajo en segundo plano en la recuperación
 - **Referencia:** SRS UC3 ("verificación vía correo"), sin comportamiento ante fallos.
@@ -384,8 +385,8 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Por qué:** para que ni el tiempo ni un 503 revelen si el correo existe, nada que dependa de esa respuesta puede correr dentro de la petición.
 - **Costo:** el usuario recibe 202 aunque el correo nunca salga, y solo le queda volver a pedirlo. Si el pod muere con la tarea en curso, se pierde sin rastro más allá de la fila de la bitácora, si alcanzó a escribirse. No hay reintentos ni outbox: un enlace de 30 minutos reenviado tarde sirve de poco, y el usuario puede repetir la solicitud.
 - **Riesgo:** las tareas no tienen tope. Una ráfaga contra `recuperar` acumula consultas a la base, y solo la contiene el rate limiting de Traefik (C-26), todavía pendiente.
-- **Para qué:** que la recuperación no sirva para enumerar cuentas, con los fallos visibles para quien opera la plataforma. Conviene una alerta sobre `fallo_smtp` (bloque 7).
-- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit. 📅 bloque 7: alerta, y Secret y salida a SMTP en k3s.
+- **Para qué:** que la recuperación no sirva para enumerar cuentas, con los fallos visibles para quien opera la plataforma. Conviene una alerta sobre `fallo_smtp`.
+- **Estado:** ✅ `47308f4`. 🔨 bloque 7: Secret y salida a SMTP en k3s, pendiente del commit. ⏸ La alerta: sus reglas viven en `infra/`, fuera del bloque 7.
 
 ### C-51 · Campos del perfil que no se editan
 - **Referencia:** SRS UC4 ("Gestionar perfil de usuario"), sin lista de campos.
@@ -393,7 +394,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** `PATCH /api/iam/perfil` solo admite `nombre` e `idioma`, con las reglas del registro (`NOMBRE_INVALIDO`; otro idioma, 422 `VALIDACION`). Enviar `email`, `razon_social` o cualquier otro campo responde 422 `VALIDACION`, en vez de un 200 que no los cambió. La API llama `nombre` al `nombre_completo` de la base, como el contrato de contacto (C-15).
 - **Por qué:** el correo no se edita porque no hay verificación de correo (C-25). La razón social va con la carga del RUT (C-07).
 - **Para qué:** que la dirección de recuperación siempre sea la registrada y que la razón social no se separe del documento que la respalda.
-- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit.
+- **Estado:** ✅ `47308f4`.
 
 ### C-52 · `POST /perfil/contrasena` y 422 `PASSWORD_ACTUAL_INCORRECTA`
 - **Referencia:** lo comunicado al frontend: `/perfil/password` y 401 si la contraseña actual es incorrecta. El SRS no lo fija.
@@ -401,7 +402,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** `POST /api/iam/perfil/contrasena {password_actual, password_nueva}`, con los nombres en español de las demás rutas propias. Contraseña actual incorrecta: **422** `PASSWORD_ACTUAL_INCORRECTA`, con su fila `PASSWORD_CHANGE` / `Denegado`. Si es correcta: política (422 `PASSWORD_INVALIDA`), nuevo hash Argon2id, `PASSWORD_CHANGE` / `Exito` y doble revocación (C-21). 204, sin token nuevo.
 - **Por qué:** con un 401, la PWA lo confundiría con una sesión vencida y sacaría al usuario, que solo se equivocó al escribir.
 - **Para qué:** mostrar el error en el campo correcto. El frontend debe ajustar la ruta y el código, e iniciar sesión otra vez tras el 204.
-- **Estado:** 🔨 bloque 6: implementado y probado, pendiente del commit. ⏸ Avisar del cambio al frontend.
+- **Estado:** ✅ `47308f4`. ⏸ Avisar del cambio al frontend.
 
 ---
 
@@ -412,7 +413,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** la misma imagen corre como API (`app.main`) y como worker (`python -m app.worker`), cada uno en su propio Deployment. El worker consume la cola durable `iam.auditoria` con el consumidor de catalog: mismos argumentos de cola, reintentos a 1, 5 y 25 s, y DLQ `turismo.dead-letter`. Expone `/metrics` en el puerto 9101 (`WORKER_METRICS_PORT`), que sirve también de sonda de vida. Si RabbitMQ no responde al arrancar, reintenta con espera creciente hasta 30 s. Desde el bloque 4 también corre el relay del outbox (C-09), en paralelo con los consumidores.
 - **Por qué:** la API atiende el ForwardAuth de *cada* petición protegida de la plataforma. Si el consumo de eventos compite con ella por los recursos, sube la latencia de todo el sistema.
 - **Para qué:** escalar la API con su HPA (2 a 4 réplicas) sin duplicar consumidores, y que reiniciar la API no interrumpa la auditoría. Es el mismo patrón que usa catálogo.
-- **Estado:** ✅ `2d011e0` (consumidor, probado también de punta a punta contra RabbitMQ 4 y PostgreSQL). ✅ `8583e38` (relay del outbox). 📅 bloque 7: Deployment y sondas en k3s. ⏸ El servicio `iam-worker` en `infra/docker-compose.yml` se coordina con quien mantiene `infra/`.
+- **Estado:** ✅ `2d011e0` (consumidor, probado también de punta a punta contra RabbitMQ 4 y PostgreSQL). ✅ `8583e38` (relay del outbox). 🔨 bloque 7: `k8s/base/deployment-worker.yaml` y sonda sobre `:9101/metrics`, desplegados en un k3s temporal, pendiente del commit. ⏸ El servicio `iam-worker` en `infra/docker-compose.yml`: el bloque está en el README, sección "Despliegue", para Luis Fernando.
 
 ### C-32 ★ Sondas `/health` y `/health/live` separadas
 - **Referencia:** Plan §7.3 (`/health` para readiness y liveness); Lab 3, Figura 10.
@@ -420,10 +421,12 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:**
   - `/health` comprueba PostgreSQL (`SELECT 1`) y Valkey (`PING`), cada uno con un timeout de 2 s, y responde 503 si alguno falla (`checks: {database, valkey}`). Lo consultan Prometheus y Blackbox para medir la disponibilidad (RNF-01).
   - `/health/live` no consulta nada y responde `{"status": "ok"}`.
-  - El `HEALTHCHECK` del Dockerfile apunta a `/health/live`. En k8s, readiness y liveness también apuntarán a `/health/live` (bloque 7).
+  - El `HEALTHCHECK` del Dockerfile apunta a `/health/live`. En k8s, startup, readiness y liveness también. Readiness: cada 2 s, `failureThreshold` 2 y `timeoutSeconds` 1. Una réplica caída sale en 4 s y una colgada en 5 s; con el `timeoutSeconds` 2 de catalog serían 6 s, por encima de ESC-01. Es un cálculo a partir de los valores: no se midió el aislamiento en un clúster.
+  - **Quién lee `/health`:** el Plan §7 dice que Blackbox entra por el gateway, pero el gateway solo enruta `/api/iam`. Por eso la NetworkPolicy lo deja entrar directo desde `observabilidad` (C-54).
+  - **Un pico de logins no saca réplicas:** medido en C-53, que explica por qué k3s usa 1 cupo de Argon2 para proteger a `verificar`.
 - **Por qué:** `verificar`, que es el ForwardAuth de toda la plataforma, no usa PostgreSQL, y si Valkey cae ya responde 503 por su cuenta (C-22). PostgreSQL y Valkey son compartidos por todas las réplicas: si la readiness dependiera de ellos, su caída sacaría a todas las réplicas del enrutamiento a la vez, y una falla parcial (sin login ni registro, pero con `verificar` funcionando) se volvería una caída total de la plataforma. Por la misma razón, una liveness con dependencias reiniciaría en cadena todas las réplicas sin que eso arregle la base.
 - **Para qué:** que una caída de PostgreSQL degrade solo las rutas que lo necesitan, mientras `/health` sigue mostrando la falla en el monitoreo (RNF-01, ESC-01).
-- **Estado:** ✅ `dcf6496` (rutas y `HEALTHCHECK`). 📅 bloque 7: sondas en los manifiestos de k3s.
+- **Estado:** ✅ `dcf6496` (rutas y `HEALTHCHECK`). 🔨 bloque 7: sondas en `k8s/base/deployment-api.yaml`, desplegadas en un k3s temporal, pendiente del commit.
 
 ### C-33 · Endpoint temporal `GET /api/iam/admin/ping`
 - **Referencia:** no está en el SRS ni en el Plan.
@@ -459,8 +462,8 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Referencia:** SRS ESC-04 y Tabla XVII (`ip_origen`); RNF-10.
 - **Se hizo:** la IP que se guarda en la bitácora (login, registro, logout y cada `ACCESS_DENIED`) es la de la conexión. Solo se toma de `X-Forwarded-For` cuando la petición viene de un proxy listado en `FORWARDED_ALLOW_IPS` (uvicorn con `--proxy-headers`). Si el valor no es una IP válida, se guarda nulo, porque la columna es `INET`.
 - **Por qué:** `X-Forwarded-For` lo puede escribir cualquier cliente. Si se aceptara de cualquiera, un atacante elegiría la IP que queda registrada. Detrás de Traefik, la IP de la conexión es la del gateway, no la del usuario.
-- **Para qué:** que la IP de la bitácora sea la real y confiable (ESC-04). En k3s, `FORWARDED_ALLOW_IPS` debe contener el rango de los pods de Traefik (bloque 7).
-- **Estado:** ✅ `8851049` (registro) y `3cb0cd7` (login, logout, `--proxy-headers` y `FORWARDED_ALLOW_IPS=127.0.0.1` en el Dockerfile). ✅ `d30aef8` (`verificar` y `require_role`). 📅 bloque 7: el valor de `FORWARDED_ALLOW_IPS` para k3s (rango de los pods de Traefik) se fija en los manifiestos del servicio.
+- **Para qué:** que la IP de la bitácora sea la real y confiable (ESC-04). El valor en k3s y lo que falta confirmar están en C-56.
+- **Estado:** ✅ `8851049` (registro) y `3cb0cd7` (login, logout, `--proxy-headers` y `FORWARDED_ALLOW_IPS=127.0.0.1` en el Dockerfile). ✅ `d30aef8` (`verificar` y `require_role`). 🔨 bloque 7: el valor para k3s en el ConfigMap, pendiente del commit.
 
 ### C-38 · Usuario desconocido o IP inválida en `auditoria.registrada`
 - **Referencia:** contrato `auditoria.registrada.v1` (`usuario_id` uuid, `ip_origen` string); SRS Tabla XVII (`usuario_id` FK a `USUARIO`, `ip_origen`); Plan §4.3 (DLQ).
@@ -486,16 +489,106 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **El documento fija:** que el mensaje va a la DLQ, pero no qué pasa después.
 - **Se hizo:** nada reprocesa la DLQ automáticamente. Cada mensaje llega con las cabeceras `x-cola` (`iam.auditoria`), `x-intentos` y `x-error`, y se revisa a mano desde la consola de administración de RabbitMQ (puerto 15672). Si el problema se corrigió, se vuelve a publicar desde ahí con la clave `auditoria.registrada`. Repetirlo es seguro: la base descarta el `event_id` ya guardado (C-04). La métrica `iam_eventos_consumidos_total{resultado="dlq"}` cuenta los que llegan.
 - **Por qué:** lo que llega a la DLQ no cumple el contrato o falló tres veces seguidas. Reintentarlo solo lo haría fallar en bucle, y decidir si un mensaje roto se corrige o se descarta requiere a una persona.
-- **Para qué:** que ningún evento se pierda en silencio y que la revisión quede en manos de quien opera la plataforma. Conviene una alerta sobre la métrica `dlq` (bloque 7).
-- **Estado:** ✅ `2d011e0`. 📅 bloque 7: alerta en Grafana.
+- **Para qué:** que ningún evento se pierda en silencio y que la revisión quede en manos de quien opera la plataforma. Conviene una alerta sobre la métrica `dlq`.
+- **Estado:** ✅ `2d011e0`. ⏸ La alerta en Grafana: sus reglas viven en `infra/`, fuera del bloque 7.
 
 ### C-46 · Bucket y credenciales del IAM en SeaweedFS
 - **Referencia:** Plan §4.1 y §7 (SeaweedFS en `turismo-datos`); `infra/docker-compose.yml`.
 - **Se hizo:** el IAM usa el bucket privado `documentos-verificacion` (`S3_BUCKET`), con dos endpoints: `S3_ENDPOINT_URL` (interno, para subir) y `S3_ENDPOINT_PUBLICO` (el que ve el navegador del Admin; la firma incluye el host). En desarrollo, `docker-compose.dev.yml` usa `chrislusf/seaweedfs:3.80` (la misma versión que `infra/`) **sin archivo de identidades**: acepta cualquier credencial (incluso vacía) y no comprueba firmas, así que las credenciales por defecto (`iam_access_dev` / `iam_secret_dev`) son solo de relleno. El bucket se crea con `uv run python -m scripts.crear_bucket`.
 - **Por qué:** en `infra/` (y en k3s) SeaweedFS usa un archivo de identidades (`-s3.config`), como el de catalog. Allí, sin una identidad propia con permisos sobre su bucket, el IAM no puede subir ni firmar, y es ese archivo el que hace privado el bucket.
-- **Para qué:** que en k3s el bucket y las credenciales del IAM los provea `infra/` (Luis Fernando): una identidad `iam` con acciones `Read`, `Write` y `List` solo sobre `documentos-verificacion`, y sus llaves en un Secret que se monta como `S3_ACCESS_KEY` y `S3_SECRET_KEY`. El IAM no crea el bucket en producción.
-- **Riesgo (bloque 6):** la supresión lista y borra objetos (C-48). En desarrollo no se puede comprobar el permiso, porque SeaweedFS no valida identidades; hay que confirmar en k3s que la identidad `iam` puede borrar. Si no puede, cada supresión responderá 503.
-- **Estado:** ✅ `951bdc4`: configuración y script de desarrollo. ⏸ identidad, bucket y Secret en `infra/`, por coordinar con Luis Fernando.
+- **Para qué:** que en k3s el bucket y las credenciales del IAM los provea `infra/` (Luis Fernando): una identidad `iam` con acciones `Read:documentos-verificacion`, `Write:documentos-verificacion` y `List:documentos-verificacion`, y sus llaves en el Secret `iam-secretos` como `S3_ACCESS_KEY` y `S3_SECRET_KEY`. El IAM no crea el bucket en producción.
+- **Permiso de borrado (riesgo del bloque 6, cerrado):** probado en un SeaweedFS 3.80 efímero con identidades. Con esas tres acciones, la identidad sube, lee, lista, firma URL y borra con `delete_objects`: `Write` incluye el borrado, y `List` hace falta porque la supresión lista el prefijo (C-48). Escribir en otro bucket responde `AccessDenied`.
+- **★ Riesgo: el bucket no queda privado con el archivo actual.** `services/catalog-service/dev/seaweedfs-s3.json`, que monta `infra/`, le da `Read` a `anonymous` sin limitarlo a un bucket. Probado: con ese `anonymous`, **un RUT se lee sin firma** (200) con solo conocer su llave; con `Read:catalogo-imagenes`, responde 403 y la URL firmada sigue funcionando. Sin ese cambio no se cumple la mitigación 3 de C-44. La llave no se puede adivinar (lleva dos UUID), pero no es un control de acceso.
+- **Estado:** ✅ `951bdc4`: configuración y script de desarrollo. 🔨 bloque 7: `S3_*` en el ConfigMap y `iam-secretos`, pendiente del commit. ⏸ Identidad, bucket, Secret y limitar `anonymous` en `infra/`, por coordinar con Luis Fernando.
+
+### C-53 · Argon2 fuera del bucle de eventos, con cupos y sin ocupar conexiones
+- **Referencia:** SRS ESC-01 y ESC-02; relacionada con la readiness de C-32 y con el límite de memoria de `k8s/base/deployment-api.yaml`.
+- **El documento fija:** nada sobre la concurrencia del hash.
+- **Se hizo:**
+  - **Revisión:** los 8 usos (registro, login, verify de relleno, rehash, cambio y restablecimiento de contraseña, y los dos de la supresión) **ya corrían en un hilo** con `asyncio.to_thread`. Ninguno estaba dentro del bucle de eventos.
+  - **Semáforo:** `Argon2PasswordHasher` tiene `hash_limitado` y `verify_limitado`, con un `asyncio.Semaphore` de `ARGON2_CONCURRENCIA_MAXIMA` cupos, y los casos de uso solo usan esas. El setting vale 4 por defecto (mínimo 1), y **el ConfigMap de k3s lo fija en 1** por la medición de abajo. Es uno por réplica, en `app.state`. Como es de `asyncio`, quien espera no ocupa un hilo ni frena el bucle, ni le quita sitio a las subidas a SeaweedFS, que usan el mismo pool de hilos.
+  - **Tope de la espera:** `ARGON2_ESPERA_MAXIMA_SEGUNDOS` (10 por defecto). Si se pasa, 503 `SERVICIO_OCUPADO` con `Retry-After: 2`, en lugar de seguir en cola. No afecta a un cálculo ya empezado. El pico de CPU es la señal para que el HPA agregue réplicas.
+  - **Sin efectos sobre la cuenta:** el 503 sale antes de auditar, revocar o escribir nada. En el login no cuenta como `LOGIN_FAIL`, tampoco con un correo inexistente, así que no revela si la cuenta existe. El cambio de contraseña y la supresión no revocan los tokens, a diferencia de un 503 de Valkey en la supresión (C-48). En `restablecer` el enlace no se gasta (C-28).
+  - **Conexión liberada antes del hash:** login y registro calculaban dentro del `async with uow`, con una conexión tomada. Ahora la sueltan antes.
+  - **Login:** vuelve a leer la cuenta después del hash (C-21).
+  - **Registro:** si otro registro con el mismo correo entra durante la espera, responde la `UNIQUE` (409 `EMAIL_EN_USO`, como antes).
+- **Por qué:** un hash reserva 64 MiB, y sin tope una ráfaga podía superar el límite de memoria. Con el semáforo y la conexión tomada, habría sido peor: el pool tiene 15 conexiones como máximo, las peticiones en cola lo agotarían, y los 401 de `verificar` esperarían hasta 30 s para escribir su fila (C-23).
+- **Para qué:** que un pico de logins no saque réplicas sanas ni deje sin ForwardAuth al resto de la plataforma, y que el límite de 1 Gi tenga margen.
+- **Pruebas:** `tests/api/test_hash_no_bloquea_api.py` comprueba que, con un login calculando y otro en el semáforo, `/health/live` y `verificar` responden antes de que termine el hash y que ninguno retiene una transacción. Se comprobó que fallan al forzar el hash dentro del bucle y al volver a calcular con la conexión abierta. `tests/api/test_servicio_ocupado_api.py` comprueba el 503 con el semáforo real, su `Retry-After`, que no deja `LOGIN_FAIL`, que el cupo se devuelve y que no tiene efectos en las demás rutas.
+- **Medición** (imagen real con `--cpus=1 --memory=1g`, 120 logins en tandas de 40, con sondas de timeout de 1 s). **Es una sola corrida en Docker Desktop, con Valkey y PostgreSQL fuera del contenedor: sirve para comparar configuraciones, no como capacidad de producción. Se repite en la Fase 5.** Las tres primeras filas no tenían tope de espera:
+
+  | Cupos | Tope de espera | `/health/live`: timeouts (máx. seguidos) | `verificar`: timeouts (máx. seguidos) | `verificar`: mediana | Login: mediana (máx.) | 503 | Total | Memoria máx. vista |
+  |---|---|---|---|---|---|---|---|---|
+  | 4 | Sin tope | 1 (1) | 12 de 102 (5) | 297 ms | 12,1 s (21,3 s) | 0 | 61,5 s | 348 MiB |
+  | 2 | Sin tope | 0 (0) | 3 de 129 (1) | 110 ms | 9,3 s (16,8 s) | 0 | 50,3 s | 220 MiB |
+  | 1 | Sin tope | 0 (0) | 0 de 231 (0) | 47 ms | 7,8 s (37,5 s) | 0 | 65,7 s | 164 MiB |
+  | **1 (k3s)** | **10 s** | **0 (0)** | **0 de 108 (0)** | **78 ms** | **6,4 s (12,3 s)** | **11 de 120** | **32,7 s** | **156 MiB** |
+
+- **Lo que muestra la medición:**
+  - **La readiness aguanta:** nunca hay dos fallos seguidos, así que ninguna réplica sale del enrutamiento, en ninguna configuración.
+  - **La memoria tiene margen:** como máximo 348 MiB frente a 1 Gi.
+  - **★ Con varios cupos y 1 CPU, `verificar` se degrada.** Cada hash usa 4 hilos: 4 hashes agotan la cuota de CPU del contenedor y lo frenan entero, aunque el bucle no esté bloqueado. El semáforo acota la memoria, no esa CPU. Con un solo cupo no hay timeouts y más cupos no dan una ganancia clara de rendimiento. `verificar` es lo que no puede fallar: por eso k3s usa 1 cupo.
+  - **El tope acota la espera:** el peor login baja de 37,5 s a 12,3 s (10 s de espera más el cálculo). Los totales no son comparables entre sí: varían de una corrida a otra, y en la última 11 logins no se calcularon.
+- **Costo:**
+  - En un pico, algunos logins válidos reciben 503 y deben reintentar. La PWA debe respetar `Retry-After` y no mostrarlo como credenciales inválidas.
+  - Con 1 cupo, una réplica calcula un hash a la vez, y cada uno tarda del orden de medio segundo con 1 CPU. La capacidad de login crece con las réplicas del HPA, no con los cupos.
+  - Si el límite de CPU sube, hay que revisar `ARGON2_CONCURRENCIA_MAXIMA`.
+- **Sin probar:** que el HPA agregue réplicas durante un pico (necesita varios minutos de carga en un clúster con `metrics-server`). Hasta que las nuevas réplicas estén listas, los 503 siguen saliendo. Se comprueba en la Fase 5.
+- **Estado:** 🔨 bloque 7: implementado y probado, pendiente del commit. ⏸ Repetir la medición y comprobar el HPA en la Fase 5.
+
+### C-54 · NetworkPolicy: Blackbox directo y salida sin restringir
+- **Referencia:** Plan §7.4 ("Prometheus → `/metrics` de todos", y cada servicio → su base, Valkey y RabbitMQ) y §7 (Blackbox consulta `/health` a través del gateway).
+- **El documento fija:** negar la entrada por defecto, y una salida acotada a las dependencias de cada servicio.
+- **Se hizo:**
+  - **Entrada a la API (8001):** Traefik, solo el worker de catalog (no su API), Prometheus y Blackbox.
+  - **Entrada al worker (9101):** solo Prometheus.
+  - **Salida:** sin restringir, igual que catalog.
+  - **Comprobado en un k3s temporal, con kube-router aplicando las políticas:** el worker de catalog, Prometheus y Blackbox llegan. La API de catalog, un pod sin esa etiqueta en `turismo-app`, otro en `default` y uno de `observabilidad` con otra etiqueta son rechazados. No se probó con tráfico real de Traefik, que usa la misma forma de regla; la etiqueta `app.kubernetes.io/name: traefik` sí se confirmó en k3s.
+- **Por qué Blackbox entra directo:** el gateway solo enruta `/api/iam` y `/health` no está bajo ese prefijo. Sin esta regla nadie podría medir la disponibilidad del IAM (RNF-01). La etiqueta `app.kubernetes.io/name: blackbox-exporter` es una suposición, porque aún no existe ese despliegue.
+- **Por qué la salida no se restringe:** el host del SMTP es externo y las direcciones de `turismo-datos` no están definidas todavía; una lista errónea rompería el login o los correos. Se mantiene la misma convención que catalog.
+- **Riesgo:** un pod comprometido puede sacar datos o hablar con cualquier destino. La NetworkPolicy es de la capa de red, no de rutas: quien pueda entrar al puerto 8001 también ve `/internal` y `/metrics`. Por eso ni Prometheus ni Blackbox deberían usarlos con otro fin, y `/internal` tiene su propia defensa contra llamadas por Traefik (C-15).
+- **Observado:** kube-router tarda unos segundos en registrar un pod nuevo, y mientras tanto sus conexiones se rechazan aunque tenga permiso. Quien llama debe reintentar; el worker de catalog ya lo hace con los correos.
+- **Para qué:** limitar quién llega al IAM sin bloquear el monitoreo ni los correos.
+- **Estado:** 🔨 bloque 7: implementado, pendiente del commit. ⏸ Confirmar la etiqueta de Blackbox con Juan Francisco. ⏸ Restringir la salida cuando `turismo-datos` tenga sus direcciones definitivas.
+
+### C-55 · Migraciones en el initContainer de la API
+- **Referencia:** Plan §7; C-03.
+- **El documento fija:** nada sobre cuándo corren las migraciones.
+- **Se hizo:** `alembic upgrade head` corre como initContainer de cada pod de la API, con la misma imagen, y `migrations/env.py` toma `pg_advisory_xact_lock` antes de migrar, el mismo patrón que catalog con su propia llave. El worker no migra: se apoya en que la API ya lo hizo.
+- **Por qué:** es el mismo patrón que catalog y no requiere un Job aparte. Sin el candado, que el IAM no tenía, dos pods nuevos pueden migrar a la vez y chocar en el primer despliegue.
+- **Para qué:** que ningún pod atienda con un esquema viejo.
+- **Riesgos:**
+  - Durante un rolling update los pods viejos siguen atendiendo, así que cada migración debe ser compatible hacia atrás.
+  - El worker puede arrancar antes de la migración y fallar hasta que termine; se reinicia solo.
+  - **La app y las migraciones usan las mismas credenciales**, así que el rol de la app es el dueño de las tablas. El `REVOKE` de C-03 es una barrera débil: ese rol podría volver a darse los permisos, y lo que protege de verdad la bitácora son los triggers. Separar los roles requeriría otro Secret.
+- **Estado:** 🔨 bloque 7: implementado y comprobado en un k3s temporal contra la base de desarrollo (ya en `head`), pendiente del commit. No se probó el choque real de dos migraciones simultáneas.
+
+### C-56 · `FORWARDED_ALLOW_IPS` en k3s
+- **Referencia:** C-37; SRS ESC-04 y Tabla XVII (`ip_origen`).
+- **El documento fija:** registrar la IP de origen, sin decir cómo obtenerla detrás del gateway.
+- **Se hizo:** el ConfigMap fija `FORWARDED_ALLOW_IPS: 10.42.0.0/16`, el rango de pods por defecto de k3s. La imagen conserva `127.0.0.1` por defecto. Comprobado: el nodo del k3s temporal usó `10.42.0.0/24`, y uvicorn 0.54 acepta el CIDR (`10.42.3.7` confía, `190.24.10.5` no).
+- **Por qué un rango y no una IP:** los pods de Traefik cambian de IP al reiniciarse.
+- **Para qué:** que la bitácora guarde la IP del cliente y no la del gateway (ESC-04).
+- **Riesgos por confirmar con Juan Francisco:**
+  - Si el clúster usa otro `--cluster-cidr`, la IP de la bitácora será la de Traefik.
+  - Si Traefik recibe el tráfico por el balanceador de k3s (`svclb`) con `externalTrafficPolicy: Cluster`, el origen que ve es interno y esa es la IP que escribe. Hace falta `Local`, o un `forwardedHeaders.trustedIPs` si hay otro proxy delante.
+  - El rango confía en todo pod del clúster, no solo en Traefik. Lo acota la NetworkPolicy, que solo deja llegar a Traefik, al worker de catalog, a Prometheus y a Blackbox.
+- **Estado:** 🔨 bloque 7: implementado, pendiente del commit. ⏸ Confirmar el rango y la política de tráfico con Juan Francisco. No se comprobó con tráfico real a través de Traefik.
+
+### C-57 ★ Contrato `iam.yaml` generado desde la app, en OpenAPI 3.1
+- **Referencia:** `contracts/openapi/README.md` ("OpenAPI 3.0", escrito por el responsable antes de implementar, con errores `{error, message, correlation_id}`).
+- **El documento fija:** un archivo acordado antes de implementar, en OpenAPI 3.0, con el formato común de errores.
+- **Se hizo:**
+  - `uv run python -m scripts.exportar_openapi` genera `contracts/openapi/iam.yaml`, con 20 rutas, y una prueba falla si quedó desactualizado.
+  - Queda en **3.1.0**, la versión que produce FastAPI; los demás contratos están en 3.0.3.
+  - Salen del esquema `/internal` (ya estaba fuera), `/health`, `/health/live` y `/metrics`. Otra prueba exige que todas las rutas empiecen por `/api/iam/`.
+  - **Se completó lo que faltaba en los routers:** 503 de Valkey en toda ruta protegida, 401 y 403 en `GET /prestador/documentos`, 404 en el perfil, y `CUENTA_SUPRIMIDA` en las descripciones.
+  - **El 422 real:** FastAPI documentaba `HTTPValidationError`, un formato que el servicio nunca responde; `app/api/openapi.py` lo reemplaza por `ErrorResponse` también en `/docs`.
+  - `verificar` lee `X-Forwarded-Method` y `X-Forwarded-Uri` de los encabezados y no como parámetros, sin cambiar su comportamiento, para que no figuren como parte de la API ni aparezca un 422 imposible.
+- **Por qué:** el servicio se construyó antes que el contrato, y un archivo escrito a mano se desactualizaría. Convertir a 3.0 a mano es frágil (`anyOf` con `null` frente a `nullable`).
+- **Para qué:** que el contrato sea siempre el comportamiento real y que la PWA pueda confiar en él.
+- **Límites:** 3.1 puede no leerse en herramientas que solo aceptan 3.0. Los errores siguen el formato de C-12, no el común. Las rutas de C-11 difieren del Plan.
+- **Estado:** 🔨 bloque 7: implementado y probado, pendiente del commit. ⏸ Reflejar la versión y el modo de generación en `contracts/openapi/README.md`, con Luis Fernando.
 
 ---
 
@@ -504,11 +597,11 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 Coordinar con Luis Fernando, que es el responsable de la arquitectura y de los contratos:
 
 - **SRS v1.2:** C-04, C-07, C-08, C-17 (y las reglas de UC27 de C-29 y de UC28 de C-47), C-20, C-27 y C-36 (unificar la Tabla V con la Tabla XXII y ESC-04), además de los campos de C-01, C-02, C-05 y C-06, y de C-38 y C-39 en la descripción de `BITACORA_AUDITORIA`. En ESC-04, aclarar que el IAM audita directamente sus propios 403 y que el usuario solo se registra si la firma del token es válida (C-23).
-- **Plan:** §4.1 (C-11, C-12 y el riesgo de C-13: la confianza en `X-Usuario-*` exige eliminarlos en las rutas públicas), §2.3 (C-19 y C-21) §4.3 (C-38 y C-40: qué va a la DLQ y que se revisa a mano) y §7.3 (C-32: readiness y liveness en `/health/live`, y `/health` solo para el monitoreo).
+- **Plan:** §4.1 (C-11, C-12 y el riesgo de C-13: la confianza en `X-Usuario-*` exige eliminarlos en las rutas públicas), §2.3 (C-19 y C-21) §4.3 (C-38 y C-40: qué va a la DLQ y que se revisa a mano) y §7.3 (C-32: readiness y liveness en `/health/live`, y `/health` solo para el monitoreo). §7 y §7.4: Blackbox no puede entrar por el gateway a `/health`, y la salida de red no se restringe (C-54).
 - **Lab:** Figuras 1 y 2 y especificación ACME (C-04); Figura 6 (C-31); Figura 10 (C-32: readiness y liveness en `/health/live`); §4.2 (C-20 y C-21: en la transición "rol modificado o usuario desactivado", cambiar "jti a Valkey" por la revocación por usuario con revocado-desde).
-- **Gateway (`gateway/`, Juan Francisco):** `authResponseHeaders` con `X-Usuario-Id` y `X-Usuario-Rol`, y eliminación de esos encabezados en toda petición entrante (C-13). Límite del cuerpo (`buffering.maxRequestBodyBytes`, unos 6 MB) en `POST /api/iam/prestador/documentos` (C-30). `/api/iam/auth/recuperar` y `/restablecer` públicas, con rate limiting (C-26, C-50); `/api/iam/perfil` con ForwardAuth; el query string de `/restablecer-contrasena` fuera de los logs de acceso (C-28).
-- **Frontend (`frontend/`, Juan Francisco):** usar `POST /perfil/contrasena` y `PASSWORD_ACTUAL_INCORRECTA`, y volver a iniciar sesión tras el 204 (C-52). Distinguir `CREDENCIALES_INVALIDAS` en la supresión (C-48). No encolar sin conexión el cambio de contraseña ni la supresión (C-49). El 400 `TOKEN_INVALIDO` y los cuerpos de recuperar y restablecer ya coinciden.
-- **Infra (`infra/`, Luis Fernando):** identidad `iam` en el archivo de identidades de SeaweedFS, el bucket `documentos-verificacion` y el Secret con sus llaves (C-46).
-- **Contratos (`contracts/`, Luis Fernando):** en `prestador.suspendido.v1.json`, aclarar que el IAM no envía `motivo` (C-41), o quitarlo del esquema, y que `suspendido_por` es el propio usuario en una supresión (C-48).
+- **Gateway (`gateway/`, Juan Francisco):** `authResponseHeaders` con `X-Usuario-Id` y `X-Usuario-Rol`, y eliminación de esos encabezados en toda petición entrante (C-13). Límite del cuerpo (`buffering.maxRequestBodyBytes`, unos 6 MB) en `POST /api/iam/prestador/documentos` (C-30). `/api/iam/auth/recuperar` y `/restablecer` públicas, con rate limiting (C-26, C-50); `/api/iam/perfil` con ForwardAuth; el query string de `/restablecer-contrasena` fuera de los logs de acceso (C-28). Solo `PathPrefix(/api/iam)` y sin `trustForwardHeader` en el ForwardAuth. Confirmar el rango de pods y `externalTrafficPolicy` (C-56), la etiqueta de Blackbox (C-54), y los dominios de `PWA_URL` y `S3_ENDPOINT_PUBLICO`, que debe llegar a SeaweedFS desde el navegador del Admin. Ejemplos en el README del servicio, sección "Despliegue".
+- **Frontend (`frontend/`, Juan Francisco):** usar `POST /perfil/contrasena` y `PASSWORD_ACTUAL_INCORRECTA`, y volver a iniciar sesión tras el 204 (C-52). Distinguir `CREDENCIALES_INVALIDAS` en la supresión (C-48). No encolar sin conexión el cambio de contraseña ni la supresión (C-49). Ante un 503 `SERVICIO_OCUPADO`, reintentar según `Retry-After` y no mostrarlo como credenciales inválidas; aplica a login, registro, restablecimiento, cambio de contraseña y supresión (C-53). El 400 `TOKEN_INVALIDO` y los cuerpos de recuperar y restablecer ya coinciden.
+- **Infra (`infra/`, Luis Fernando):** **limitar `anonymous` a `Read:catalogo-imagenes`, o los documentos quedan legibles sin firma (C-46).** Identidad `iam` con `Read`, `Write` y `List` sobre `documentos-verificacion`, crear ese bucket y el Secret con sus llaves. El rol `iam_user` en `iam_db`, que hoy existe sin ese usuario, con un script que corre solo en un volumen nuevo (C-55). Los servicios `iam-migraciones`, `iam-service` e `iam-worker` en el compose y los jobs de Prometheus (C-31). Las alertas de `fallo_smtp` y de la DLQ (C-40, C-50). El nombre del Service de SeaweedFS en `turismo-datos`. Bloques listos en el README del servicio, sección "Despliegue".
+- **Contratos (`contracts/`, Luis Fernando):** en `prestador.suspendido.v1.json`, aclarar que el IAM no envía `motivo` (C-41), o quitarlo del esquema, y que `suspendido_por` es el propio usuario en una supresión (C-48). En `openapi/README.md`, que `iam.yaml` se genera desde la app y está en OpenAPI 3.1 (C-57).
 - **Catalog (`services/catalog-service/`, Luis Fernando):** que `DirectorioUsuariosIam` envíe `X-Correlation-ID` con el `correlation_id` del evento al pedir el contacto (C-15). Borrar `razon_social`, `telefono` y `direccion` de `PRESTADOR_PERFIL` cuando un prestador suprime sus datos, lo que requiere una señal distinta de `prestador.suspendido` (C-27). Tratar el 404 del contacto de un usuario suprimido sin reintentar (C-15).
 - **Registro de decisiones:** proponer un ADR del IAM que reúna C-04, C-16, C-21, C-27 y C-34.

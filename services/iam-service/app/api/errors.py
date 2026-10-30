@@ -21,6 +21,7 @@ from app.domain.exceptions import (
     NoEsPrestadorError,
     RolInsuficienteError,
     ServicioNoDisponibleError,
+    ServicioOcupadoError,
     TokenInvalidoError,
     TokenRecuperacionInvalidoError,
     UltimoAdminError,
@@ -79,6 +80,10 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RolInsuficienteError, _responder_con(status.HTTP_403_FORBIDDEN))
     app.add_exception_handler(
         ServicioNoDisponibleError, _responder_con(status.HTTP_503_SERVICE_UNAVAILABLE)
+    )
+    app.add_exception_handler(
+        ServicioOcupadoError,
+        _responder_con(status.HTTP_503_SERVICE_UNAVAILABLE, headers={"Retry-After": "2"}),
     )
     app.add_exception_handler(UsuarioYaExisteError, _responder_con(status.HTTP_409_CONFLICT))
     app.add_exception_handler(AutogestionNoPermitidaError, _responder_con(status.HTTP_409_CONFLICT))

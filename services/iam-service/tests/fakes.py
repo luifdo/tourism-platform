@@ -164,6 +164,12 @@ class FakePasswordHasher:
         _, _, invertida = resto.partition(":")
         return prefijo == "fake-hash" and invertida == plain[::-1]
 
+    async def hash_limitado(self, plain: str) -> str:
+        return self.hash(plain)
+
+    async def verify_limitado(self, plain: str, hashed: str) -> bool:
+        return self.verify(plain, hashed)
+
     def needs_rehash(self, hashed: str) -> bool:
         return not hashed.startswith(f"fake-hash:v{self.version}:")
 
@@ -443,6 +449,10 @@ class FakeTokensRecuperacion:
         self._comprobar()
         self.tokens = {t: u for t, u in self.tokens.items() if u != usuario_id}
         self.tokens[token] = usuario_id
+
+    async def esta_vigente(self, token: str) -> bool:
+        self._comprobar()
+        return token in self.tokens
 
     async def consumir(self, token: str) -> uuid.UUID | None:
         self._comprobar()

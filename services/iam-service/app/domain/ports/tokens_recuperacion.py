@@ -21,6 +21,10 @@ class TokensRecuperacion(Protocol):
         """Guarda el token e invalida el anterior del usuario, si lo había."""
         ...
 
+    async def esta_vigente(self, token: str) -> bool:
+        """True si el token sirve, sin gastarlo."""
+        ...
+
     async def consumir(self, token: str) -> uuid.UUID | None:
         """Devuelve el usuario y borra el token en un solo paso. None si no es válido."""
         ...

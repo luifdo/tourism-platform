@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.api.dependencies import (
@@ -52,6 +52,12 @@ router = APIRouter(prefix="/api/iam", tags=["auth"])
 # Tope para la URI que se guarda en la bitácora (la envía el cliente a través de Traefik).
 _MAX_URI = 2048
 
+_ERROR_OCUPADO = {
+    "model": ErrorResponse,
+    "description": "Demasiadas peticiones calculando contraseñas (SERVICIO_OCUPADO). "
+    "Incluye el encabezado Retry-After: 2.",
+}
+
 
 @router.post(
     "/register",
@@ -70,6 +76,7 @@ _MAX_URI = 2048
                 "PASSWORD_INVALIDA, NOMBRE_INVALIDO)."
             ),
         },
+        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_OCUPADO,
     },
 )
 async def register(
@@ -108,6 +115,7 @@ _ERROR_401 = {
             "model": ErrorResponse,
             "description": "La cuenta está desactivada (CUENTA_INACTIVA).",
         },
+        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_OCUPADO,
     },
 )
 async def login(
@@ -185,8 +193,6 @@ async def verificar(
     credenciales: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     verificar_acceso: Annotated[VerificarAcceso, Depends(get_verificar_acceso)],
     registrar: Annotated[RegistrarAccesoDenegado, Depends(get_registrar_acceso_denegado)],
-    x_forwarded_method: Annotated[str | None, Header()] = None,
-    x_forwarded_uri: Annotated[str | None, Header()] = None,
 ) -> Response:
     """RF-09: ForwardAuth de Traefik. Pública: la validación es este mismo endpoint.
 
@@ -195,9 +201,14 @@ async def verificar(
     try:
         claims = await verificar_acceso.execute(credenciales.credentials if credenciales else None)
     except TokenInvalidoError as exc:
-        # Traefik envía el método y la URI de la petición original en X-Forwarded-*.
+        # Traefik envía el método y la URI de la petición original en X-Forwarded-*. Se leen de
+        # los encabezados y no como parámetros, que el contrato mostraría como parte de la API.
         await auditar_token_rechazado(
-            registrar, exc, request, x_forwarded_method, _sin_query(x_forwarded_uri)
+            registrar,
+            exc,
+            request,
+            request.headers.get("x-forwarded-method"),
+            _sin_query(request.headers.get("x-forwarded-uri")),
         )
         raise
     return Response(
@@ -251,7 +262,11 @@ async def recuperar(
             "description": "La contraseña no cumple la política (PASSWORD_INVALIDA); el enlace "
             "sigue sirviendo.",
         },
-        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_503,
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Valkey no responde (SERVICIO_NO_DISPONIBLE) o demasiadas peticiones "
+            "calculando contraseñas (SERVICIO_OCUPADO, con Retry-After: 2 y el enlace intacto).",
+        },
     },
 )
 async def restablecer(

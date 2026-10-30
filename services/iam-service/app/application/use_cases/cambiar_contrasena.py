@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -49,13 +48,11 @@ class CambiarContrasena:
             raise UsuarioNoEncontradoError()
 
         # Argon2 es costoso en CPU: fuera del event loop y sin la fila bloqueada.
-        if not await asyncio.to_thread(
-            self._hasher.verify, cmd.password_actual, usuario.password_hash
-        ):
+        if not await self._hasher.verify_limitado(cmd.password_actual, usuario.password_hash):
             await self._registrar_rechazo(cmd)
             raise PasswordActualIncorrectaError()
         nueva = Password(cmd.password_nueva)
-        password_hash = await asyncio.to_thread(self._hasher.hash, nueva.value)
+        password_hash = await self._hasher.hash_limitado(nueva.value)
 
         async with self._uow as uow:
             bloqueado = await uow.usuarios.find_by_id_para_actualizar(cmd.usuario_id)

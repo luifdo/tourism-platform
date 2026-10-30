@@ -1,4 +1,3 @@
-import asyncio
 import secrets
 import uuid
 from collections.abc import Callable
@@ -61,7 +60,7 @@ class SuprimirDatos:
         await self._comprobar_password(cmd)
         # Hash real de un secreto descartado: nadie conoce la contraseña y verify sigue
         # funcionando sobre esta fila.
-        password_hash = await asyncio.to_thread(self._hasher.hash, secrets.token_urlsafe(32))
+        password_hash = await self._hasher.hash_limitado(secrets.token_urlsafe(32))
 
         async with self._uow as uow:
             admins_activos = await uow.usuarios.bloquear_admins_activos()
@@ -100,8 +99,8 @@ class SuprimirDatos:
     async def _comprobar_password(self, cmd: SuprimirDatosCommand) -> None:
         async with self._uow as uow:
             usuario: Usuario | None = await uow.usuarios.find_by_id(cmd.usuario_id)
-        if usuario is not None and await asyncio.to_thread(
-            self._hasher.verify, cmd.password, usuario.password_hash
+        if usuario is not None and await self._hasher.verify_limitado(
+            cmd.password, usuario.password_hash
         ):
             return
         # Se confirma aunque la acción se rechace: el intento queda en la bitácora.

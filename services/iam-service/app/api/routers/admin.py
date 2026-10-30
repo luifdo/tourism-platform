@@ -67,7 +67,17 @@ from app.domain.value_objects.filtro_prestadores import FiltroPrestadores
 from app.domain.value_objects.filtro_usuarios import FiltroUsuarios
 from app.domain.value_objects.token import ClaimsToken
 
-router = APIRouter(prefix="/api/iam/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/api/iam/admin",
+    tags=["admin"],
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Valkey no responde: no se puede comprobar la revocación del token "
+            "(SERVICIO_NO_DISPONIBLE).",
+        },
+    },
+)
 
 Admin = Annotated[ClaimsToken, Depends(require_role(Rol.ADMIN))]
 
@@ -89,8 +99,9 @@ _ERRORES_CAMBIO: dict[int | str, dict[str, Any]] = {
     },
     status.HTTP_409_CONFLICT: {
         "model": ErrorResponse,
-        "description": "Cambio sobre la propia cuenta (AUTOGESTION_NO_PERMITIDA) o la "
-        "plataforma quedaría sin Admins activos (ULTIMO_ADMIN).",
+        "description": "Cambio sobre la propia cuenta (AUTOGESTION_NO_PERMITIDA), la plataforma "
+        "quedaría sin Admins activos (ULTIMO_ADMIN) o la cuenta suprimió sus datos "
+        "(CUENTA_SUPRIMIDA).",
     },
     status.HTTP_503_SERVICE_UNAVAILABLE: {
         "model": ErrorResponse,
@@ -258,7 +269,8 @@ _ERRORES_REVISION: dict[int | str, dict[str, Any]] = {
     status.HTTP_409_CONFLICT: {
         "model": ErrorResponse,
         "description": "No es Prestador (NO_ES_PRESTADOR), le falta el RNT o el RUT "
-        "(DOCUMENTOS_INCOMPLETOS) o el documento ya se revisó (DOCUMENTO_YA_REVISADO).",
+        "(DOCUMENTOS_INCOMPLETOS), el documento ya se revisó (DOCUMENTO_YA_REVISADO) o la cuenta "
+        "suprimió sus datos (CUENTA_SUPRIMIDA).",
     },
 }
 

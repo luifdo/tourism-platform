@@ -136,6 +136,11 @@ class ServicioNoDisponibleError(DominioError):
     default_message = "El servicio no está disponible temporalmente. Intente de nuevo."
 
 
+class ServicioOcupadoError(DominioError):
+    code = "SERVICIO_OCUPADO"
+    default_message = "El servicio está ocupado. Intente de nuevo en unos segundos."
+
+
 class DominioValidationError(DominioError):
     code = "VALIDACION_FALLIDA"
     default_message = "Los datos no cumplen las reglas del dominio."

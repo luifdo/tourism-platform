@@ -7,3 +7,6 @@ tests/
 .env
 *.pem
 keys/
+k8s/
+docs/
+secretos.env

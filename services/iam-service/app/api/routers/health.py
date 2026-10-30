@@ -6,7 +6,8 @@ from app.api.dependencies import get_check_health
 from app.api.schemas.health import HealthResponse, LiveResponse
 from app.application.use_cases.check_health import CheckHealth
 
-router = APIRouter(tags=["health"])
+# Fuera del contrato público: son operativas y el gateway no las enruta.
+router = APIRouter(tags=["health"], include_in_schema=False)
 
 
 @router.get(

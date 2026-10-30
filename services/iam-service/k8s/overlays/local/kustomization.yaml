@@ -1,0 +1,32 @@
+# Kubernetes de Docker Desktop. La infraestructura (PostgreSQL, Valkey, RabbitMQ, SeaweedFS y
+# Mailpit) es la de docker-compose.dev.yml, a la que los pods llegan por host.docker.internal.
+# Uso (guía completa en la sección "Despliegue" del README del servicio):
+#   cp secretos.env.example secretos.env
+#   docker build -t iam-service:local ../../..
+#   kubectl create secret generic iam-jwt-keys -n turismo-app \
+#     --from-file=private.pem=../../../keys/private.pem --from-file=public.pem=../../../keys/public.pem
+#   kubectl apply -k .
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# El Secret generado aquí debe quedar en el mismo namespace que la base; si no, Kustomize no
+# pone su nombre con hash en los Deployments.
+namespace: turismo-app
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+images:
+  - name: ghcr.io/turismo-santa-marta/iam-service # nombre que deja la base
+    newName: iam-service
+    newTag: local # la imagen construida en tu Docker; con una etiqueta fija no se descarga
+
+patches:
+  - path: configmap-local.yaml
+
+# secretos.env no se sube al repositorio (está en .gitignore); el ejemplo sí.
+secretGenerator:
+  - name: iam-secretos
+    envs:
+      - secretos.env

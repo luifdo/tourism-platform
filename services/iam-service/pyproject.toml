@@ -31,6 +31,7 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "testcontainers[rabbitmq]>=4.8",
     "jsonschema>=4.26.0",
+    "pyyaml>=6.0.3",
 ]
 
 [build-system]

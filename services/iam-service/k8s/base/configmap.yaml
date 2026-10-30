@@ -1,0 +1,33 @@
+# Configuración que no es secreta. Las credenciales, y por eso DATABASE_URL, VALKEY_URL y
+# RABBITMQ_URL, que las llevan en la URL, van en el Secret `iam-secretos`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iam-config
+data:
+  ENVIRONMENT: production
+  LOG_LEVEL: INFO
+  EVENTS_EXCHANGE: turismo.eventos
+  # Proxies de los que se acepta X-Forwarded-For (C-37, C-56). Rango de pods por defecto de k3s:
+  # POR CONFIRMAR con Juan Francisco que el clúster no usa otro --cluster-cidr.
+  FORWARDED_ALLOW_IPS: 10.42.0.0/16
+  # Debe coincidir con el usuario de DATABASE_URL: la migración inicial le revoca permisos (C-03).
+  DB_APP_ROLE: iam_user
+  # Hashes Argon2 simultáneos por réplica (C-53). Cada uno usa 64 MiB y 4 hilos: con el límite de
+  # 1 CPU, más de uno frena a verificar sin dar más rendimiento. Revisar si cambia ese límite.
+  ARGON2_CONCURRENCIA_MAXIMA: "1"
+  # Tope de la espera por un cupo; si se pasa, 503 SERVICIO_OCUPADO con Retry-After.
+  ARGON2_ESPERA_MAXIMA_SEGUNDOS: "10"
+  # Service de SeaweedFS en turismo-datos: POR CONFIRMAR el nombre con Luis Fernando (C-46).
+  S3_ENDPOINT_URL: http://seaweedfs.turismo-datos.svc:8333
+  # Host que ve el navegador del Admin; va dentro de la firma de la URL. POR CONFIRMAR con Juan
+  # Francisco: debe llegar a SeaweedFS y es distinto del origen de la PWA (C-44).
+  S3_ENDPOINT_PUBLICO: https://documentos.turismo-santamarta.gov.co
+  S3_BUCKET: documentos-verificacion
+  SMTP_HOST: smtp.turismo-santamarta.gov.co
+  SMTP_PORT: "587"
+  SMTP_TLS: "true"
+  SMTP_FROM: Turismo Santa Marta <no-responder@turismo-santamarta.gov.co>
+  # Base del enlace de recuperación (C-28). POR CONFIRMAR el dominio con Juan Francisco.
+  PWA_URL: https://turismo-santamarta.gov.co
+  WORKER_METRICS_PORT: "9101"

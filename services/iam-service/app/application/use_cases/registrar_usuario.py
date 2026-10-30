@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -62,8 +61,11 @@ class RegistrarUsuario:
             if await uow.usuarios.find_by_email(email) is not None:
                 raise UsuarioYaExisteError()
 
-            # Argon2 es costoso en CPU: fuera del event loop para no frenar otras peticiones.
-            password_hash = await asyncio.to_thread(self._hasher.hash, password.value)
+        # Sin la conexión ocupada: la cola de Argon2 no debe agotar el pool (C-53). Si otro
+        # registro con el mismo correo entra mientras tanto, add() responde con la UNIQUE.
+        password_hash = await self._hasher.hash_limitado(password.value)
+
+        async with self._uow as uow:
             ahora = self._reloj()
             usuario = await uow.usuarios.add(
                 Usuario(

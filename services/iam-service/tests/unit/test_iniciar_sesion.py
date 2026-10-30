@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import replace
 
 import pytest
@@ -48,6 +49,69 @@ def iniciar(
     uow: FakeUnitOfWork, hasher: FakePasswordHasher, token_service: JwtTokenService
 ) -> IniciarSesion:
     return IniciarSesion(uow=uow, hasher=hasher, tokens=token_service)
+
+
+class HasherQueCambiaLaCuenta(FakePasswordHasher):
+    """Simula un cambio confirmado mientras el login esperaba su turno de Argon2 (C-53)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.durante_el_hash: Callable[[], None] = lambda: None
+
+    async def verify_limitado(self, plain: str, hashed: str) -> bool:
+        self.durante_el_hash()
+        return await super().verify_limitado(plain, hashed)
+
+
+async def test_login_emite_el_rol_vigente_si_cambio_durante_el_hash(
+    uow: FakeUnitOfWork, token_service: JwtTokenService
+) -> None:
+    hasher = HasherQueCambiaLaCuenta()
+    existente = sembrar(uow, hasher)
+
+    def degradar() -> None:
+        uow.usuarios.por_email[existente.email] = replace(existente, rol=Rol.ENTIDAD)
+
+    hasher.durante_el_hash = degradar
+    token, usuario = await iniciar(uow, hasher, token_service).execute(COMANDO)
+
+    assert usuario.rol is Rol.ENTIDAD
+    assert token_service.verificar(token.access_token).rol is Rol.ENTIDAD
+
+
+async def test_login_rechaza_si_la_cuenta_se_desactivo_durante_el_hash(
+    uow: FakeUnitOfWork, token_service: JwtTokenService
+) -> None:
+    hasher = HasherQueCambiaLaCuenta()
+    existente = sembrar(uow, hasher)
+
+    def desactivar() -> None:
+        uow.usuarios.por_email[existente.email] = replace(existente, activo=False)
+
+    hasher.durante_el_hash = desactivar
+    with pytest.raises(CuentaInactivaError):
+        await iniciar(uow, hasher, token_service).execute(COMANDO)
+
+    [registro] = uow.auditoria.registros
+    assert registro.detalles == {"motivo": "cuenta_inactiva"}
+
+
+async def test_login_rechaza_si_la_contrasena_cambio_durante_el_hash(
+    uow: FakeUnitOfWork, token_service: JwtTokenService
+) -> None:
+    hasher = HasherQueCambiaLaCuenta()
+    existente = sembrar(uow, hasher)
+
+    def cambiar() -> None:
+        uow.usuarios.por_email[existente.email] = replace(existente, password_hash="otro")
+
+    hasher.durante_el_hash = cambiar
+    with pytest.raises(CredencialesInvalidasError):
+        await iniciar(uow, hasher, token_service).execute(COMANDO)
+
+    [registro] = uow.auditoria.registros
+    assert registro.resultado is ResultadoAuditoria.DENEGADO
+    assert registro.detalles == {"motivo": "password_incorrecta"}
 
 
 async def test_login_exitoso(

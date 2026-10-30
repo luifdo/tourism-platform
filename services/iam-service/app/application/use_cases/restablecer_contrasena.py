@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -24,13 +23,15 @@ class RestablecerContrasena:
     """UC3, segundo paso (C-28).
 
     1. Valida la política antes de tocar el token: una contraseña débil no gasta el enlace.
-    2. Consume el token (GETDEL). Inválido, vencido o ya usado: 400 TOKEN_INVALIDO. Lo mismo si
-       la cuenta se desactivó o se suprimió después de pedirlo.
-    3. Calcula el hash después de consumir: Argon2 es costoso y esta ruta es pública, así que
-       un token falso no debe gastar CPU.
-    4. Guarda el hash y `PASSWORD_RESET`, con la doble revocación por usuario (C-21).
+    2. Comprueba que el token sirve, sin gastarlo. Inválido, vencido o ya usado: 400
+       TOKEN_INVALIDO. Argon2 es costoso y esta ruta es pública: un token falso no gasta CPU.
+    3. Calcula el hash. Si la espera se agota, 503 SERVICIO_OCUPADO con el enlace intacto, para
+       que el reintento que pide Retry-After funcione (C-53).
+    4. Consume el token (GETDEL): de dos peticiones con el mismo enlace, solo una sigue.
+    5. Guarda el hash y `PASSWORD_RESET`, con la doble revocación por usuario (C-21). Si la
+       cuenta se desactivó o se suprimió después de pedirlo: 400 TOKEN_INVALIDO.
 
-    Si la base o Valkey fallan después del paso 2, el enlace ya se gastó y hay que pedir otro.
+    Si la base o Valkey fallan después del paso 4, el enlace ya se gastó y hay que pedir otro.
     """
 
     def __init__(
@@ -49,10 +50,12 @@ class RestablecerContrasena:
 
     async def execute(self, cmd: RestablecerContrasenaCommand) -> None:
         password = Password(cmd.password)
+        if not await self._tokens.esta_vigente(cmd.token):
+            raise TokenRecuperacionInvalidoError()
+        password_hash = await self._hasher.hash_limitado(password.value)
         usuario_id = await self._tokens.consumir(cmd.token)
         if usuario_id is None:
             raise TokenRecuperacionInvalidoError()
-        password_hash = await asyncio.to_thread(self._hasher.hash, password.value)
 
         async with self._uow as uow:
             usuario = await uow.usuarios.find_by_id_para_actualizar(usuario_id)

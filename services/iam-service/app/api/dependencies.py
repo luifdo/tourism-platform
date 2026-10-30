@@ -1,7 +1,6 @@
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -50,7 +49,6 @@ from app.infrastructure.cache.valkey_revocacion import ValkeyRevocacionTokens
 from app.infrastructure.cache.valkey_tokens_recuperacion import ValkeyTokensRecuperacion
 from app.infrastructure.persistence.database import SqlAlchemyDatabaseProbe
 from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
-from app.infrastructure.security.argon2_password_hasher import Argon2PasswordHasher
 from app.infrastructure.security.jwt_token_service import LEEWAY_SEGUNDOS, JwtTokenService
 
 # auto_error=False: sin token respondemos 401 TOKEN_INVALIDO con el formato de error común.
@@ -82,9 +80,8 @@ def get_unit_of_work(
     return SqlAlchemyUnitOfWork(session_factory)
 
 
-@lru_cache
-def get_password_hasher() -> PasswordHasher:
-    return Argon2PasswordHasher()
+def get_password_hasher(request: Request) -> PasswordHasher:
+    return request.app.state.password_hasher
 
 
 def get_reloj() -> Callable[[], datetime]:

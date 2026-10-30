@@ -34,6 +34,32 @@ Catálogo de atractivos, actividades y perfiles de prestador; búsqueda multicri
 
 Esquemas en [`contracts/events/`](../../contracts/events/).
 
+## Integración con otros módulos
+
+Estado comprobado el 2026-10-30 con `infra/docker-compose.yml` (arranque desde volúmenes vacíos y flujo de punta a punta, con la identidad enviada a mano porque aún no hay Traefik). ✅ conectado y probado · ⏳ pendiente.
+
+Detalle de cada pedido en [`Coordinacion_Modulo_Catalogo.md`](./Coordinacion_Modulo_Catalogo.md).
+
+| Necesita | De | Para qué | Estado |
+|---|---|---|---|
+| `prestador.aprobado` con `razon_social` | iam | Crear o reactivar el perfil y habilitar UC17 | ✅ |
+| `prestador.suspendido` | iam | Ocultar el perfil y sus servicios | ✅ también se restauran al rehabilitarlo |
+| `GET /internal/usuarios/{id}/contacto` | iam | Destinatario de los correos | ✅ envía `X-Correlation-ID` y un 404 no se reintenta |
+| Cola `iam.auditoria` | iam | Que no se pierda `auditoria.registrada` | ✅ |
+| `reserva.*` (los seis) | booking | Demanda y correos | ✅ |
+| `disponibilidad.actualizada` | booking | Cupos en búsqueda y mapa | ✅ |
+| `resena.publicada` y `resena.ocultada` | review | Promedio del servicio | ✅ coincide con el de review |
+| Rutas, ForwardAuth y borrado de `X-Usuario-*` | Traefik (Juan Francisco) | Exponer `/api/catalog` e identidad | ⏳ `gateway/config` no existe; sin él no hay acceso desde fuera del clúster |
+| Consumir la API real | PWA (Juan Francisco) | Mostrar el catálogo | ⏳ `useCatalog` carga `/buscar`, pero la vista espera los datos de ejemplo (`km`, `zone`, `items.<id>.name`) |
+| Señal de supresión de datos de un prestador | iam | Borrar `razon_social`, `telefono` y `direccion` (Ley 1581, C-27) | ⏳ falta acordar el evento |
+
+| Ofrece | A | Estado |
+|---|---|---|
+| `servicio.publicado` | booking y review | ✅ |
+| Búsqueda, ficha, alertas y capacidad | recommendation | ✅ las tools leen los datos reales |
+
+**Limitación conocida:** lo que catalog publique antes de que existan las colas de booking y review se pierde para ellos. No hay todavía un comando para volver a publicar los servicios existentes.
+
 ## Estructura (arquitectura hexagonal)
 
 Solo `app/` tiene `__init__.py`; las subcarpetas son paquetes de espacio de nombres (PEP 420). Cada carpeta se crea en el paso que la implementa, así que algunas de este árbol todavía no existen.

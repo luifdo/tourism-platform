@@ -53,6 +53,27 @@ Métricas en `http://localhost:9101/metrics` (`WORKER_METRICS_PORT`), que tambi�
 * `iam_eventos_consumidos_total{cola, event_type, resultado}`, con `resultado` igual a `aplicado`, `duplicado`, `reintento` o `dlq`.
 * `iam_eventos_publicados_total{event_type}`, `iam_eventos_fallos_publicacion_total`, `iam_outbox_pendientes` e `iam_outbox_antiguedad_segundos`.
 
+## Integración con otros módulos
+
+Estado comprobado el 2026-10-30 con `infra/docker-compose.yml` (arranque desde volúmenes vacíos y flujo de punta a punta, con la identidad enviada a mano porque aún no hay Traefik). ✅ conectado y probado · ⏳ pendiente.
+
+| Necesita | De | Para qué | Estado |
+|---|---|---|---|
+| `auditoria.registrada` | catalog, booking y review | Bitácora (UC33) | ✅ de los tres |
+| `ip_origen` en `auditoria.registrada` | booking | ESC-04 | ⏳ booking no la envía; catalog y review sí |
+| `X-Correlation-ID` al pedir el contacto | catalog | Cruzar el log con el evento (C-15) | ✅ |
+| Cola `catalog.prestadores` | catalog | Recibir `prestador.aprobado` y `prestador.suspendido` | ✅ |
+| Rutas, ForwardAuth y borrado de `X-Usuario-*` | Traefik (Juan Francisco) | ForwardAuth y borrado de identidad (C-13) | ⏳ `gateway/config` no existe; sin él no hay acceso desde fuera del clúster |
+| Borrar el perfil en `catalog_db` al suprimir datos | catalog | Ley 1581 (C-27) | ⏳ falta acordar el evento |
+| Rol, bucket, identidad S3 y llaves JWT en local | `infra/` | Levantar el servicio | ✅ ver "Con el compose del monorepo" |
+| Lo mismo en k3s | `infra/k8s/` | Desplegar | ⏳ `infra/k8s/` no existe |
+
+| Ofrece | A | Estado |
+|---|---|---|
+| `prestador.aprobado` y `prestador.suspendido` | catalog | ✅ incluida la rehabilitación |
+| `GET /internal/usuarios/{id}/contacto` | worker de catalog | ✅ los correos llegan a Mailpit |
+| `GET /api/iam/auth/verificar` | Traefik | ✅ devuelve la identidad; ⏳ falta conectarlo a Traefik |
+
 ## Estructura (arquitectura hexagonal)
 
 ```
@@ -556,101 +577,26 @@ También hace falta:
 * Que el Blackbox consulte directamente `http://iam-service.turismo-app.svc:8001/health`, porque el gateway no lo enruta, y confirmar su etiqueta `app.kubernetes.io/name` (C-54).
 * Definir los dominios de `PWA_URL` y `S3_ENDPOINT_PUBLICO`. Este último debe llegar a SeaweedFS desde el navegador del Admin, porque va dentro de la firma de la URL (C-30).
 
-### Para Luis Fernando (`infra/`)
+### Con el compose del monorepo
 
-Bloque para `infra/docker-compose.yml`, siguiendo el patrón de catalog:
+`infra/docker-compose.yml` ya incluye el servicio, desde la carpeta `infra/`:
 
-```yaml
-x-iam-entorno: &iam-entorno
-  ENVIRONMENT: development
-  LOG_LEVEL: INFO
-  DATABASE_URL: postgresql+asyncpg://iam_user:${IAM_DB_PASSWORD}@postgres:5432/iam_db
-  DB_APP_ROLE: iam_user
-  VALKEY_URL: redis://valkey:6379/2   # base 2: separada de catalog (0) y booking (1)
-  RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
-  S3_ENDPOINT_URL: http://seaweedfs:8333
-  S3_ENDPOINT_PUBLICO: http://localhost:8333   # el host que ve el navegador: va en la firma
-  S3_ACCESS_KEY: iam_access_dev
-  S3_SECRET_KEY: iam_secret_dev
-  SMTP_HOST: mailpit
-  SMTP_PORT: "1025"
-  PWA_URL: http://localhost:5173
-
-services:
-  # iam-service (Módulo 1): las migraciones corren una vez y luego arrancan API y worker.
-  iam-migraciones:
-    build: ../services/iam-service
-    image: iam-service:local
-    command: ["alembic", "upgrade", "head"]
-    environment: *iam-entorno
-    depends_on:
-      postgres: { condition: service_healthy }
-    restart: "no"
-
-  iam-service:
-    image: iam-service:local
-    environment: *iam-entorno
-    ports: ["8001:8001"]
-    volumes:
-      - ../services/iam-service/keys:/srv/keys:ro   # no se versionan; ver "Generar iam-jwt-keys"
-    depends_on:
-      iam-migraciones: { condition: service_completed_successfully }
-      valkey: { condition: service_started }
-      rabbitmq: { condition: service_healthy }
-
-  iam-worker:
-    image: iam-service:local
-    command: ["python", "-m", "app.worker"]
-    environment: *iam-entorno
-    ports: ["9101:9101"]   # /metrics
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9101/metrics')"]
-      interval: 30s
-      retries: 3
-    depends_on:
-      iam-migraciones: { condition: service_completed_successfully }
-      rabbitmq: { condition: service_healthy }
+```bash
+cp .env.example .env
+docker compose up -d --build
 ```
 
-Lo que falta en `infra/`:
+Con servicios de un solo uso que no repiten lo ya hecho, y que también funcionan con un volumen existente:
 
-**Base de datos.** `iam_db` ya se crea en `postgres/init/01-create-databases.sql`, pero `iam_user` no existe. Agregar lo siguiente, teniendo en cuenta que ese script solo corre con un volumen nuevo; en uno existente hay que ejecutarlo a mano:
+* `postgres-preparar`: crea el rol `iam_user`, con la contraseña `IAM_DB_PASSWORD`, y le da `iam_db`.
+* `iam-migraciones`: aplica las migraciones.
+* `iam-llaves`: genera las llaves JWT en el volumen `iam-llaves`, solo si no existen.
+* `iam-admin`: crea el primer Admin con `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `ADMIN_NOMBRE`.
+* `seaweedfs-init`: crea el bucket `documentos-verificacion`.
 
-```sql
-CREATE ROLE iam_user LOGIN PASSWORD '<IAM_DB_PASSWORD>';
-ALTER DATABASE iam_db OWNER TO iam_user;
-```
+Identidades de SeaweedFS en `infra/seaweedfs/s3.json`: `iam` solo en su bucket y `anonymous` solo en `catalogo-imagenes`, así que un RUT sin firma responde 403 (C-46). `-volume.max` subió a 30 (F-10). Prometheus ya tiene `iam-service` e `iam-worker`.
 
-**SeaweedFS.** El archivo de identidades debe quedar así. **El cambio en `anonymous` es obligatorio:** con el `"Read"` actual, sin bucket, cualquiera lee un RUT sin firma con solo conocer su llave; está probado (C-46). `Write` incluye el borrado y `List` hace falta para la supresión. El permiso de `catalog` no cambia.
-
-```json
-{
-  "identities": [
-    {
-      "name": "iam",
-      "credentials": [{ "accessKey": "iam_access_dev", "secretKey": "iam_secret_dev" }],
-      "actions": ["Read:documentos-verificacion", "Write:documentos-verificacion", "List:documentos-verificacion"]
-    },
-    { "name": "anonymous", "actions": ["Read:catalogo-imagenes"] }
-  ]
-}
-```
-
-Y crear el bucket en `seaweedfs-init`: `s3.bucket.create -name documentos-verificacion`. En k3s, las llaves van en `iam-secretos` y el Service se llama, por ahora, `seaweedfs.turismo-datos.svc:8333` en el ConfigMap; confirmar el nombre.
-
-**Prometheus.** En `prometheus/prometheus.yml`:
-
-```yaml
-  - job_name: iam-service
-    static_configs:
-      - targets: ["iam-service:8001"]
-
-  - job_name: iam-worker
-    static_configs:
-      - targets: ["iam-worker:9101"]
-```
-
-Conviene agregar alertas sobre `iam_recuperacion_solicitudes_total{resultado="fallo_smtp"}` y `iam_eventos_consumidos_total{resultado="dlq"}` (C-40, C-50).
+**Falta en k3s:** el Secret `iam-secretos`, la identidad y el bucket en `turismo-datos`, y confirmar el nombre del Service de SeaweedFS. También conviene agregar alertas sobre `iam_recuperacion_solicitudes_total{resultado="fallo_smtp"}` y `iam_eventos_consumidos_total{resultado="dlq"}` (C-40, C-50).
 
 ## Verificación
 
@@ -693,6 +639,6 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **S3 con tope de 9 s e hilos propios** (C-59): si SeaweedFS no responde, la carga y la supresión dan `503` a tiempo y el login sigue. Variables: `S3_HILOS_MAXIMOS` y `S3_TIEMPO_MAXIMO_SEGUNDOS`. **Costo:** cada hilo sigue ocupado unos segundos después del `503`, y una carga puede completarse después de responderlo.
 * **Almacenamiento sin cifrar, propuesta por decidir** (C-58): cifrado en reposo en la infraestructura y TLS en tránsito. Cifrar en el servicio rompería las URL firmadas.
 * **Salida de red sin restringir, y Blackbox entra directo a `/health`** (C-54). **Migraciones en el initContainer, con candado** y con las mismas credenciales de la app (C-55). **`FORWARDED_ALLOW_IPS` en k3s, por confirmar** (C-56). **`iam.yaml` generado, en OpenAPI 3.1** (C-57).
-* **Riesgo: el `anonymous` actual de `infra/` deja leer los documentos sin firma** (C-46); hay que limitarlo antes de desplegar.
-* **Contacto interno con 404 si llega por Traefik** (C-15). **Riesgo:** catalog todavía no envía `X-Correlation-ID` en esa llamada, así que su log no se cruza con el evento.
+* **`anonymous` limitado a `catalogo-imagenes` en `infra/seaweedfs/s3.json`** (C-46): un documento sin firma responde 403. Hay que mantenerlo igual en k3s.
+* **Contacto interno con 404 si llega por Traefik** (C-15). catalog envía `X-Correlation-ID` en esa llamada, así que su log se cruza con el evento.
 * **El 500 de una excepción no controlada sale sin `X-Correlation-ID`** (C-05).

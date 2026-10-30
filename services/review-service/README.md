@@ -36,6 +36,27 @@ Calificaciones y reseñas de turistas con reserva finalizada, respuestas públic
 
 Esquemas en [`contracts/events/`](../../contracts/events/).
 
+## Integración con otros módulos
+
+Estado comprobado el 2026-10-30 con `infra/docker-compose.yml` (arranque desde volúmenes vacíos y flujo de punta a punta, con la identidad enviada a mano porque aún no hay Traefik). ✅ conectado y probado · ⏳ pendiente.
+
+Detalle de cada pedido en [`Coordinacion_Modulo_Resenas.md`](./Coordinacion_Modulo_Resenas.md).
+
+| Necesita | De | Para qué | Estado |
+|---|---|---|---|
+| `reserva.finalizada` | booking | Habilitar la reseña (sin él, 403 `NO_ELEGIBLE`) | ✅ |
+| `servicio.publicado` con `prestador_usuario_id` | catalog | Saber quién puede responder | ✅ responde el dueño y otro prestador recibe 403 |
+| Cola `iam.auditoria` | iam | `ACCESS_DENIED` y `MODERACION` en la bitácora | ✅ con IP y `correlation_id` |
+| Rutas, ForwardAuth y borrado de `X-Usuario-*` | Traefik (Juan Francisco) | Exponer `/api/reviews` e identidad | ⏳ `gateway/config` no existe; sin él no hay acceso desde fuera del clúster |
+| Pantallas de reseñas y moderación | PWA (Juan Francisco) | Que el usuario las use | ⏳ la PWA no llama a `/api/reviews` |
+
+| Ofrece | A | Estado |
+|---|---|---|
+| `resena.publicada` y `resena.ocultada` | catalog | ✅ el promedio se actualiza y coincide |
+| `/servicios/{id}/resumen` y `/resenas` | recommendation | ✅ |
+
+En el compose, `reserva.finalizada` solo sale al correr la tarea de booking a mano (`docker compose run --rm booking-service python -m cron finalizar-reservas`). En k3s lo hace su CronJob.
+
 ## Estructura (arquitectura hexagonal)
 
 Misma estructura que catalog-service (una clase por archivo; solo `app/` tiene `__init__.py`):

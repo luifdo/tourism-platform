@@ -27,6 +27,29 @@ Chatbot turístico en español e inglés que consume la API de Groq y consulta l
 
 Esquemas en [`contracts/events/`](../../contracts/events/).
 
+## Integración con otros módulos
+
+Estado comprobado el 2026-10-30 con `infra/docker-compose.yml` (arranque desde volúmenes vacíos y flujo de punta a punta, con la identidad enviada a mano porque aún no hay Traefik). ✅ conectado y probado · ⏳ pendiente.
+
+Se ejecutaron las 7 tools contra los servicios reales. El chat con Groq no se probó de punta a punta porque no había `LLM_API_KEY`: sin clave responde 503 `ASISTENTE_NO_DISPONIBLE`, como dice la guía.
+
+| Necesita | De | Tool | Estado |
+|---|---|---|---|
+| `GET /buscar` y `/servicios/{id}` | catalog | `buscar_servicios`, `detalle_servicio` | ✅ |
+| `GET /analitica/capacidad` con identidad de turista | catalog | `presion_capacidad_carga` | ✅ solo recibe el nivel |
+| `GET /alertas` | catalog | `alertas_oficiales` | ✅ |
+| `GET /disponibilidad` | booking | `consultar_disponibilidad` | ✅ |
+| `GET /mis-reservas` con identidad de turista | booking | `historial_turista` | ✅ |
+| `/servicios/{id}/resumen` y `/resenas` | review | `resenas_servicio` | ✅ |
+| Rutas, ForwardAuth y borrado de `X-Usuario-*` | Traefik (Juan Francisco) | Exponer el chat, con tiempo de espera ≥ 50 s | ⏳ `gateway/config` no existe; sin él no hay acceso desde fuera del clúster |
+| Pantalla del chat | PWA (Juan Francisco) | — | ⏳ el asistente de la PWA no llama a `/api/recommendations` |
+
+**Pendientes propios:**
+* No hay carpeta `k8s/`: las NetworkPolicy de catalog, booking y review ya esperan pods con `app.kubernetes.io/name: recommendation-service`.
+* Las tools no reenvían `X-Correlation-ID` (Plan §4.1), así que una petición del chat no se puede seguir entre servicios.
+
+Para usar los servicios reales: `docker compose up -d --build` desde `infra/`, con `LLM_API_KEY` en `infra/.env`. Ese compose ya apunta las tools a catalog, booking y review, y crea la tabla `recomendacion_log`. El `docker-compose.yml` de esta carpeta sigue usando el mock.
+
 ## Estructura (arquitectura hexagonal)
 
 ```

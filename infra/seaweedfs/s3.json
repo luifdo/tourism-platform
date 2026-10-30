@@ -1,0 +1,18 @@
+{
+  "identities": [
+    {
+      "name": "catalog",
+      "credentials": [{ "accessKey": "catalog_access_dev", "secretKey": "catalog_secret_dev" }],
+      "actions": ["Read:catalogo-imagenes", "Write:catalogo-imagenes", "List:catalogo-imagenes", "Tagging:catalogo-imagenes"]
+    },
+    {
+      "name": "iam",
+      "credentials": [{ "accessKey": "iam_access_dev", "secretKey": "iam_secret_dev" }],
+      "actions": ["Read:documentos-verificacion", "Write:documentos-verificacion", "List:documentos-verificacion"]
+    },
+    {
+      "name": "anonymous",
+      "actions": ["Read:catalogo-imagenes"]
+    }
+  ]
+}

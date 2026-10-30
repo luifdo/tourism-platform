@@ -1,11 +1,29 @@
 # Entorno local de la plataforma. Uso, desde la carpeta infra/:
 #   cp .env.example .env
-#   docker compose up -d
+#   docker compose up -d --build
 #
-# Por ahora levanta solo la infraestructura compartida; cada servicio se agrega
-# en la sección "Microservicios" cuando tenga su Dockerfile.
+# Levanta la infraestructura compartida y los cinco microservicios. Traefik se agrega cuando
+# exista su configuración en gateway/; mientras tanto la identidad se envía a mano
+# (X-Usuario-Id y X-Usuario-Rol) a los puertos de cada servicio.
 
 name: tourism-platform
+
+# Variables comunes de iam-service (API, worker y migraciones). Valkey en la base 2.
+x-iam-entorno: &iam-entorno
+  ENVIRONMENT: development
+  LOG_LEVEL: INFO
+  DATABASE_URL: postgresql+asyncpg://iam_user:${IAM_DB_PASSWORD:-cambiar-en-local}@postgres:5432/iam_db
+  DB_APP_ROLE: iam_user
+  VALKEY_URL: redis://valkey:6379/2
+  RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+  S3_ENDPOINT_URL: http://seaweedfs:8333
+  # El host que ve el navegador del Admin: va dentro de la firma de la URL.
+  S3_ENDPOINT_PUBLICO: http://localhost:8333
+  S3_ACCESS_KEY: iam_access_dev
+  S3_SECRET_KEY: iam_secret_dev
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  PWA_URL: http://localhost:5173
 
 # Variables comunes de catalog-service (API, worker y migraciones). Los hosts son los nombres
 # de los contenedores de este archivo; las credenciales salen de infra/.env.
@@ -25,13 +43,6 @@ x-catalog-entorno: &catalog-entorno
   S3_SECRET_KEY: catalog_secret_dev
   IMAGENES_URL_PUBLICA: http://localhost:8333/catalogo-imagenes
 
-# Variables comunes de review-service (API, worker y migraciones). No usa Valkey ni llama a
-# otros servicios: solo PostgreSQL (review_db) y RabbitMQ.
-x-review-entorno: &review-entorno
-  ENVIRONMENT: development
-  LOG_LEVEL: INFO
-  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/review_db
-  RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
 # Variables comunes de booking-service (API y migraciones).
 x-booking-entorno: &booking-entorno
   ENVIRONMENT: development
@@ -45,6 +56,14 @@ x-booking-entorno: &booking-entorno
   EVENTS_EXCHANGE: turismo.eventos
   PLAZO_RESPUESTA_HORAS: "48"
 
+# Variables comunes de review-service (API, worker y migraciones). No usa Valkey ni llama a
+# otros servicios: solo PostgreSQL (review_db) y RabbitMQ.
+x-review-entorno: &review-entorno
+  ENVIRONMENT: development
+  LOG_LEVEL: INFO
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/review_db
+  RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+
 services:
   # ---------- Persistencia ----------
   postgres:
@@ -57,22 +76,52 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      # Por TCP: con un volumen nuevo, el servidor temporal de initdb solo escucha por socket y
+      # los servicios fallarían al conectarse aunque el chequeo por socket ya diera sano.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER}"]
       interval: 10s
       retries: 5
+
+  # El rol de iam y la tabla de recommendation. Corre en cada arranque y no repite lo ya hecho:
+  # a diferencia de postgres/init, también sirve con un volumen que ya existía.
+  postgres-preparar:
+    image: postgis/postgis:16-3.4
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    command:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -v
+      - iam_password=${IAM_DB_PASSWORD:-cambiar-en-local}
+      - -d
+      - postgres
+      - -f
+      - /preparar/preparar.sql
+    volumes:
+      - ./postgres/preparar:/preparar:ro
+      - ../services/recommendation-service/db:/recommendation:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
 
   valkey:
     image: valkey/valkey:8
     ports: ["6379:6379"]
 
-  # Imágenes del catálogo (API S3). Credenciales de desarrollo en el archivo de catalog-service.
+  # Imágenes del catálogo y documentos de verificación (API S3). Credenciales de desarrollo en
+  # seaweedfs/s3.json; el acceso sin firma solo alcanza a las imágenes.
   seaweedfs:
     image: chrislusf/seaweedfs:3.80
-    command: server -ip.bind=0.0.0.0 -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -volume.max=5
+    # Cada colección reserva varios volúmenes: con pocos, la primera puede dejar a la otra sin
+    # dónde escribir (F-10 en services/iam-service/docs/verificacion-fase4.md).
+    command: server -ip.bind=0.0.0.0 -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -volume.max=30
     ports: ["8333:8333"]
     volumes:
       - seaweedfs-data:/data
-      - ../services/catalog-service/dev/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9333/cluster/status || exit 1"]
       interval: 10s
@@ -82,9 +131,8 @@ services:
     image: chrislusf/seaweedfs:3.80
     depends_on:
       seaweedfs: { condition: service_healthy }
-    entrypoint: ["/bin/sh", "-c", "echo 's3.bucket.create -name catalogo-imagenes' | weed shell -master=seaweedfs:9333"]
+    entrypoint: ["/bin/sh", "-c", "printf 's3.bucket.create -name catalogo-imagenes\\ns3.bucket.create -name documentos-verificacion\\n' | weed shell -master=seaweedfs:9333"]
     restart: "no"
-
 
   # ---------- Mensajería ----------
   rabbitmq:
@@ -99,7 +147,9 @@ services:
       - "5672:5672"     # AMQP
       - "15672:15672"   # consola web
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      # Con el usuario del servidor: como root, si se adelanta en un arranque lento, crea
+      # .erlang.cookie de root y RabbitMQ termina con eacces al leerla.
+      test: ["CMD", "gosu", "rabbitmq", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       retries: 5
 
@@ -125,6 +175,68 @@ services:
     depends_on: [prometheus]
 
   # ---------- Microservicios ----------
+  # iam-service (Módulo 1): las migraciones corren una vez y luego arrancan API y worker. El worker
+  # declara la cola iam.auditoria al arrancar. Las llaves JWT se generan solo la primera vez.
+  iam-migraciones:
+    build: ../services/iam-service
+    image: iam-service:local
+    command: ["alembic", "upgrade", "head"]
+    environment: *iam-entorno
+    depends_on:
+      postgres-preparar: { condition: service_completed_successfully }
+    restart: "no"
+
+  iam-llaves:
+    image: iam-service:local
+    user: root   # el volumen nuevo es de root; el script le deja las llaves al usuario 1000
+    command: ["python", "/generar_llaves_jwt.py", "/srv/keys"]
+    volumes:
+      - ./iam/generar_llaves_jwt.py:/generar_llaves_jwt.py:ro
+      - iam-llaves:/srv/keys
+    depends_on:
+      iam-migraciones: { condition: service_completed_successfully }
+    restart: "no"
+
+  # El primer Admin: sin él nadie puede aprobar prestadores. El script no va en la imagen.
+  iam-admin:
+    image: iam-service:local
+    command: ["python", "-m", "scripts.seed_admin"]
+    environment:
+      <<: *iam-entorno
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@turismo.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Cambiar-en-local1}
+      ADMIN_NOMBRE: ${ADMIN_NOMBRE:-Administrador local}
+    volumes:
+      - ../services/iam-service/scripts:/srv/scripts:ro
+    depends_on:
+      iam-migraciones: { condition: service_completed_successfully }
+    restart: "no"
+
+  iam-service:
+    image: iam-service:local
+    environment: *iam-entorno
+    ports: ["8001:8001"]
+    volumes:
+      - iam-llaves:/srv/keys:ro
+    depends_on:
+      iam-llaves: { condition: service_completed_successfully }
+      valkey: { condition: service_started }
+      rabbitmq: { condition: service_healthy }
+      seaweedfs-init: { condition: service_completed_successfully }
+
+  iam-worker:
+    image: iam-service:local
+    command: ["python", "-m", "app.worker"]
+    environment: *iam-entorno
+    ports: ["9101:9101"]   # /metrics
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9101/metrics')"]
+      interval: 30s
+      retries: 3
+    depends_on:
+      iam-migraciones: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+
   # catalog-service (Módulo 2): las migraciones corren una vez y luego arrancan API y worker.
   catalog-migraciones:
     build: ../services/catalog-service
@@ -143,6 +255,7 @@ services:
       catalog-migraciones: { condition: service_completed_successfully }
       valkey: { condition: service_started }
       rabbitmq: { condition: service_healthy }
+      seaweedfs-init: { condition: service_completed_successfully }
 
   catalog-worker:
     image: catalog-service:local
@@ -157,13 +270,6 @@ services:
       catalog-migraciones: { condition: service_completed_successfully }
       rabbitmq: { condition: service_healthy }
 
-  # review-service (Módulo 4): igual que catalog, migraciones una vez y luego API y worker.
-  # El worker declara sus colas (review.elegibilidad, review.servicios) al arrancar.
-  review-migraciones:
-    build: ../services/review-service
-    image: review-service:local
-    command: ["alembic", "upgrade", "head"]
-    environment: *review-entorno
   # booking-service (Módulo 3): las migraciones corren una vez y luego arranca la API, que lleva
   # dentro el relay del outbox y el consumidor de servicio.publicado.
   booking-migraciones:
@@ -171,6 +277,26 @@ services:
     image: booking-service:local
     command: ["alembic", "upgrade", "head"]
     environment: *booking-entorno
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  booking-service:
+    image: booking-service:local
+    environment: *booking-entorno
+    ports: ["8003:8003"]
+    depends_on:
+      booking-migraciones: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+      valkey: { condition: service_started }
+
+  # review-service (Módulo 4): igual que catalog, migraciones una vez y luego API y worker.
+  # El worker declara sus colas (review.elegibilidad, review.servicios) al arrancar.
+  review-migraciones:
+    build: ../services/review-service
+    image: review-service:local
+    command: ["alembic", "upgrade", "head"]
+    environment: *review-entorno
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
@@ -195,22 +321,26 @@ services:
     depends_on:
       review-migraciones: { condition: service_completed_successfully }
       rabbitmq: { condition: service_healthy }
-  booking-service:
-    image: booking-service:local
-    environment: *booking-entorno
-    ports: ["8003:8003"]
-    depends_on:
-      booking-migraciones: { condition: service_completed_successfully }
-      rabbitmq: { condition: service_healthy }
-      valkey: { condition: service_started }
 
-  # Plantilla para agregar un servicio:
-  # review-service:
-  #   build: ../services/review-service
-  #   env_file: ../services/review-service/.env
-  #   depends_on:
-  #     postgres: { condition: service_healthy }
-  #     rabbitmq: { condition: service_healthy }
+  # recommendation-service (Módulo 5): sus tools llaman a los servicios reales de este archivo.
+  # Sin LLM_API_KEY arranca igual y el chat responde 503. Valkey en la base 3.
+  recommendation-service:
+    build: ../services/recommendation-service
+    image: recommendation-service:local
+    environment:
+      LOG_LEVEL: INFO
+      DB_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/recommendation_db
+      VALKEY_URL: redis://valkey:6379/3
+      CATALOG_URL: http://catalog-service:8002/api/catalog
+      BOOKING_URL: http://booking-service:8003/api/bookings
+      REVIEW_URL: http://review-service:8004/api/reviews
+      LLM_PROVIDER: groq
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-openai/gpt-oss-120b}
+    ports: ["8005:8005"]
+    depends_on:
+      postgres-preparar: { condition: service_completed_successfully }
+      valkey: { condition: service_started }
 
   # ---------- API Gateway ----------
   # Traefik (ADR-007); en el clúster k3s viene incluido como Ingress.
@@ -218,3 +348,4 @@ services:
 volumes:
   postgres-data:
   seaweedfs-data:
+  iam-llaves:

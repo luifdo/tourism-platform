@@ -53,6 +53,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             access_key=settings.s3_access_key,
             secret_key=settings.s3_secret_key,
             bucket=settings.s3_bucket,
+            hilos_maximos=settings.s3_hilos_maximos,
+            tiempo_maximo_segundos=settings.s3_tiempo_maximo_segundos,
         )
         app.state.enviador_correo = EnviadorSmtp(
             host=settings.smtp_host,
@@ -67,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         # Antes de cerrar Valkey y la base, que estas tareas usan.
         await app.state.tareas_segundo_plano.esperar(timeout_segundos=_ESPERA_TAREAS_AL_APAGAR)
+        app.state.almacen_documentos.cerrar()
         await app.state.valkey.aclose()
         await app.state.engine.dispose()
 

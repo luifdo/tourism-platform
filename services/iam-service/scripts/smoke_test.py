@@ -2,6 +2,7 @@
 Uso: uv run python scripts/smoke_test.py
 """
 
+import os
 import re
 import sys
 import time
@@ -10,8 +11,8 @@ import uuid
 import httpx
 import jwt
 
-BASE = "http://localhost:8001"
-MAILPIT = "http://localhost:8025/api/v1"
+BASE = os.environ.get("IAM_BASE_URL", "http://localhost:8001")
+MAILPIT = os.environ.get("MAILPIT_URL", "http://localhost:8025") + "/api/v1"
 todo_ok = True
 
 

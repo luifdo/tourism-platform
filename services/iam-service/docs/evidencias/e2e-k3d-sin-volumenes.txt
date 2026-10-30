@@ -1,0 +1,93 @@
+# Corrida con -volume.max=5 en SeaweedFS (el valor de infra/docker-compose.yml). Se conserva como evidencia de F-10.
+# Estado del maestro: Max 5, Free 0; coleccion '' con los volumenes 1-5, documentos-verificacion sin ninguno.
+# Medicion aparte de una carga en ese estado: HTTP 503 SERVICIO_NO_DISPONIBLE a los 32.0 s (F-11).
+
+# Parte C: e2e de iam-service en k3d, detrás de Traefik (prueba, no producción)
+# Fecha: 2026-10-30 12:44 UTC
+# Commit: 3c09bac-dirty
+# k3s: v1.35.5+k3s1
+
+[FALLO (1)] a. Prestador: carga, aprobación y eventos
+  OK    Registro de Prestador con idioma en  -> 71d5077f
+  OK    Login devuelve idioma en  -> 200
+  FALLO El escenario terminó  -> ReadTimeout en la línea 118: timed out
+
+[OK] b. ESC-04: rechazos, X-Usuario-* y bitácora
+  OK    Ruta protegida sin token -> 401  -> 401
+  OK    El 401 tiene su fila ACCESS_DENIED con la ruta  -> 1
+  OK    Con token llega al otro módulo  -> 200
+  OK    Llega X-Usuario-Id
+  OK    Llega X-Usuario-Rol
+  OK    X-Usuario-Rol falso no llega (con ForwardAuth)  -> ['Turista']
+  OK    X-Usuario-Id falso no llega (con ForwardAuth)
+  OK    X-Usuario-* falsos no llegan (ruta pública)  -> None
+  OK    Turista contra admin -> 403 ROL_INSUFICIENTE  -> 403
+  OK    El 403 tiene su fila con la ruta y el usuario  -> 1
+  DATO  IP con la que Traefik ve al cliente: 10.42.0.1 (red de k3d, no una IP pública)
+  OK    La IP de la fila es la que ve Traefik  -> fila=10.42.0.1 traefik=10.42.0.1
+  OK    La IP de la fila no es la del pod de Traefik  -> 10.42.0.1
+  OK    Un X-Forwarded-For falso del cliente no se guarda  -> 10.42.0.1
+
+[OK] c. Revocación: logout y desactivación
+  OK    Token válido antes del logout
+  OK    Logout -> 204  -> 204
+  OK    Tras el logout, 401 de inmediato
+  OK    Token válido antes de desactivar
+  OK    Desactivar -> 200  -> 200
+  OK    Tras desactivar, 401 de inmediato
+
+[OK] d. Auditoría: duplicado y DLQ
+  OK    Primera publicación enrutada
+  OK    Segunda publicación enrutada (mismo event_id)
+  OK    El evento llegó a la bitácora
+  OK    Dos publicaciones dejan una sola fila  -> 1
+  OK    servicio_origen = producer
+  OK    Payload inválido enrutado
+  OK    El payload inválido termina en turismo.dead-letter
+  OK    El payload inválido no deja fila
+
+[OK] e. Contacto interno y NetworkPolicy
+  OK    Por Traefik -> 404  -> 404
+  OK    Desde un pod con las etiquetas del worker -> 200  -> 200
+  OK    Con X-Forwarded-For (defensa adicional) -> 404  -> 404
+  OK    Desde un pod sin esas etiquetas no conecta  -> SIN_CONEXION
+
+[OK] f. Recuperación por correo
+  OK    Recuperar -> 202  -> 202
+  OK    El correo llega a Mailpit con el enlace
+  OK    Restablecer -> 204  -> 204
+  OK    El enlace no sirve dos veces -> 400  -> 400
+  OK    Login con la contraseña nueva -> 200  -> 200
+  OK    La contraseña vieja ya no sirve -> 401  -> 401
+
+[FALLO (1)] g. Supresión
+  FALLO El escenario terminó  -> ReadTimeout en la línea 118: timed out
+
+[FALLO (1)] h. Seguridad del bucket
+  FALLO El escenario terminó  -> ReadTimeout en la línea 118: timed out
+
+[OK] i. Rate limiting
+  DATO  Se espera 65 s para partir con el cupo del límite completo
+  DATO  Códigos: [401, 401, 401, 401, 401, 429]
+  OK    Los cinco primeros pasan al IAM (401)  -> [401, 401, 401, 401, 401]
+  OK    El sexto login da 429  -> 429
+
+[OK] j. RNF-12: rolling update bajo carga
+  DATO  peticiones=1215 mediana=31 ms p95=47 ms max=125 ms errores=ninguno
+  DATO  Duración del rollout: 14 s
+  OK    RNF-12: 0 respuestas 5xx durante el rollout  -> 0
+  OK    Sin otros errores (conexión, 401...)
+
+[OK] k. ESC-01 aproximado: borrar una réplica
+  DATO  Borrado ordenado: peticiones=659 mediana=31 ms p95=47 ms max=109 ms errores=ninguno
+  DATO  Borrado ordenado: 2 réplicas listas a los 8 s
+  OK    Hay 2 réplicas listas de nuevo (borrado ordenado)
+  OK    Sin 5xx (borrado ordenado)  -> 0
+  DATO  Borrado forzado (más cerca de una caída): peticiones=651 mediana=31 ms p95=47 ms max=94 ms errores=ninguno
+  DATO  Borrado forzado: 2 réplicas listas a los 7 s
+  OK    Hay 2 réplicas listas de nuevo (borrado forzado)
+  DATO  Borrado forzado: 5xx=0 otros errores=ninguno
+  DATO  HPA tras 2 min del bucle (4 hilos): cpu: 202%/70% 2 4 4 6m58s
+  OK    El HPA sube de 2 réplicas y no pasa de 4  -> 4
+
+# Resumen: 8 de 11 escenarios OK, 3 comprobaciones fallidas

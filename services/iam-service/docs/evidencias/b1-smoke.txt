@@ -1,0 +1,57 @@
+# scripts/smoke_test.py, con entorno limpio, contra la imagen real en solo lectura
+# Fecha: 2026-10-30 15:05 UTC
+# Commit: 3c09bac + cambios locales de los arreglos previos al PR
+# Comando: uv run python scripts/smoke_test.py
+
+OK    GET /health -> 200
+OK    GET /metrics expone métricas
+OK    Registro -> 201
+OK    Registro no devuelve el hash
+OK    Duplicado -> 409 EMAIL_EN_USO
+OK    Sin habeas data -> 422
+OK    Rol Admin rechazado -> 422
+OK    Login -> 200
+OK    Los dos 401 son idénticos
+OK    JWKS -> 200 con Cache-Control
+OK    Token verificado con la llave del JWKS
+OK    Verificar con token válido -> 200 + X-Usuario-*
+OK    Verificar sin token -> 401 TOKEN_INVALIDO
+OK    admin/usuarios con Turista -> 403 ROL_INSUFICIENTE
+OK    admin/bitacora con Turista -> 403 ROL_INSUFICIENTE
+OK    admin/bitacora sin token -> 401 TOKEN_INVALIDO
+OK    Turista sube documento -> 403 ROL_INSUFICIENTE
+OK    Registro de Prestador -> 201
+OK    Ejecutable con nombre .pdf -> 422 TIPO_ARCHIVO_NO_PERMITIDO
+OK    Carga del RNT -> 201 Pendiente
+OK    Carga del RUT con razón social -> 201
+OK    Mis documentos -> pendiente, sin la llave interna
+OK    admin/prestadores con Prestador -> 403
+OK    Perfil -> 200 con ETag y sin el hash
+OK    PATCH perfil con If-Match -> 200, ETag nuevo
+OK    PATCH con If-Match viejo -> 409 VERSION_CONFLICTO
+OK    PATCH del correo -> 422 VALIDACION
+OK    Recuperar -> 202, misma respuesta si el correo no existe
+OK    El enlace llega a Mailpit y apunta a la PWA
+OK    Contraseña débil -> 422 PASSWORD_INVALIDA
+OK    Restablecer (el 422 no gastó el enlace) -> 204
+OK    El enlace es de un solo uso -> 400 TOKEN_INVALIDO
+OK    Login con la contraseña vieja -> 401
+OK    El token anterior al restablecer -> 401
+OK    Login con la contraseña nueva -> 200
+OK    Contraseña actual incorrecta -> 422 PASSWORD_ACTUAL_INCORRECTA
+OK    Cambio de contraseña -> 204
+OK    El token anterior al cambio -> 401
+OK    Supresión con contraseña incorrecta -> 401 CREDENCIALES_INVALIDAS
+OK    Supresión -> 204
+OK    El token del suprimido -> 401
+OK    Login del suprimido -> 401 CREDENCIALES_INVALIDAS
+OK    Recuperar del suprimido -> 202 sin correo
+OK    Contacto interno del suprimido -> 404
+OK    Logout -> 204
+OK    Verificar después del logout -> 401
+OK    Token revocado -> 401
+OK    Logout sin token -> 401
+
+TODO FUNCIONA
+
+# Codigo de salida: 0

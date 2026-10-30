@@ -652,6 +652,18 @@ Y crear el bucket en `seaweedfs-init`: `s3.bucket.create -name documentos-verifi
 
 Conviene agregar alertas sobre `iam_recuperacion_solicitudes_total{resultado="fallo_smtp"}` y `iam_eventos_consumidos_total{resultado="dlq"}` (C-40, C-50).
 
+## Verificación
+
+La matriz de cumplimiento, los hallazgos y los resultados están en [`docs/verificacion-fase4.md`](docs/verificacion-fase4.md); las salidas, en [`docs/evidencias/`](docs/evidencias/).
+
+Para repetir las pruebas punta a punta detrás de Traefik, en un clúster k3d temporal (no toca tu kubeconfig, y las llaves JWT se generan en cada corrida):
+
+```bash
+uv run python -m scripts.e2e_k3d
+```
+
+Es un entorno de prueba, no de producción; requisitos y opciones en [`e2e/README.md`](e2e/README.md). El reporte queda en `docs/evidencias/e2e-k3d.txt`.
+
 ## Decisiones y riesgos conocidos
 
 El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](docs/cambios-frente-al-srs.md): ahí se documenta, con su causa, su efecto y su estado, todo lo que este servicio hace distinto, adicional o pendiente frente al SRS, el Plan, el Laboratorio 3 y `contracts/`. Resumen de lo que más afecta al uso del servicio:
@@ -678,6 +690,8 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **El perfil usa `If-Match` sin `Idempotency-Key`** (C-49), y **el correo y la razón social no se editan** (C-51). **`POST /perfil/contrasena` y el 422** difieren de lo comunicado al frontend (C-52).
 * **Readiness y liveness en `/health/live`, sin dependencias** (C-32, distinto del Plan §7.3): una caída de PostgreSQL o Valkey no saca a todas las réplicas a la vez; `/health` sigue mostrando la falla al monitoreo.
 * **Argon2 en un hilo, con cupos por réplica y sin ocupar conexiones** (C-53). En k3s, 1 cupo para proteger a `verificar` (medido en el registro; una sola corrida en Docker Desktop, se repite en la Fase 5). **Costo:** tras 10 s de espera, los logins válidos reciben `503 SERVICIO_OCUPADO` con `Retry-After: 2` y deben reintentar.
+* **S3 con tope de 9 s e hilos propios** (C-59): si SeaweedFS no responde, la carga y la supresión dan `503` a tiempo y el login sigue. Variables: `S3_HILOS_MAXIMOS` y `S3_TIEMPO_MAXIMO_SEGUNDOS`. **Costo:** cada hilo sigue ocupado unos segundos después del `503`, y una carga puede completarse después de responderlo.
+* **Almacenamiento sin cifrar, propuesta por decidir** (C-58): cifrado en reposo en la infraestructura y TLS en tránsito. Cifrar en el servicio rompería las URL firmadas.
 * **Salida de red sin restringir, y Blackbox entra directo a `/health`** (C-54). **Migraciones en el initContainer, con candado** y con las mismas credenciales de la app (C-55). **`FORWARDED_ALLOW_IPS` en k3s, por confirmar** (C-56). **`iam.yaml` generado, en OpenAPI 3.1** (C-57).
 * **Riesgo: el `anonymous` actual de `infra/` deja leer los documentos sin firma** (C-46); hay que limitarlo antes de desplegar.
 * **Contacto interno con 404 si llega por Traefik** (C-15). **Riesgo:** catalog todavía no envía `X-Correlation-ID` en esa llamada, así que su log no se cruza con el evento.

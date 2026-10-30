@@ -292,7 +292,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Riesgo:** el token viaja en el query string del enlace. Si Traefik registra la URL completa al servir la PWA, queda en sus logs de acceso; `gateway/` debe omitir el query string de `/restablecer-contrasena`. Se coordina con Juan Francisco.
 - **Por qué:** sin estas reglas, el flujo permite averiguar qué correos existen, reutilizar enlaces, llenar el correo de otra persona o envenenar el enlace con un `Host` falso.
 - **Para qué:** recuperar la cuenta (UC3) sin revelar quién está registrado y sin que una copia de Valkey sirva para restablecer contraseñas.
-- **Estado:** ✅ `47308f4`. 🔨 bloque 7: consumir el token después del hash (C-53), pendiente del commit. ⏸ El límite de peticiones (C-26) y el query string en los logs de Traefik, por coordinar con Juan Francisco.
+- **Estado:** ✅ `47308f4`. ✅ `3c09bac`: consumir el token después del hash (C-53). ⏸ El límite de peticiones (C-26) y el query string en los logs de Traefik, por coordinar con Juan Francisco.
 
 ### C-29 · Reglas de la administración de usuarios
 - **Referencia:** SRS UC27 (sin reglas).
@@ -365,7 +365,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **`suspendido_por`:** el contrato lo describe como "Administrador que suspendió", pero aquí no actúa ningún Admin. El esquema solo exige un UUID.
 - **Por qué:** lo único irreversible fuera de la transacción es el borrado del paso 3. Va después de la primera revocación para que un Valkey caído no deje documentos borrados sin efecto alguno. Va antes del commit para que un fallo de SeaweedFS no deje una cuenta marcada como suprimida con sus documentos todavía en el bucket. Se hace con la cuenta bloqueada para que una carga simultánea no se cuele (C-27). Bloquear los Admins en el mismo orden que UC27 evita interbloqueos y que dos Admins se supriman a la vez y dejen la plataforma sin ninguno.
 - **Para qué:** que un fallo nunca deje a la persona creyendo que sus datos se borraron cuando no fue así, sin una tabla ni un proceso más para reintentar.
-- **Costo:** el bloqueo de los Admins se mantiene durante la llamada a SeaweedFS (hasta unos segundos si responde lento), y sin SeaweedFS nadie puede suprimir sus datos, ni siquiera quien nunca subió un documento.
+- **Costo:** el bloqueo de los Admins se mantiene durante la llamada a SeaweedFS (hasta 9 s si no responde, C-59), y sin SeaweedFS nadie puede suprimir sus datos, ni siquiera quien nunca subió un documento.
 - **Estado:** ✅ `47308f4`.
 
 ### C-49 · RNF-13 en el perfil: `If-Match` sin `Idempotency-Key`
@@ -386,7 +386,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Costo:** el usuario recibe 202 aunque el correo nunca salga, y solo le queda volver a pedirlo. Si el pod muere con la tarea en curso, se pierde sin rastro más allá de la fila de la bitácora, si alcanzó a escribirse. No hay reintentos ni outbox: un enlace de 30 minutos reenviado tarde sirve de poco, y el usuario puede repetir la solicitud.
 - **Riesgo:** las tareas no tienen tope. Una ráfaga contra `recuperar` acumula consultas a la base, y solo la contiene el rate limiting de Traefik (C-26), todavía pendiente.
 - **Para qué:** que la recuperación no sirva para enumerar cuentas, con los fallos visibles para quien opera la plataforma. Conviene una alerta sobre `fallo_smtp`.
-- **Estado:** ✅ `47308f4`. 🔨 bloque 7: Secret y salida a SMTP en k3s, pendiente del commit. ⏸ La alerta: sus reglas viven en `infra/`, fuera del bloque 7.
+- **Estado:** ✅ `47308f4`. ✅ `3c09bac`: Secret y salida a SMTP en k3s. ⏸ La alerta: sus reglas viven en `infra/`, fuera del bloque 7.
 
 ### C-51 · Campos del perfil que no se editan
 - **Referencia:** SRS UC4 ("Gestionar perfil de usuario"), sin lista de campos.
@@ -413,7 +413,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** la misma imagen corre como API (`app.main`) y como worker (`python -m app.worker`), cada uno en su propio Deployment. El worker consume la cola durable `iam.auditoria` con el consumidor de catalog: mismos argumentos de cola, reintentos a 1, 5 y 25 s, y DLQ `turismo.dead-letter`. Expone `/metrics` en el puerto 9101 (`WORKER_METRICS_PORT`), que sirve también de sonda de vida. Si RabbitMQ no responde al arrancar, reintenta con espera creciente hasta 30 s. Desde el bloque 4 también corre el relay del outbox (C-09), en paralelo con los consumidores.
 - **Por qué:** la API atiende el ForwardAuth de *cada* petición protegida de la plataforma. Si el consumo de eventos compite con ella por los recursos, sube la latencia de todo el sistema.
 - **Para qué:** escalar la API con su HPA (2 a 4 réplicas) sin duplicar consumidores, y que reiniciar la API no interrumpa la auditoría. Es el mismo patrón que usa catálogo.
-- **Estado:** ✅ `2d011e0` (consumidor, probado también de punta a punta contra RabbitMQ 4 y PostgreSQL). ✅ `8583e38` (relay del outbox). 🔨 bloque 7: `k8s/base/deployment-worker.yaml` y sonda sobre `:9101/metrics`, desplegados en un k3s temporal, pendiente del commit. ⏸ El servicio `iam-worker` en `infra/docker-compose.yml`: el bloque está en el README, sección "Despliegue", para Luis Fernando.
+- **Estado:** ✅ `2d011e0` (consumidor, probado también de punta a punta contra RabbitMQ 4 y PostgreSQL). ✅ `8583e38` (relay del outbox). ✅ `3c09bac`: `k8s/base/deployment-worker.yaml` y sonda sobre `:9101/metrics`, desplegados en un k3s temporal. ⏸ El servicio `iam-worker` en `infra/docker-compose.yml`: el bloque está en el README, sección "Despliegue", para Luis Fernando.
 
 ### C-32 ★ Sondas `/health` y `/health/live` separadas
 - **Referencia:** Plan §7.3 (`/health` para readiness y liveness); Lab 3, Figura 10.
@@ -426,7 +426,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - **Un pico de logins no saca réplicas:** medido en C-53, que explica por qué k3s usa 1 cupo de Argon2 para proteger a `verificar`.
 - **Por qué:** `verificar`, que es el ForwardAuth de toda la plataforma, no usa PostgreSQL, y si Valkey cae ya responde 503 por su cuenta (C-22). PostgreSQL y Valkey son compartidos por todas las réplicas: si la readiness dependiera de ellos, su caída sacaría a todas las réplicas del enrutamiento a la vez, y una falla parcial (sin login ni registro, pero con `verificar` funcionando) se volvería una caída total de la plataforma. Por la misma razón, una liveness con dependencias reiniciaría en cadena todas las réplicas sin que eso arregle la base.
 - **Para qué:** que una caída de PostgreSQL degrade solo las rutas que lo necesitan, mientras `/health` sigue mostrando la falla en el monitoreo (RNF-01, ESC-01).
-- **Estado:** ✅ `dcf6496` (rutas y `HEALTHCHECK`). 🔨 bloque 7: sondas en `k8s/base/deployment-api.yaml`, desplegadas en un k3s temporal, pendiente del commit.
+- **Estado:** ✅ `dcf6496` (rutas y `HEALTHCHECK`). ✅ `3c09bac`: sondas en `k8s/base/deployment-api.yaml`, desplegadas en un k3s temporal.
 
 ### C-33 · Endpoint temporal `GET /api/iam/admin/ping`
 - **Referencia:** no está en el SRS ni en el Plan.
@@ -463,7 +463,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** la IP que se guarda en la bitácora (login, registro, logout y cada `ACCESS_DENIED`) es la de la conexión. Solo se toma de `X-Forwarded-For` cuando la petición viene de un proxy listado en `FORWARDED_ALLOW_IPS` (uvicorn con `--proxy-headers`). Si el valor no es una IP válida, se guarda nulo, porque la columna es `INET`.
 - **Por qué:** `X-Forwarded-For` lo puede escribir cualquier cliente. Si se aceptara de cualquiera, un atacante elegiría la IP que queda registrada. Detrás de Traefik, la IP de la conexión es la del gateway, no la del usuario.
 - **Para qué:** que la IP de la bitácora sea la real y confiable (ESC-04). El valor en k3s y lo que falta confirmar están en C-56.
-- **Estado:** ✅ `8851049` (registro) y `3cb0cd7` (login, logout, `--proxy-headers` y `FORWARDED_ALLOW_IPS=127.0.0.1` en el Dockerfile). ✅ `d30aef8` (`verificar` y `require_role`). 🔨 bloque 7: el valor para k3s en el ConfigMap, pendiente del commit.
+- **Estado:** ✅ `8851049` (registro) y `3cb0cd7` (login, logout, `--proxy-headers` y `FORWARDED_ALLOW_IPS=127.0.0.1` en el Dockerfile). ✅ `d30aef8` (`verificar` y `require_role`). ✅ `3c09bac`: el valor para k3s en el ConfigMap.
 
 ### C-38 · Usuario desconocido o IP inválida en `auditoria.registrada`
 - **Referencia:** contrato `auditoria.registrada.v1` (`usuario_id` uuid, `ip_origen` string); SRS Tabla XVII (`usuario_id` FK a `USUARIO`, `ip_origen`); Plan §4.3 (DLQ).
@@ -499,7 +499,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Para qué:** que en k3s el bucket y las credenciales del IAM los provea `infra/` (Luis Fernando): una identidad `iam` con acciones `Read:documentos-verificacion`, `Write:documentos-verificacion` y `List:documentos-verificacion`, y sus llaves en el Secret `iam-secretos` como `S3_ACCESS_KEY` y `S3_SECRET_KEY`. El IAM no crea el bucket en producción.
 - **Permiso de borrado (riesgo del bloque 6, cerrado):** probado en un SeaweedFS 3.80 efímero con identidades. Con esas tres acciones, la identidad sube, lee, lista, firma URL y borra con `delete_objects`: `Write` incluye el borrado, y `List` hace falta porque la supresión lista el prefijo (C-48). Escribir en otro bucket responde `AccessDenied`.
 - **★ Riesgo: el bucket no queda privado con el archivo actual.** `services/catalog-service/dev/seaweedfs-s3.json`, que monta `infra/`, le da `Read` a `anonymous` sin limitarlo a un bucket. Probado: con ese `anonymous`, **un RUT se lee sin firma** (200) con solo conocer su llave; con `Read:catalogo-imagenes`, responde 403 y la URL firmada sigue funcionando. Sin ese cambio no se cumple la mitigación 3 de C-44. La llave no se puede adivinar (lleva dos UUID), pero no es un control de acceso.
-- **Estado:** ✅ `951bdc4`: configuración y script de desarrollo. 🔨 bloque 7: `S3_*` en el ConfigMap y `iam-secretos`, pendiente del commit. ⏸ Identidad, bucket, Secret y limitar `anonymous` en `infra/`, por coordinar con Luis Fernando.
+- **Estado:** ✅ `951bdc4`: configuración y script de desarrollo. ✅ `3c09bac`: `S3_*` en el ConfigMap y `iam-secretos`. ⏸ Identidad, bucket, Secret y limitar `anonymous` en `infra/`, por coordinar con Luis Fernando.
 
 ### C-53 · Argon2 fuera del bucle de eventos, con cupos y sin ocupar conexiones
 - **Referencia:** SRS ESC-01 y ESC-02; relacionada con la readiness de C-32 y con el límite de memoria de `k8s/base/deployment-api.yaml`.
@@ -534,7 +534,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - Con 1 cupo, una réplica calcula un hash a la vez, y cada uno tarda del orden de medio segundo con 1 CPU. La capacidad de login crece con las réplicas del HPA, no con los cupos.
   - Si el límite de CPU sube, hay que revisar `ARGON2_CONCURRENCIA_MAXIMA`.
 - **Sin probar:** que el HPA agregue réplicas durante un pico (necesita varios minutos de carga en un clúster con `metrics-server`). Hasta que las nuevas réplicas estén listas, los 503 siguen saliendo. Se comprueba en la Fase 5.
-- **Estado:** 🔨 bloque 7: implementado y probado, pendiente del commit. ⏸ Repetir la medición y comprobar el HPA en la Fase 5.
+- **Estado:** ✅ `3c09bac`. ⏸ Repetir la medición y comprobar el HPA en la Fase 5.
 
 ### C-54 · NetworkPolicy: Blackbox directo y salida sin restringir
 - **Referencia:** Plan §7.4 ("Prometheus → `/metrics` de todos", y cada servicio → su base, Valkey y RabbitMQ) y §7 (Blackbox consulta `/health` a través del gateway).
@@ -549,7 +549,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Riesgo:** un pod comprometido puede sacar datos o hablar con cualquier destino. La NetworkPolicy es de la capa de red, no de rutas: quien pueda entrar al puerto 8001 también ve `/internal` y `/metrics`. Por eso ni Prometheus ni Blackbox deberían usarlos con otro fin, y `/internal` tiene su propia defensa contra llamadas por Traefik (C-15).
 - **Observado:** kube-router tarda unos segundos en registrar un pod nuevo, y mientras tanto sus conexiones se rechazan aunque tenga permiso. Quien llama debe reintentar; el worker de catalog ya lo hace con los correos.
 - **Para qué:** limitar quién llega al IAM sin bloquear el monitoreo ni los correos.
-- **Estado:** 🔨 bloque 7: implementado, pendiente del commit. ⏸ Confirmar la etiqueta de Blackbox con Juan Francisco. ⏸ Restringir la salida cuando `turismo-datos` tenga sus direcciones definitivas.
+- **Estado:** ✅ `3c09bac`. ⏸ Confirmar la etiqueta de Blackbox con Juan Francisco. ⏸ Restringir la salida cuando `turismo-datos` tenga sus direcciones definitivas.
 
 ### C-55 · Migraciones en el initContainer de la API
 - **Referencia:** Plan §7; C-03.
@@ -561,7 +561,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - Durante un rolling update los pods viejos siguen atendiendo, así que cada migración debe ser compatible hacia atrás.
   - El worker puede arrancar antes de la migración y fallar hasta que termine; se reinicia solo.
   - **La app y las migraciones usan las mismas credenciales**, así que el rol de la app es el dueño de las tablas. El `REVOKE` de C-03 es una barrera débil: ese rol podría volver a darse los permisos, y lo que protege de verdad la bitácora son los triggers. Separar los roles requeriría otro Secret.
-- **Estado:** 🔨 bloque 7: implementado y comprobado en un k3s temporal contra la base de desarrollo (ya en `head`), pendiente del commit. No se probó el choque real de dos migraciones simultáneas.
+- **Estado:** ✅ `3c09bac`, comprobado en un k3s temporal contra la base de desarrollo (ya en `head`). No se probó el choque real de dos migraciones simultáneas.
 
 ### C-56 · `FORWARDED_ALLOW_IPS` en k3s
 - **Referencia:** C-37; SRS ESC-04 y Tabla XVII (`ip_origen`).
@@ -573,7 +573,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - Si el clúster usa otro `--cluster-cidr`, la IP de la bitácora será la de Traefik.
   - Si Traefik recibe el tráfico por el balanceador de k3s (`svclb`) con `externalTrafficPolicy: Cluster`, el origen que ve es interno y esa es la IP que escribe. Hace falta `Local`, o un `forwardedHeaders.trustedIPs` si hay otro proxy delante.
   - El rango confía en todo pod del clúster, no solo en Traefik. Lo acota la NetworkPolicy, que solo deja llegar a Traefik, al worker de catalog, a Prometheus y a Blackbox.
-- **Estado:** 🔨 bloque 7: implementado, pendiente del commit. ⏸ Confirmar el rango y la política de tráfico con Juan Francisco. No se comprobó con tráfico real a través de Traefik.
+- **Estado:** ✅ `3c09bac`. ⏸ Confirmar el rango y la política de tráfico con Juan Francisco. No se comprobó con tráfico real a través de Traefik.
 
 ### C-57 ★ Contrato `iam.yaml` generado desde la app, en OpenAPI 3.1
 - **Referencia:** `contracts/openapi/README.md` ("OpenAPI 3.0", escrito por el responsable antes de implementar, con errores `{error, message, correlation_id}`).
@@ -588,7 +588,41 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Por qué:** el servicio se construyó antes que el contrato, y un archivo escrito a mano se desactualizaría. Convertir a 3.0 a mano es frágil (`anyOf` con `null` frente a `nullable`).
 - **Para qué:** que el contrato sea siempre el comportamiento real y que la PWA pueda confiar en él.
 - **Límites:** 3.1 puede no leerse en herramientas que solo aceptan 3.0. Los errores siguen el formato de C-12, no el común. Las rutas de C-11 difieren del Plan.
-- **Estado:** 🔨 bloque 7: implementado y probado, pendiente del commit. ⏸ Reflejar la versión y el modo de generación en `contracts/openapi/README.md`, con Luis Fernando.
+- **Estado:** ✅ `3c09bac`. ⏸ Reflejar la versión y el modo de generación en `contracts/openapi/README.md`, con Luis Fernando.
+
+### C-58 ★ Almacenamiento sin cifrar
+- **Referencia:** SRS §2.4.5 ("almacenamiento cifrado de datos sensibles", Ley 1581).
+- **El documento fija:** que los datos sensibles se almacenen cifrados.
+- **Se hizo:** el IAM no cifra los documentos (RUT y RNT) antes de enviarlos a SeaweedFS ni pide cifrado del lado del servidor, y los correos y nombres van en claro en `iam_db`. Lo único derivado criptográficamente son las contraseñas (Argon2id), y en Valkey los tokens de recuperación se guardan como SHA-256. Se detectó en la verificación del bloque 8 (`docs/verificacion-fase4.md`, F-01).
+- **Por qué:** ningún bloque lo pidió y ningún documento dice en qué capa corresponde; el cifrado en reposo normalmente lo da la infraestructura (volumen o SSE).
+- **Riesgo:** quien acceda a los volúmenes o a un respaldo lee esos datos. El acceso normal sigue protegido por la URL firmada, el bucket privado (C-46) y las credenciales.
+- **Propuesta, para que la decida el equipo:**
+  - **Contraseñas:** siguen con Argon2id, sin cambios.
+  - **Documentos y datos personales:** cifrado en reposo en la infraestructura, con disco cifrado en la VM y cifrado de los volúmenes de SeaweedFS (la opción `-encryptVolumeData` del filer, presente en la versión 3.80; falta probarla con el despliegue de `infra/`).
+  - **En tránsito:** TLS. Hoy el `S3_ENDPOINT_URL` del ConfigMap es `http://` dentro del clúster; `DATABASE_URL`, `VALKEY_URL` y `RABBITMQ_URL` vienen del Secret y hay que revisarlas al desplegar.
+  - **Por qué no en el servicio:** el navegador del Admin descarga el documento directamente de SeaweedFS con la URL firmada, sin pasar por el IAM. Si el IAM cifrara el archivo, esa URL entregaría el contenido cifrado.
+- **Límites de la propuesta:** protege frente a un disco o un respaldo robados, no frente a quien entra al sistema encendido con credenciales válidas, y los respaldos necesitan su propio cifrado. Cifrar los volúmenes de un despliegue con datos exige migrarlos.
+- **Para qué decidirlo:** evitar que la SIC encuentre un requisito declarado sin cumplir.
+- **Estado:** ⏸ Sin implementar. Decisión del equipo: la propuesta anterior, en `infra/` con Luis Fernando, o limitación del prototipo en el SRS v1.2.
+
+### C-59 · Tiempos máximos de S3 e hilos propios
+- **Referencia:** SRS UC37 y §2.4.5 (supresión), C-30 y C-48. Ningún documento fija tiempos.
+- **El documento fija:** nada sobre cuánto puede tardar una respuesta si SeaweedFS no contesta.
+- **Se hizo:**
+  - **boto3:** `connect_timeout=2`, `read_timeout=5` y `retries={"max_attempts": 2, "mode": "standard"}`, en la carga y en la supresión.
+  - **Tope total de cada llamada:** `S3_TIEMPO_MAXIMO_SEGUNDOS`, 9 por defecto. Si se pasa, 503 `SERVICIO_NO_DISPONIBLE`. Cuenta la espera por un hilo libre y la creación del cliente.
+  - **Hilos propios:** `S3_HILOS_MAXIMOS`, 8 por defecto, separados de los que usa Argon2. El cliente interno de boto3 se crea en esos hilos, una sola vez y con su propia sesión.
+  - **SMTP, revisado sin cambios:** ya tenía `SMTP_TIMEOUT_SECONDS`, 10 s. Ese tiempo aplica a cada operación de la conversación, no al total, pero corre después de responder (C-50) y no retrasa ninguna respuesta. Se agregó una prueba con un servidor que no responde.
+- **Por qué:** con un S3 colgado, el 503 tardaba 32 s (F-11). `max_attempts` cuenta los reintentos, así que son 3 intentos: contra un servidor que acepta conexiones y no responde, solo con esa configuración, `put_object` tardó 20 s y `list_objects_v2` 17 s. Por eso hace falta el tope. Crear el cliente en el primer uso, dentro del bucle de eventos, llevó una carga a 10,6 s en una máquina ocupada y frenaba a las demás peticiones.
+- **Para qué:** que un SeaweedFS colgado no retenga a quien sube un documento ni mantenga el bloqueo de los Admins de C-48 más de 9 s, y que el login siga respondiendo. Medido con la imagen real y SeaweedFS en pausa: 9 cargas con 503 en 9,4 s como máximo, y 11 logins con 200, el más lento en 0,31 s (`docs/evidencias/f11-s3-colgado.txt`).
+- **Límites:**
+  - boto3 no se puede interrumpir: al vencer el tope, el hilo sigue hasta unos 20 s y ocupa su lugar. Con los 8 ocupados, las siguientes cargas reciben 503 aunque SeaweedFS ya se haya recuperado, hasta que se liberen.
+  - Una carga puede completarse después de su 503 y dejar un objeto sin fila en la base, que se borra con la supresión del prefijo. Si esa supresión ya terminó, el objeto queda sin borrar. Requiere que SeaweedFS se recupere justo en esos segundos.
+  - Una supresión puede seguir borrando después de su 503. Repetirla es seguro, porque el borrado es idempotente (C-48).
+  - Un borrado legítimo de más de 9 s también responde 503 y hay que repetirlo. Es improbable: cada cuenta tiene pocos documentos.
+  - El cliente público, que solo firma URLs, sigue creándose en el bucle de eventos la primera vez que un Admin abre un documento en cada réplica: una pausa breve, una vez.
+  - Se probó en pruebas automatizadas y con la imagen en Docker; el e2e en k3d no se repitió.
+- **Estado:** ✅ commit de verificación del bloque 8.
 
 ---
 
@@ -596,12 +630,12 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 
 Coordinar con Luis Fernando, que es el responsable de la arquitectura y de los contratos:
 
-- **SRS v1.2:** C-04, C-07, C-08, C-17 (y las reglas de UC27 de C-29 y de UC28 de C-47), C-20, C-27 y C-36 (unificar la Tabla V con la Tabla XXII y ESC-04), además de los campos de C-01, C-02, C-05 y C-06, y de C-38 y C-39 en la descripción de `BITACORA_AUDITORIA`. En ESC-04, aclarar que el IAM audita directamente sus propios 403 y que el usuario solo se registra si la firma del token es válida (C-23).
+- **SRS v1.2:** C-04, C-07, C-08, C-17 (y las reglas de UC27 de C-29 y de UC28 de C-47), C-20, C-27, C-36 (unificar la Tabla V con la Tabla XXII y ESC-04), C-57 (RNF-03: `iam.yaml` en OpenAPI 3.1) y C-58 (§2.4.5, almacenamiento cifrado), además de los campos de C-01, C-02, C-05 y C-06, y de C-38 y C-39 en la descripción de `BITACORA_AUDITORIA`. En ESC-04, aclarar que el IAM audita directamente sus propios 403 y que el usuario solo se registra si la firma del token es válida (C-23).
 - **Plan:** §4.1 (C-11, C-12 y el riesgo de C-13: la confianza en `X-Usuario-*` exige eliminarlos en las rutas públicas), §2.3 (C-19 y C-21) §4.3 (C-38 y C-40: qué va a la DLQ y que se revisa a mano) y §7.3 (C-32: readiness y liveness en `/health/live`, y `/health` solo para el monitoreo). §7 y §7.4: Blackbox no puede entrar por el gateway a `/health`, y la salida de red no se restringe (C-54).
 - **Lab:** Figuras 1 y 2 y especificación ACME (C-04); Figura 6 (C-31); Figura 10 (C-32: readiness y liveness en `/health/live`); §4.2 (C-20 y C-21: en la transición "rol modificado o usuario desactivado", cambiar "jti a Valkey" por la revocación por usuario con revocado-desde).
 - **Gateway (`gateway/`, Juan Francisco):** `authResponseHeaders` con `X-Usuario-Id` y `X-Usuario-Rol`, y eliminación de esos encabezados en toda petición entrante (C-13). Límite del cuerpo (`buffering.maxRequestBodyBytes`, unos 6 MB) en `POST /api/iam/prestador/documentos` (C-30). `/api/iam/auth/recuperar` y `/restablecer` públicas, con rate limiting (C-26, C-50); `/api/iam/perfil` con ForwardAuth; el query string de `/restablecer-contrasena` fuera de los logs de acceso (C-28). Solo `PathPrefix(/api/iam)` y sin `trustForwardHeader` en el ForwardAuth. Confirmar el rango de pods y `externalTrafficPolicy` (C-56), la etiqueta de Blackbox (C-54), y los dominios de `PWA_URL` y `S3_ENDPOINT_PUBLICO`, que debe llegar a SeaweedFS desde el navegador del Admin. Ejemplos en el README del servicio, sección "Despliegue".
 - **Frontend (`frontend/`, Juan Francisco):** usar `POST /perfil/contrasena` y `PASSWORD_ACTUAL_INCORRECTA`, y volver a iniciar sesión tras el 204 (C-52). Distinguir `CREDENCIALES_INVALIDAS` en la supresión (C-48). No encolar sin conexión el cambio de contraseña ni la supresión (C-49). Ante un 503 `SERVICIO_OCUPADO`, reintentar según `Retry-After` y no mostrarlo como credenciales inválidas; aplica a login, registro, restablecimiento, cambio de contraseña y supresión (C-53). El 400 `TOKEN_INVALIDO` y los cuerpos de recuperar y restablecer ya coinciden.
-- **Infra (`infra/`, Luis Fernando):** **limitar `anonymous` a `Read:catalogo-imagenes`, o los documentos quedan legibles sin firma (C-46).** Identidad `iam` con `Read`, `Write` y `List` sobre `documentos-verificacion`, crear ese bucket y el Secret con sus llaves. El rol `iam_user` en `iam_db`, que hoy existe sin ese usuario, con un script que corre solo en un volumen nuevo (C-55). Los servicios `iam-migraciones`, `iam-service` e `iam-worker` en el compose y los jobs de Prometheus (C-31). Las alertas de `fallo_smtp` y de la DLQ (C-40, C-50). El nombre del Service de SeaweedFS en `turismo-datos`. Bloques listos en el README del servicio, sección "Despliegue".
+- **Infra (`infra/`, Luis Fernando):** **limitar `anonymous` a `Read:catalogo-imagenes`, o los documentos quedan legibles sin firma (C-46).** Decidir la propuesta de cifrado en reposo y TLS (C-58). Identidad `iam` con `Read`, `Write` y `List` sobre `documentos-verificacion`, crear ese bucket y el Secret con sus llaves. El rol `iam_user` en `iam_db`, que hoy existe sin ese usuario, con un script que corre solo en un volumen nuevo (C-55). Los servicios `iam-migraciones`, `iam-service` e `iam-worker` en el compose y los jobs de Prometheus (C-31). Las alertas de `fallo_smtp` y de la DLQ (C-40, C-50). El nombre del Service de SeaweedFS en `turismo-datos`. Bloques listos en el README del servicio, sección "Despliegue".
 - **Contratos (`contracts/`, Luis Fernando):** en `prestador.suspendido.v1.json`, aclarar que el IAM no envía `motivo` (C-41), o quitarlo del esquema, y que `suspendido_por` es el propio usuario en una supresión (C-48). En `openapi/README.md`, que `iam.yaml` se genera desde la app y está en OpenAPI 3.1 (C-57).
 - **Catalog (`services/catalog-service/`, Luis Fernando):** que `DirectorioUsuariosIam` envíe `X-Correlation-ID` con el `correlation_id` del evento al pedir el contacto (C-15). Borrar `razon_social`, `telefono` y `direccion` de `PRESTADOR_PERFIL` cuando un prestador suprime sus datos, lo que requiere una señal distinta de `prestador.suspendido` (C-27). Tratar el 404 del contacto de un usuario suprimido sin reintentar (C-15).
 - **Registro de decisiones:** proponer un ADR del IAM que reúna C-04, C-16, C-21, C-27 y C-34.

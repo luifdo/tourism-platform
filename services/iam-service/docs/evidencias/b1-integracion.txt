@@ -1,0 +1,19 @@
+# B1: integracion (db, valkey, rabbitmq, s3) contra iam-verificacion
+# Fecha: 2026-10-30 11:39 UTC
+# Commit: 3c09bac + cambios locales del bloque 8
+# Comando: cat <scratchpad>/integ.tmp
+
+..............................................................           [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  <repo>\services\iam-service\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/integration/test_consumidor_auditoria.py::test_guarda_el_evento_y_el_duplicado_no
+  <repo>\services\iam-service\.venv\Lib\site-packages\testcontainers\community\rabbitmq\__init__.py:58: DeprecationWarning: The @wait_container_is_ready decorator is deprecated and will be removed in a future version. Use structured wait strategies instead: container.waiting_for(HttpWaitStrategy(8080).for_status_code(200)) or container.waiting_for(LogMessageWaitStrategy('ready'))
+    @wait_container_is_ready(pika.exceptions.IncompatibleProtocolError, pika.exceptions.AMQPConnectionError)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+62 passed, 465 deselected, 2 warnings in 58.18s
+
+# Codigo de salida: 0

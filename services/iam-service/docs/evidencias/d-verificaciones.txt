@@ -1,0 +1,17 @@
+# Las cuatro verificaciones finales, en un entorno limpio de iam-verificacion
+# Fecha: 2026-10-30 15:06 UTC
+# Commit: 3c09bac + cambios locales de los arreglos previos al PR
+# Comando: pytest con cobertura, pytest de integracion, ruff check y ruff format --check
+
+--- pytest (con cobertura de app/domain y app/application)
+TOTAL                                                       1425     12    99%
+541 passed, 2 warnings in 257.94s (0:04:17)
+--- integracion
+67 passed, 474 deselected, 2 warnings in 63.37s (0:01:03)
+omitidas: 0
+--- ruff check
+All checks passed!
+--- ruff format
+217 files already formatted
+
+# Codigo de salida: 0

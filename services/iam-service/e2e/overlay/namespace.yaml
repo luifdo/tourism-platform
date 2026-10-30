@@ -1,0 +1,5 @@
+# ENTORNO DE PRUEBA, NO DE PRODUCCIÓN.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: turismo-app

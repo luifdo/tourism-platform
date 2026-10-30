@@ -27,6 +27,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN useradd --create-home --uid 1000 iam
 
+# Nada de esto se usa al ejecutar: la app corre desde /opt/venv, que no trae pip, y nadie instala
+# paquetes dentro del contenedor. Quitarlo también quita sus vulnerabilidades del escaneo.
+RUN rm -rf /usr/local/bin/pip* /usr/local/bin/idle* /usr/local/bin/pydoc* /usr/local/bin/2to3* \
+    /usr/local/lib/python3.12/site-packages/pip* \
+    /usr/local/lib/python3.12/site-packages/setuptools* \
+    /usr/local/lib/python3.12/site-packages/wheel* \
+    /usr/local/lib/python3.12/ensurepip \
+    /usr/local/lib/python3.12/idlelib \
+    /usr/local/lib/python3.12/lib2to3 \
+    /usr/local/lib/python3.12/test \
+    /usr/local/lib/python3.12/tkinter \
+    /usr/local/lib/python3.12/turtledemo
+
 # La imagen oficial borra los .pyc de la biblioteca estándar y en k8s el sistema de archivos es
 # de solo lectura: sin esto, cada arranque recompila toda la stdlib.
 RUN python -m compileall -q /usr/local/lib/python3.12

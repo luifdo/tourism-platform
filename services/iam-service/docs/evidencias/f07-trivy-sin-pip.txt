@@ -1,0 +1,12 @@
+# F-07: trivy sobre la imagen sin pip (resumen por tipo y severidad)
+# Fecha: 2026-10-30 14:49 UTC
+# Commit: 3c09bac + cambios locales de los arreglos previos al PR
+# Comando: uv run python -
+
+debian HIGH sin parche 44
+debian LOW sin parche 61
+debian MEDIUM sin parche 58
+debian UNKNOWN sin parche 1
+Paquetes python con vulnerabilidades: []
+
+# Codigo de salida: 0

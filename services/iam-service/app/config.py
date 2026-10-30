@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     s3_access_key: str = "iam_access_dev"
     s3_secret_key: str = "iam_secret_dev"
     s3_bucket: str = "documentos-verificacion"
+    # Hilos propios para S3, separados de los de Argon2 (C-59), y tope total de cada llamada: si
+    # se pasa, 503 SERVICIO_NO_DISPONIBLE. Se cuenta también la espera por un hilo libre.
+    s3_hilos_maximos: int = Field(default=8, ge=1)
+    s3_tiempo_maximo_segundos: float = Field(default=9.0, gt=0)
 
     # Correo de recuperación (C-28). En desarrollo, Mailpit de docker-compose.dev.yml; en k3s,
     # el usuario y la contraseña van en un Secret y smtp_tls=true (STARTTLS).

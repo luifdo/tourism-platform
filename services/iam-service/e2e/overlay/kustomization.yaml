@@ -1,0 +1,32 @@
+# ENTORNO DE PRUEBA, NO DE PRODUCCIÓN: el IAM de k8s/base con credenciales falsas, un backend de
+# prueba y un gateway mínimo. La configuración real del gateway es de Juan Francisco, en gateway/.
+# Las llaves JWT se generan en cada corrida (scripts/e2e_k3d.py) y nunca se versionan.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: turismo-app
+
+resources:
+  - namespace.yaml
+  - ../../k8s/base
+  - whoami.yaml
+  - gateway.yaml
+
+images:
+  - name: ghcr.io/turismo-santa-marta/iam-service
+    newName: iam-service
+    newTag: e2e
+
+patches:
+  - path: configmap-e2e.yaml
+
+secretGenerator:
+  - name: iam-secretos
+    literals:
+      - DATABASE_URL=postgresql+asyncpg://iam_user:solo-para-pruebas-e2e@postgres.turismo-datos.svc:5432/iam_db
+      - VALKEY_URL=redis://valkey.turismo-datos.svc:6379/0
+      - RABBITMQ_URL=amqp://e2e:solo-para-pruebas-e2e@rabbitmq.turismo-datos.svc:5672/
+      - S3_ACCESS_KEY=iam_access_e2e
+      - S3_SECRET_KEY=solo-para-pruebas-e2e
+      - SMTP_USUARIO=
+      - SMTP_PASSWORD=

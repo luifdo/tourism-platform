@@ -1,0 +1,103 @@
+# ENTORNO DE PRUEBA, NO DE PRODUCCIÓN. Sigue el ejemplo del README ("Despliegue"); la configuración
+# real del gateway es de Juan Francisco, en gateway/.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: iam-forward-auth
+spec:
+  forwardAuth:
+    # Sin trustForwardHeader: Traefik fija él mismo X-Forwarded-Method y X-Forwarded-Uri.
+    address: http://iam-service.turismo-app.svc:8001/api/iam/auth/verificar
+    authResponseHeaders: [X-Usuario-Id, X-Usuario-Rol]
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: quitar-identidad
+spec:
+  headers:
+    customRequestHeaders:
+      X-Usuario-Id: ""
+      X-Usuario-Rol: ""
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: iam-rate-limit
+spec:
+  rateLimit:
+    average: 5
+    period: 1m
+    burst: 5
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: iam-limite-documentos
+spec:
+  buffering:
+    maxRequestBodyBytes: 6291456 # 6 MB
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: iam-service
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Path(`/api/iam/login`) || Path(`/api/iam/auth/recuperar`)
+      kind: Rule
+      priority: 100
+      middlewares:
+        - { name: quitar-identidad }
+        - { name: iam-rate-limit }
+      services:
+        - { name: iam-service, port: 8001 }
+    - match: Path(`/api/iam/register`) || Path(`/api/iam/auth/restablecer`) || Path(`/api/iam/.well-known/jwks.json`)
+      kind: Rule
+      priority: 100
+      middlewares:
+        - { name: quitar-identidad }
+      services:
+        - { name: iam-service, port: 8001 }
+    - match: Method(`POST`) && Path(`/api/iam/prestador/documentos`)
+      kind: Rule
+      priority: 100
+      middlewares:
+        - { name: quitar-identidad }
+        - { name: iam-limite-documentos }
+        - { name: iam-forward-auth }
+      services:
+        - { name: iam-service, port: 8001 }
+    # Solo este prefijo: /internal, /health y /metrics no se enrutan.
+    - match: PathPrefix(`/api/iam`)
+      kind: Rule
+      priority: 10
+      middlewares:
+        - { name: quitar-identidad }
+        - { name: iam-forward-auth }
+      services:
+        - { name: iam-service, port: 8001 }
+---
+# El "otro módulo": protegido con ForwardAuth, y una ruta pública para comprobar el borrado de
+# X-Usuario-* donde ForwardAuth no los reemplaza.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: otro-modulo
+spec:
+  entryPoints: [web]
+  routes:
+    - match: PathPrefix(`/otro-modulo`)
+      kind: Rule
+      middlewares:
+        - { name: quitar-identidad }
+        - { name: iam-forward-auth }
+      services:
+        - { name: whoami, port: 80 }
+    - match: PathPrefix(`/modulo-publico`)
+      kind: Rule
+      middlewares:
+        - { name: quitar-identidad }
+      services:
+        - { name: whoami, port: 80 }

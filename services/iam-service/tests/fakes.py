@@ -1,6 +1,8 @@
 """Dobles en memoria de los puertos, para probar sin base de datos."""
 
 import asyncio
+import contextlib
+import socket
 import threading
 import uuid
 from collections.abc import Callable
@@ -38,6 +40,45 @@ from app.domain.value_objects.filtro_usuarios import FiltroUsuarios, PaginaUsuar
 from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 
 AHORA = datetime(2026, 10, 23, 15, 0, tzinfo=UTC)
+
+
+class ServidorMudo:
+    """Acepta conexiones TCP y nunca responde: un servicio colgado, no uno caído (C-59)."""
+
+    def __init__(self) -> None:
+        self._socket = socket.create_server(("127.0.0.1", 0))
+        self.puerto: int = self._socket.getsockname()[1]
+        self.url = f"http://127.0.0.1:{self.puerto}"
+        self._conexiones: list[socket.socket] = []
+        self._hay_conexion = threading.Condition()
+
+    def __enter__(self) -> Self:
+        threading.Thread(target=self._aceptar, daemon=True).start()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self._socket.close()
+        for conexion in self._conexiones:
+            conexion.close()
+
+    def _aceptar(self) -> None:
+        with contextlib.suppress(OSError):
+            while True:
+                conexion, _ = self._socket.accept()
+                with self._hay_conexion:
+                    self._conexiones.append(conexion)
+                    self._hay_conexion.notify_all()
+
+    def esperar_conexiones(self, cantidad: int, timeout: float) -> bool:
+        with self._hay_conexion:
+            return self._hay_conexion.wait_for(
+                lambda: len(self._conexiones) >= cantidad, timeout=timeout
+            )
 
 
 def reloj_fijo() -> datetime:

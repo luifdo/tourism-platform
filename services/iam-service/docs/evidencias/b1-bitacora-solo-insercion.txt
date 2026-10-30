@@ -1,0 +1,51 @@
+# B1: la bitacora rechaza UPDATE, DELETE y TRUNCATE (base temporal)
+# Fecha: 2026-10-30 11:45 UTC
+# Commit: 3c09bac + cambios locales del bloque 8
+# Comando: bash -c docker compose -p iam-verificacion -f <scratchpad>/compose.yml exec -T postgres psql -U iam_user -d iam_db < '<scratchpad>/bitacora.sql'
+
+--- Rol que ejecuta
+ current_user | rolsuper 
+--------------+----------
+ iam_user     | t
+(1 row)
+
+INSERT 0 1
+--- INSERT (debe funcionar)
+ filas 
+-------
+     1
+(1 row)
+
+--- UPDATE (debe fallar)
+ERROR:  bitacora_auditoria es de solo inserción (RNF-10)
+CONTEXT:  PL/pgSQL function bitacora_inmutable() line 3 at RAISE
+--- DELETE (debe fallar)
+ERROR:  bitacora_auditoria es de solo inserción (RNF-10)
+CONTEXT:  PL/pgSQL function bitacora_inmutable() line 3 at RAISE
+--- TRUNCATE (debe fallar)
+--- Filas despues
+ERROR:  bitacora_auditoria es de solo inserción (RNF-10)
+CONTEXT:  PL/pgSQL function bitacora_inmutable() line 3 at RAISE
+ filas 
+-------
+     1
+(1 row)
+
+--- Permisos del rol sobre la tabla
+ privilege_type 
+----------------
+ INSERT
+ REFERENCES
+ SELECT
+ TRIGGER
+(4 rows)
+
+--- Triggers
+             tgname              | tgenabled 
+---------------------------------+-----------
+ bitacora_auditoria_inmutable    | O
+ bitacora_auditoria_sin_truncate | O
+(2 rows)
+
+
+# Codigo de salida: 0

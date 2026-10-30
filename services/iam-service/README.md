@@ -23,9 +23,27 @@ Autenticación JWT (RS256), verificación de tokens para el API Gateway (Forward
 * `prestador.aprobado.v1`
 
 **Consume:**
-* `auditoria.registrada.v1` (de catalog, booking y review)
+* `auditoria.registrada.v1` (de catalog, booking y review), en la cola durable `iam.auditoria`
 
 Esquemas en [`contracts/events/`](../../contracts/events/).
+
+### Worker y bitácora de los demás servicios
+
+El worker (`python -m app.worker`, misma imagen que la API) consume `iam.auditoria` y guarda cada evento en `bitacora_auditoria`:
+
+| Columna | Valor |
+|---|---|
+| `event_id` | El del sobre. `UNIQUE`: un evento reentregado no se inserta otra vez (`ON CONFLICT DO NOTHING`) |
+| `fecha` | El `occurred_at` del sobre (cuándo pasó), no el momento de la inserción |
+| `servicio_origen` | El `producer` del sobre |
+| `correlation_id` | El del sobre (nulo si no viene) |
+| `resultado` | `EXITO`, `DENEGADO` y `ERROR` del contrato se guardan como `Exito`, `Denegado` y `Error` |
+| `usuario_id` | Nulo si no existe en `usuario`; el valor recibido queda en `detalles.usuario_id_no_registrado` |
+| `ip_origen` | Nula si no es una IP; el texto recibido queda en `detalles.ip_origen_invalida` |
+
+Reintentos a 1, 5 y 25 s ante fallos pasajeros (por ejemplo, PostgreSQL caído). Lo que no cumple el contrato, o falla 4 veces, va a `turismo.dead-letter` con las cabeceras `x-cola`, `x-intentos` y `x-error`. **Nada lo reprocesa solo:** se revisa a mano en la consola de RabbitMQ (http://localhost:15672) y, si se corrigió, se vuelve a publicar desde ahí con la clave `auditoria.registrada`. Repetir un evento ya guardado no lo duplica.
+
+Métricas en `http://localhost:9101/metrics` (`WORKER_METRICS_PORT`), que también sirven de sonda de vida: `iam_eventos_consumidos_total{cola, event_type, resultado}`, con `resultado` igual a `aplicado`, `duplicado`, `reintento` o `dlq`.
 
 ## Estructura (arquitectura hexagonal)
 
@@ -61,7 +79,9 @@ Requiere [uv](https://docs.astral.sh/uv/) y Python 3.12.
 uv sync                                   # instala dependencias (incluye dev)
 cp .env.example .env                      # ajustar DATABASE_URL y demás
 uv run python -m uvicorn app.main:app --reload --port 8001
-uv run pytest                             # pruebas (las marcadas db se omiten si PostgreSQL no responde)
+uv run python -m app.worker               # worker: consume iam.auditoria (Ctrl+C para detenerlo)
+uv run pytest                             # pruebas (db y valkey se omiten si el servicio no responde)
+uv run pytest -m rabbitmq                 # RabbitMQ efímero con testcontainers (requiere Docker)
 uv run ruff check . && uv run ruff format --check .
 uv run alembic upgrade head               # aplicar migraciones
 ```
@@ -221,3 +241,6 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **Tokens de acceso de 15 minutos, sin refresh token** (C-20).
 * **Enumeración de cuentas en el registro** (C-24): el `409` revela si un correo existe; el login no.
 * **Bitácora inmutable y usuarios que se desactivan en lugar de borrarse** (C-01, C-03, C-27).
+* **Auditoría de los demás servicios en un worker aparte, idempotente en la base** (C-04, C-31): un `event_id` repetido no duplica la fila.
+* **Un evento válido nunca se descarta**: con un usuario desconocido o una IP inválida se guarda igual y la anomalía queda en `detalles` (C-38). `fecha` es el `occurred_at` del evento (C-39).
+* **La DLQ no se reprocesa sola** (C-40): se revisa a mano en la consola de RabbitMQ.

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
@@ -30,6 +30,24 @@ async def connection() -> AsyncIterator[AsyncConnection]:
         await transaction.rollback()
         await conn.close()
         await engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def rabbitmq_url() -> Iterator[str]:
+    """RabbitMQ efímero (testcontainers, misma imagen que infra/docker-compose.yml).
+
+    No usa el broker de docker-compose.dev.yml: las pruebas de la DLQ dejarían mensajes en
+    `turismo.dead-letter`. Si Docker no está disponible, la prueba se omite.
+    """
+    try:
+        from testcontainers.community.rabbitmq import RabbitMqContainer
+
+        contenedor = RabbitMqContainer("rabbitmq:4-management").start()
+    except Exception as exc:
+        pytest.skip(f"Docker no disponible para RabbitMQ: {type(exc).__name__}")
+    host = contenedor.get_container_host_ip()
+    yield f"amqp://guest:guest@{host}:{contenedor.get_exposed_port(5672)}/"
+    contenedor.stop()
 
 
 @pytest.fixture

@@ -2,6 +2,7 @@ import uuid
 from typing import Any, Protocol
 
 from app.domain.value_objects.enums import ResultadoAuditoria
+from app.domain.value_objects.evento_auditoria import EventoAuditoria
 
 
 class AuditoriaRepository(Protocol):
@@ -15,3 +16,11 @@ class AuditoriaRepository(Protocol):
         ip_origen: str | None,
         detalles: dict[str, Any],
     ) -> None: ...
+
+    async def registrar_evento(self, evento: EventoAuditoria) -> bool:
+        """Guarda un evento de otro servicio; False si su `event_id` ya estaba (C-04).
+
+        Si `usuario_id` no existe en `usuario`, la fila queda con `usuario_id` nulo y el valor
+        original en `detalles.usuario_id_no_registrado` (C-38).
+        """
+        ...

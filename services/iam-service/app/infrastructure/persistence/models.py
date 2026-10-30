@@ -117,6 +117,11 @@ class BitacoraAuditoria(Base):
     detalles: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # Momento del hecho: now() en las filas propias; el occurred_at del sobre en las de otros
+    # servicios (C-39).
     fecha: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
+    # Llave de idempotencia de los eventos de otros servicios; nula en las filas propias (C-04).
+    event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), unique=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(100))  # C-05

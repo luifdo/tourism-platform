@@ -12,6 +12,7 @@ from app.domain.entities.usuario import Usuario
 from app.domain.exceptions import ServicioNoDisponibleError, UsuarioYaExisteError
 from app.domain.value_objects.email import Email
 from app.domain.value_objects.enums import ResultadoAuditoria
+from app.domain.value_objects.evento_auditoria import EventoAuditoria
 
 AHORA = datetime(2026, 10, 23, 15, 0, tzinfo=UTC)
 
@@ -129,8 +130,18 @@ class RegistroAuditoria:
 
 
 class FakeAuditoriaRepository:
+    """`registrar_evento` no simula el usuario inexistente (C-38): eso lo resuelve el SQL y
+    se prueba en integración."""
+
     def __init__(self) -> None:
         self.registros: list[RegistroAuditoria] = []
+        self.eventos: dict[uuid.UUID, EventoAuditoria] = {}
+
+    async def registrar_evento(self, evento: EventoAuditoria) -> bool:
+        if evento.event_id in self.eventos:
+            return False
+        self.eventos[evento.event_id] = evento
+        return True
 
     async def registrar(
         self,

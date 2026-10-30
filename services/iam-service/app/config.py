@@ -23,6 +23,14 @@ class Settings(BaseSettings):
 
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
     events_exchange: str = "turismo.eventos"
+    rabbitmq_timeout_seconds: float = 5.0
+    consumidor_prefetch: int = 10
+    # Tope de la espera creciente con la que el worker reintenta conectarse a RabbitMQ.
+    rabbitmq_espera_maxima_segundos: float = 30.0
+
+    # Worker (python -m app.worker): /metrics, que también sirve de sonda de vida.
+    worker_metrics_port: int = 9101
+    log_level: str = "INFO"
 
     s3_endpoint_url: str = "http://localhost:8333"
     s3_access_key: str = ""

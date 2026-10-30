@@ -3,19 +3,28 @@
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import TracebackType
 from typing import Any, Self
 
 from redis.exceptions import ConnectionError as RedisConnectionError
 
+from app.domain.entities.documento_verificacion import (
+    DocumentoVerificacion,
+    estado_verificacion,
+)
 from app.domain.entities.usuario import Usuario
 from app.domain.events.evento_dominio import EventoDominio
 from app.domain.exceptions import ServicioNoDisponibleError, UsuarioYaExisteError
 from app.domain.value_objects.email import Email
-from app.domain.value_objects.enums import ResultadoAuditoria, Rol
+from app.domain.value_objects.enums import EstadoDocumento, ResultadoAuditoria, Rol, TipoDocumento
 from app.domain.value_objects.evento_auditoria import EventoAuditoria
 from app.domain.value_objects.filtro_bitacora import EntradaBitacora, FiltroBitacora, PaginaBitacora
+from app.domain.value_objects.filtro_prestadores import (
+    FiltroPrestadores,
+    PaginaPrestadores,
+    ResumenPrestador,
+)
 from app.domain.value_objects.filtro_usuarios import FiltroUsuarios, PaginaUsuarios
 from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 
@@ -72,6 +81,11 @@ class FakeUsuarioRepository:
 
     async def find_by_id_para_actualizar(self, usuario_id: uuid.UUID) -> Usuario | None:
         return await self.find_by_id(usuario_id)
+
+    async def actualizar_razon_social(self, usuario_id: uuid.UUID, razon_social: str) -> None:
+        usuario = await self.find_by_id(usuario_id)
+        assert usuario is not None
+        self.por_email[usuario.email] = replace(usuario, razon_social=razon_social)
 
     async def actualizar_rol_y_estado(
         self, usuario_id: uuid.UUID, rol: Rol, activo: bool
@@ -225,6 +239,124 @@ class FakeAuditoriaRepository:
         )
 
 
+class FakeDocumentoRepository:
+    """Documentos en memoria. `listar_prestadores` necesita las cuentas: recibe el repositorio
+    de usuarios de la misma unidad de trabajo."""
+
+    def __init__(self, usuarios: FakeUsuarioRepository) -> None:
+        self.documentos: dict[uuid.UUID, DocumentoVerificacion] = {}
+        self._usuarios = usuarios
+        self._orden = 0
+
+    async def agregar(self, documento: DocumentoVerificacion) -> DocumentoVerificacion:
+        self._orden += 1
+        guardado = replace(
+            documento, id=uuid.uuid4(), fecha_subida=AHORA + timedelta(seconds=self._orden)
+        )
+        self.documentos[guardado.id] = guardado  # type: ignore[index]
+        return guardado
+
+    async def vigentes(self, usuario_id: uuid.UUID) -> list[DocumentoVerificacion]:
+        return sorted(
+            (d for d in self.documentos.values() if d.usuario_id == usuario_id and d.vigente),
+            key=lambda d: d.tipo_documento.value,
+        )
+
+    async def historial(self, usuario_id: uuid.UUID) -> list[DocumentoVerificacion]:
+        return sorted(
+            (d for d in self.documentos.values() if d.usuario_id == usuario_id),
+            key=lambda d: d.fecha_subida,  # type: ignore[arg-type, return-value]
+            reverse=True,
+        )
+
+    async def find_by_id(self, documento_id: uuid.UUID) -> DocumentoVerificacion | None:
+        return self.documentos.get(documento_id)
+
+    async def retirar_vigente(self, usuario_id: uuid.UUID, tipo: TipoDocumento) -> None:
+        for d in await self.vigentes(usuario_id):
+            if d.tipo_documento is tipo:
+                self.documentos[d.id] = replace(d, vigente=False)  # type: ignore[index]
+
+    async def marcar_revisado(
+        self,
+        documento_id: uuid.UUID,
+        estado: EstadoDocumento,
+        revisado_por: uuid.UUID,
+        revisado_en: datetime,
+        motivo_rechazo: str | None,
+    ) -> DocumentoVerificacion:
+        revisado = replace(
+            self.documentos[documento_id],
+            estado=estado,
+            revisado_por=revisado_por,
+            revisado_en=revisado_en,
+            motivo_rechazo=motivo_rechazo,
+        )
+        self.documentos[documento_id] = revisado
+        return revisado
+
+    async def listar_prestadores(self, filtro: FiltroPrestadores) -> PaginaPrestadores:
+        resumenes = []
+        for u in self._usuarios.por_email.values():
+            if u.rol is not Rol.PRESTADOR or u.id is None:
+                continue
+            vigentes = await self.vigentes(u.id)
+            estado = estado_verificacion(vigentes)
+            if filtro.estado is None or estado is filtro.estado:
+                resumenes.append(
+                    ResumenPrestador(
+                        usuario_id=u.id,
+                        nombre_completo=u.nombre_completo,
+                        email=u.email,
+                        activo=u.activo,
+                        razon_social=u.razon_social,
+                        estado=estado,
+                        vigentes=vigentes,
+                    )
+                )
+        inicio = (filtro.pagina - 1) * filtro.tamano
+        return PaginaPrestadores(
+            items=resumenes[inicio : inicio + filtro.tamano],
+            total=len(resumenes),
+            pagina=filtro.pagina,
+            tamano=filtro.tamano,
+        )
+
+    def sembrar(
+        self, usuario_id: uuid.UUID, tipo: TipoDocumento, estado: EstadoDocumento
+    ) -> DocumentoVerificacion:
+        """Guarda un documento vigente ya revisado (o pendiente) sin pasar por la carga."""
+        self._orden += 1
+        documento = DocumentoVerificacion(
+            id=uuid.uuid4(),
+            usuario_id=usuario_id,
+            tipo_documento=tipo,
+            objeto_s3=f"{usuario_id}/{tipo.value}/x.pdf",
+            tipo_contenido="application/pdf",
+            tamano_bytes=10,
+            estado=estado,
+            fecha_subida=AHORA + timedelta(seconds=self._orden),
+        )
+        self.documentos[documento.id] = documento  # type: ignore[index]
+        return documento
+
+
+class FakeAlmacenDocumentos:
+    """Bucket en memoria. caido=True simula SeaweedFS sin responder."""
+
+    def __init__(self, caido: bool = False) -> None:
+        self.objetos: dict[str, tuple[bytes, str]] = {}
+        self.caido = caido
+
+    async def guardar(self, clave: str, contenido: bytes, tipo_contenido: str) -> None:
+        if self.caido:
+            raise ServicioNoDisponibleError()
+        self.objetos[clave] = (contenido, tipo_contenido)
+
+    def url_lectura(self, clave: str, tipo_contenido: str, nombre_archivo: str) -> str:
+        return f"https://s3.prueba/{clave}?tipo={tipo_contenido}&nombre={nombre_archivo}"
+
+
 class FakeOutbox:
     def __init__(self) -> None:
         self.eventos: list[EventoDominio] = []
@@ -242,6 +374,7 @@ class FakeUnitOfWork:
         self.usuarios = FakeUsuarioRepository()
         self.auditoria = FakeAuditoriaRepository()
         self.outbox = FakeOutbox()
+        self.documentos = FakeDocumentoRepository(self.usuarios)
         self.entradas = 0
         self.commits = 0
         self.rollbacks = 0

@@ -7,11 +7,17 @@ from fastapi.responses import JSONResponse
 
 from app.api.schemas.errors import ErrorCampo, ErrorResponse
 from app.domain.exceptions import (
+    ArchivoDemasiadoGrandeError,
     AutogestionNoPermitidaError,
     CredencialesInvalidasError,
     CuentaInactivaError,
+    DocumentoAprobadoError,
+    DocumentoNoEncontradoError,
+    DocumentosIncompletosError,
+    DocumentoYaRevisadoError,
     DominioError,
     DominioValidationError,
+    NoEsPrestadorError,
     RolInsuficienteError,
     ServicioNoDisponibleError,
     TokenInvalidoError,
@@ -74,6 +80,18 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(UsuarioYaExisteError, _responder_con(status.HTTP_409_CONFLICT))
     app.add_exception_handler(AutogestionNoPermitidaError, _responder_con(status.HTTP_409_CONFLICT))
     app.add_exception_handler(UltimoAdminError, _responder_con(status.HTTP_409_CONFLICT))
+    conflicto = _responder_con(status.HTTP_409_CONFLICT)
+    for error in (
+        NoEsPrestadorError,
+        DocumentoAprobadoError,
+        DocumentosIncompletosError,
+        DocumentoYaRevisadoError,
+    ):
+        app.add_exception_handler(error, conflicto)
+    app.add_exception_handler(DocumentoNoEncontradoError, _responder_con(status.HTTP_404_NOT_FOUND))
+    app.add_exception_handler(
+        ArchivoDemasiadoGrandeError, _responder_con(status.HTTP_413_CONTENT_TOO_LARGE)
+    )
     app.add_exception_handler(UsuarioNoEncontradoError, _responder_con(status.HTTP_404_NOT_FOUND))
     app.add_exception_handler(
         DominioValidationError, _responder_con(status.HTTP_422_UNPROCESSABLE_CONTENT)

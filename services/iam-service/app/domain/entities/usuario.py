@@ -18,6 +18,8 @@ class Usuario:
     habeas_data_aceptado: bool
     habeas_data_aceptado_en: datetime
     idioma: Idioma = Idioma.ES
+    # Del RUT, para `prestador.aprobado` (C-07).
+    razon_social: str | None = None
     id: uuid.UUID | None = None
     creado_en: datetime | None = None
     actualizado_en: datetime | None = None

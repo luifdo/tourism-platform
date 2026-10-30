@@ -50,9 +50,10 @@ services:
       retries: 5
 
   seaweedfs:
-    image: chrislusf/seaweedfs
+    # Misma versión que infra/docker-compose.yml.
+    image: chrislusf/seaweedfs:3.80
     container_name: iam-seaweedfs
-    command: "server -dir=/data -s3 -s3.port=8333"
+    command: "server -dir=/data -ip.bind=0.0.0.0 -s3 -s3.port=8333"
     ports:
       - "8333:8333"
     volumes:

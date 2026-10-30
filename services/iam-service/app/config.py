@@ -39,9 +39,14 @@ class Settings(BaseSettings):
     worker_metrics_port: int = 9101
     log_level: str = "INFO"
 
+    # SeaweedFS (C-30). El interno sube los documentos; el público firma las URL que abre el
+    # navegador del Admin. Las credenciales de desarrollo sirven porque el SeaweedFS de
+    # docker-compose.dev.yml no tiene archivo de identidades; en k3s las provee infra/ (C-46).
     s3_endpoint_url: str = "http://localhost:8333"
-    s3_access_key: str = ""
-    s3_secret_key: str = ""
+    s3_endpoint_publico: str = "http://localhost:8333"
+    s3_region: str = "us-east-1"
+    s3_access_key: str = "iam_access_dev"
+    s3_secret_key: str = "iam_secret_dev"
     s3_bucket: str = "documentos-verificacion"
 
     jwt_algorithm: str = "RS256"

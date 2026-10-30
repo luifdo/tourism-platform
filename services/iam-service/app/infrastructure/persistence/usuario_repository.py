@@ -103,6 +103,13 @@ class SqlAlchemyUsuarioRepository:
         )
         return _to_entity(model) if model is not None else None
 
+    async def actualizar_razon_social(self, usuario_id: uuid.UUID, razon_social: str) -> None:
+        await self._session.execute(
+            update(UsuarioModel)
+            .where(UsuarioModel.id == usuario_id)
+            .values(razon_social=razon_social)
+        )
+
     async def actualizar_rol_y_estado(
         self, usuario_id: uuid.UUID, rol: Rol, activo: bool
     ) -> Usuario:
@@ -151,6 +158,7 @@ def _to_entity(model: UsuarioModel) -> Usuario:
         habeas_data_aceptado=model.habeas_data_aceptado,
         habeas_data_aceptado_en=model.habeas_data_aceptado_en,
         idioma=Idioma(model.idioma),
+        razon_social=model.razon_social,
         creado_en=model.creado_en,
         actualizado_en=model.actualizado_en,
     )

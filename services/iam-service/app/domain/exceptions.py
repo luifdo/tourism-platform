@@ -40,6 +40,38 @@ class UltimoAdminError(DominioError):
     default_message = "No se puede dejar la plataforma sin administradores activos."
 
 
+class NoEsPrestadorError(DominioError):
+    code = "NO_ES_PRESTADOR"
+    default_message = "La cuenta no tiene el rol Prestador."
+
+
+class DocumentoNoEncontradoError(DominioError):
+    code = "DOCUMENTO_NO_ENCONTRADO"
+    default_message = "El documento no existe."
+
+
+class DocumentoAprobadoError(DominioError):
+    """C-30: un documento vigente aprobado no se reemplaza (la renovación queda fuera, C-45)."""
+
+    code = "DOCUMENTO_APROBADO"
+    default_message = "El documento vigente de ese tipo ya fue aprobado y no se puede reemplazar."
+
+
+class DocumentosIncompletosError(DominioError):
+    code = "DOCUMENTOS_INCOMPLETOS"
+    default_message = "El prestador no tiene cargados el RNT y el RUT."
+
+
+class DocumentoYaRevisadoError(DominioError):
+    code = "DOCUMENTO_YA_REVISADO"
+    default_message = "El documento ya fue revisado; el prestador debe cargar uno nuevo."
+
+
+class ArchivoDemasiadoGrandeError(DominioError):
+    code = "ARCHIVO_DEMASIADO_GRANDE"
+    default_message = "El archivo supera los 5 MB."
+
+
 class CredencialesInvalidasError(DominioError):
     """Mismo mensaje si el correo no existe o la contraseña no coincide (no revela cuentas)."""
 
@@ -120,6 +152,18 @@ class MenorDeEdadError(DominioValidationError):
 class RangoFechasInvalidoError(DominioValidationError):
     code = "RANGO_FECHAS_INVALIDO"
     default_message = "La fecha 'desde' debe ser anterior a 'hasta'."
+
+
+class TipoArchivoNoPermitidoError(DominioValidationError):
+    code = "TIPO_ARCHIVO_NO_PERMITIDO"
+    default_message = "Solo se aceptan archivos PDF, JPG o PNG."
+
+
+class RazonSocialInvalidaError(DominioValidationError):
+    code = "RAZON_SOCIAL_INVALIDA"
+    default_message = (
+        "La razón social es obligatoria con el RUT y debe tener entre 2 y 200 caracteres."
+    )
 
 
 class RolNoPermitidoError(DominioValidationError):

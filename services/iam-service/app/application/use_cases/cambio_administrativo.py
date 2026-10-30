@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, ClassVar
 
+from app.domain.entities.documento_verificacion import EstadoVerificacion, estado_verificacion
 from app.domain.entities.usuario import Usuario
+from app.domain.events.prestador_aprobado import PrestadorAprobado
 from app.domain.events.prestador_suspendido import PrestadorSuspendido
 from app.domain.exceptions import (
     AutogestionNoPermitidaError,
@@ -38,8 +40,9 @@ class CambioAdministrativo:
     2. Sin efecto (mismo rol y mismo estado): devuelve la cuenta sin auditar, revocar ni
        publicar.
     3. Reglas: no sobre la propia cuenta; no dejar la plataforma sin Admins activos.
-    4. En una sola transacción: el cambio, su fila en la bitácora y, si el prestador deja de
-       estar visible, `prestador.suspendido` en el outbox (C-17).
+    4. En una sola transacción: el cambio, su fila en la bitácora y, en el outbox,
+       `prestador.suspendido` si el prestador deja de estar visible (C-17), o
+       `prestador.aprobado` si vuelve a estarlo con sus documentos aprobados (C-42).
     5. Si cambió el rol o se desactivó, revoca los tokens del usuario antes del commit (si
        Valkey no responde, 503 y nada se confirma) y otra vez después (C-21).
     """
@@ -80,12 +83,24 @@ class CambioAdministrativo:
                 detalles=_detalles(objetivo, actualizado, cmd.motivo),
             )
             era_prestador_visible = objetivo.rol is Rol.PRESTADOR and objetivo.activo
-            if era_prestador_visible and not (rol is Rol.PRESTADOR and activo):
+            es_prestador_visible = rol is Rol.PRESTADOR and activo
+            if era_prestador_visible and not es_prestador_visible:
                 await uow.outbox.agregar(
                     PrestadorSuspendido(
                         ocurrido_en=ahora, usuario_id=objetivo.id, suspendido_por=cmd.admin_id
                     )
                 )
+            elif es_prestador_visible and not era_prestador_visible:
+                vigentes = await uow.documentos.vigentes(objetivo.id)
+                if estado_verificacion(vigentes) is EstadoVerificacion.APROBADO:
+                    await uow.outbox.agregar(
+                        PrestadorAprobado(
+                            ocurrido_en=ahora,
+                            usuario_id=objetivo.id,
+                            aprobado_por=cmd.admin_id,
+                            razon_social=objetivo.razon_social,
+                        )
+                    )
             revocar = rol is not objetivo.rol or (objetivo.activo and not activo)
             if revocar:
                 await self._revocacion.revocar_usuario(objetivo.id, ahora)

@@ -21,7 +21,7 @@ Autenticación JWT (RS256), verificación de tokens para el API Gateway (Forward
 
 **Publica** (mediante el outbox, ver abajo):
 * `prestador.suspendido.v1`: un Prestador activo deja de estarlo (UC27), C-17
-* `prestador.aprobado.v1`: en el bloque 5 (UC28)
+* `prestador.aprobado.v1`: el Admin aprueba los documentos de un Prestador activo (UC28), o rehabilita a uno ya verificado (C-42)
 
 **Consume:**
 * `auditoria.registrada.v1` (de catalog, booking y review), en la cola durable `iam.auditoria`
@@ -92,13 +92,19 @@ uv run python -m uvicorn app.main:app --reload --port 8001
 uv run python -m app.worker               # worker: consume iam.auditoria (Ctrl+C para detenerlo)
 uv run pytest                             # pruebas (db y valkey se omiten si el servicio no responde)
 uv run pytest -m rabbitmq                 # RabbitMQ efímero con testcontainers (requiere Docker)
+uv run pytest -m s3                       # SeaweedFS de docker-compose.dev.yml (se omite si no responde)
+uv run python -m scripts.crear_bucket     # crea el bucket documentos-verificacion (idempotente)
 uv run ruff check . && uv run ruff format --check .
 uv run alembic upgrade head               # aplicar migraciones
 ```
 
 > En Windows, Smart App Control puede bloquear `uvicorn.exe` del `.venv`; `python -m uvicorn` evita el problema.
 
+> **Pendiente (pruebas):** durante el bloque 5, una corrida completa de `uv run pytest -q` tuvo una falla intermitente que no se identificó (no se guardó la salida) y no volvió a aparecer en las cinco corridas siguientes. Si reaparece, guardar la salida completa (`uv run pytest -q > salida.log 2>&1`), identificar la prueba y corregir la carrera, como se hizo en el bloque 2 con el contador `dlq` de `test_consumidor_auditoria.py`, que se leía antes de que el consumidor lo actualizara.
+
 Mailpit (SMTP de pruebas en `localhost:1025`, interfaz en http://localhost:8025) queda listo para los correos de recuperación del bloque 6.
+
+SeaweedFS de desarrollo (`chrislusf/seaweedfs:3.80`, puerto 8333) no tiene archivo de identidades: acepta cualquier credencial (incluso vacía) y no comprueba las firmas. Antes de cargar documentos hay que crear el bucket con `scripts.crear_bucket`. En k3s, el bucket y las credenciales los provee `infra/` (C-46).
 
 ## Endpoints
 
@@ -259,6 +265,38 @@ Un cambio sin efecto (mismo rol o mismo estado) responde `200` sin auditar, revo
 | 422 | `VALIDACION` | Rol inexistente, `activo` no booleano, `motivo` de más de 2000 caracteres, UUID mal formado |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Valkey no responde: no se pudo revocar y **no se cambió nada** |
 
+### Documentos de verificación (UC37) y revisión de prestadores (UC28)
+
+**El prestador** (solo rol `Prestador`):
+
+* `POST /api/iam/prestador/documentos`, en `multipart/form-data` con `tipo` (`RNT` o `RUT`), `archivo` y, con el RUT, `razon_social` (de 2 a 200 caracteres, C-07). Responde `201` con el documento `Pendiente`.
+  * Solo PDF, JPG o PNG **reales**: el tipo se reconoce por la firma de bytes, no por la extensión ni por el `Content-Type` del cliente. Hasta 5 MB (C-30).
+  * Un archivo nuevo reemplaza al pendiente o al rechazado del mismo tipo (el anterior se conserva con `vigente: false`). Si el vigente ya está aprobado, `409 DOCUMENTO_APROBADO`.
+* `GET /api/iam/prestador/documentos`: `{usuario_id, razon_social, estado, documentos}`, con los vigentes, su estado y el `motivo_rechazo`. `estado` es `incompleto`, `pendiente`, `rechazado` o `aprobado`.
+
+**El Admin:**
+
+* `GET /api/iam/admin/prestadores?estado=pendiente&pagina=1&tamano=20`: la cola de revisión, de la cuenta más antigua a la más nueva, con los documentos vigentes de cada uno.
+* `GET /api/iam/admin/prestadores/{usuario_id}/documentos`: el historial completo, incluidos los reemplazados.
+* `GET /api/iam/admin/documentos/{documento_id}/url`: `{url, expira_en}`, una URL de SeaweedFS que vale **5 minutos** y muestra el archivo como `RUT.pdf` con su tipo real. Cada consulta queda como `DOCUMENT_VIEW`; si la bitácora no responde, no hay URL.
+* `POST /api/iam/admin/prestadores/{usuario_id}/aprobar`: aprueba el RNT y el RUT vigentes (`PROVIDER_APPROVED`). Si la cuenta está activa, publica `prestador.aprobado` con la razón social; si está inactiva, el evento sale al reactivarla (C-42).
+* `POST /api/iam/admin/prestadores/{usuario_id}/rechazar` con `{"documentos": [{"tipo": "RUT", "motivo": "El RUT está ilegible."}]}`: rechaza esos documentos (`PROVIDER_REJECTED`). El prestador ve el motivo y carga otro.
+
+Las respuestas nunca incluyen la llave del objeto en SeaweedFS. Ver C-30, C-44, C-45 y C-47.
+
+| HTTP | `code` | Causa |
+|---|---|---|
+| 404 | `USUARIO_NO_ENCONTRADO` / `DOCUMENTO_NO_ENCONTRADO` | La cuenta o el documento no existen, o no hay un vigente de ese tipo para rechazar |
+| 409 | `DOCUMENTO_APROBADO` | Carga sobre un documento vigente ya aprobado (la renovación queda fuera, C-45) |
+| 409 | `DOCUMENTOS_INCOMPLETOS` | Aprobar sin el RNT o el RUT |
+| 409 | `DOCUMENTO_YA_REVISADO` | Aprobar con un documento rechazado, o rechazar uno ya revisado |
+| 409 | `NO_ES_PRESTADOR` | La cuenta no tiene el rol Prestador |
+| 413 | `ARCHIVO_DEMASIADO_GRANDE` | Más de 5 MB |
+| 422 | `TIPO_ARCHIVO_NO_PERMITIDO` | No es PDF, JPG ni PNG |
+| 422 | `RAZON_SOCIAL_INVALIDA` | RUT sin razón social válida |
+| 422 | `VALIDACION` | Formulario o cuerpo mal formado (tipo inexistente, motivo vacío o de más de 500 caracteres, tipo repetido) |
+| 503 | `SERVICIO_NO_DISPONIBLE` | SeaweedFS no responde: no se registró nada |
+
 ### `GET /api/iam/admin/bitacora` (UC33)
 
 Solo `Admin`. Consulta la bitácora inmutable (RNF-10): las filas propias del IAM y las que llegan de los demás módulos por `auditoria.registrada`. Se ordena por `fecha` descendente, que es el momento del hecho (C-39). Cada consulta deja una fila `AUDIT_VIEW` con el Admin, los filtros usados y la página, nunca los resultados; se escribe después de leer y, si falla, la consulta responde igual (C-43).
@@ -349,7 +387,9 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **La DLQ no se reprocesa sola** (C-40): se revisa a mano en la consola de RabbitMQ.
 * **Eventos del IAM por outbox, con entrega "al menos una vez"** (C-09): un evento nunca se pierde entre el commit y RabbitMQ.
 * **UC27 revoca dos veces y falla cerrado** (C-21, C-29): sin Valkey no se cambia ningún rol ni estado.
-* **El motivo de una suspensión no viaja por el bus** (C-41), y **un Prestador reactivado sigue oculto en catalog hasta el bloque 5** (C-42).
+* **El motivo de una suspensión no viaja por el bus** (C-41). **Rehabilitar a un Prestador publica `prestador.aprobado` solo si sus dos documentos están aprobados** (C-42).
+* **Los documentos pasan por el IAM y se validan por su contenido** (C-30). **Sin antivirus** (C-44), con las mitigaciones listadas en el registro. **Un documento aprobado no se renueva** (C-45).
+* **El bucket y las credenciales del IAM en k3s los provee `infra/`** (C-46), y **la supresión del bloque 6 debe borrar los objetos de SeaweedFS** (C-27).
 * **Readiness y liveness en `/health/live`, sin dependencias** (C-32, distinto del Plan §7.3): una caída de PostgreSQL o Valkey no saca a todas las réplicas a la vez; `/health` sigue mostrando la falla al monitoreo.
 * **Contacto interno con 404 si llega por Traefik** (C-15). **Riesgo:** catalog todavía no envía `X-Correlation-ID` en esa llamada, así que su log no se cruza con el evento.
 * **El 500 de una excepción no controlada sale sin `X-Correlation-ID`** (C-05).

@@ -121,6 +121,65 @@ with httpx.Client(base_url=BASE, timeout=10) as c:
         r.text,
     )
 
+    # Documentos de verificación (UC37). Requiere SeaweedFS y el bucket
+    # (uv run python -m scripts.crear_bucket).
+    pdf = b"%PDF-1.7\n%smoke\n"
+    r = c.post(
+        "/api/iam/prestador/documentos",
+        data={"tipo": "RNT"},
+        files={"archivo": ("rnt.pdf", pdf, "application/pdf")},
+        headers=auth,
+    )
+    check(
+        "Turista sube documento -> 403 ROL_INSUFICIENTE",
+        r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
+        r.text,
+    )
+    email_p = f"smoke.prestador.{uuid.uuid4().hex[:8]}@example.com"
+    r = c.post("/api/iam/register", json={**datos, "email": email_p, "rol": "Prestador"})
+    check("Registro de Prestador -> 201", r.status_code == 201, r.text)
+    r = c.post("/api/iam/login", json={"email": email_p, "password": clave})
+    auth_p = {"Authorization": f"Bearer {r.json().get('access_token')}"}
+    r = c.post(
+        "/api/iam/prestador/documentos",
+        data={"tipo": "RNT"},
+        files={"archivo": ("rnt.pdf", b"MZ\x90\x00", "application/pdf")},
+        headers=auth_p,
+    )
+    check(
+        "Ejecutable con nombre .pdf -> 422 TIPO_ARCHIVO_NO_PERMITIDO",
+        r.status_code == 422 and r.json().get("code") == "TIPO_ARCHIVO_NO_PERMITIDO",
+        r.text,
+    )
+    r = c.post(
+        "/api/iam/prestador/documentos",
+        data={"tipo": "RNT"},
+        files={"archivo": ("rnt.pdf", pdf, "application/pdf")},
+        headers=auth_p,
+    )
+    check("Carga del RNT -> 201 Pendiente", r.status_code == 201, r.text)
+    r = c.post(
+        "/api/iam/prestador/documentos",
+        data={"tipo": "RUT", "razon_social": "Humo SAS"},
+        files={"archivo": ("rut.pdf", pdf, "application/pdf")},
+        headers=auth_p,
+    )
+    check("Carga del RUT con razón social -> 201", r.status_code == 201, r.text)
+    r = c.get("/api/iam/prestador/documentos", headers=auth_p)
+    check(
+        "Mis documentos -> pendiente, sin la llave interna",
+        r.status_code == 200
+        and r.json().get("estado") == "pendiente"
+        and "objeto_s3" not in r.text,
+        r.text,
+    )
+    r = c.get("/api/iam/admin/prestadores", headers=auth_p)
+    check(
+        "admin/prestadores con Prestador -> 403",
+        r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
+        r.text,
+    )
+
     # Logout y revocación
     r = c.post("/api/iam/logout", headers=auth)
     check("Logout -> 204", r.status_code == 204, r.text)

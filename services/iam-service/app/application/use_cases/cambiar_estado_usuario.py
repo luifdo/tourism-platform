@@ -16,7 +16,8 @@ class CambiarEstadoUsuario(CambioAdministrativo):
     """UC27: el Admin activa o desactiva una cuenta (`USER_STATUS_CHANGE`, C-19).
 
     Desactivar revoca los tokens del usuario y, si es un Prestador, publica
-    `prestador.suspendido`. Reactivar no publica nada en este bloque (C-42).
+    `prestador.suspendido`. Reactivar a un Prestador con sus documentos aprobados publica
+    `prestador.aprobado` (C-42).
     """
 
     accion = "USER_STATUS_CHANGE"

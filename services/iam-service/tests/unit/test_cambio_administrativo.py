@@ -13,6 +13,7 @@ from app.application.use_cases.cambiar_estado_usuario import (
 )
 from app.application.use_cases.cambiar_rol_usuario import CambiarRolCommand, CambiarRolUsuario
 from app.domain.entities.usuario import Usuario
+from app.domain.events.prestador_aprobado import PrestadorAprobado
 from app.domain.events.prestador_suspendido import PrestadorSuspendido
 from app.domain.exceptions import (
     AutogestionNoPermitidaError,
@@ -20,7 +21,7 @@ from app.domain.exceptions import (
     UltimoAdminError,
     UsuarioNoEncontradoError,
 )
-from app.domain.value_objects.enums import ResultadoAuditoria, Rol
+from app.domain.value_objects.enums import EstadoDocumento, ResultadoAuditoria, Rol, TipoDocumento
 from tests.fakes import AHORA, FakeRevocacion, FakeUnitOfWork
 
 IP = "190.24.10.5"
@@ -226,7 +227,7 @@ async def test_reactivar_no_revoca_ni_publica(
     )
 
     assert actualizado.activo is True
-    assert uow.outbox.eventos == []  # C-42: la oferta vuelve con el bloque 5
+    assert uow.outbox.eventos == []  # sin documentos aprobados no publica (C-42)
     assert revocacion.revocaciones_usuario == []
     [registro] = uow.auditoria.registros
     assert registro.detalles["motivo"] is None
@@ -364,3 +365,76 @@ async def test_si_falla_la_segunda_revocacion_solo_queda_en_el_log(
     assert uow.commits == 1
     assert len(revocacion.revocaciones_usuario) == 1
     assert "No se pudo repetir la revocación" in caplog.text
+
+
+async def test_reactivar_prestador_con_documentos_aprobados_publica_aprobado(
+    uow: FakeUnitOfWork, revocacion: FakeRevocacion, reloj: RelojQueAvanza, admin: Usuario
+) -> None:
+    inactivo = uow.usuarios.sembrar(
+        replace(cuenta("p4@example.com", Rol.PRESTADOR, activo=False), razon_social="Eco SAS")
+    )
+    for tipo in (TipoDocumento.RNT, TipoDocumento.RUT):
+        uow.documentos.sembrar(inactivo.id, tipo, EstadoDocumento.APROBADO)  # type: ignore[arg-type]
+
+    await estado(uow, revocacion, reloj).execute(cmd_estado(admin, inactivo, activo=True))
+
+    [evento] = uow.outbox.eventos
+    assert isinstance(evento, PrestadorAprobado)  # C-42
+    assert evento.payload() == {
+        "prestador_id": str(inactivo.id),
+        "usuario_id": str(inactivo.id),
+        "aprobado_por": str(admin.id),
+        "razon_social": "Eco SAS",
+    }
+
+
+async def test_volver_a_prestador_con_documentos_aprobados_publica_aprobado(
+    uow: FakeUnitOfWork,
+    revocacion: FakeRevocacion,
+    reloj: RelojQueAvanza,
+    admin: Usuario,
+    turista: Usuario,
+) -> None:
+    for tipo in (TipoDocumento.RNT, TipoDocumento.RUT):
+        uow.documentos.sembrar(turista.id, tipo, EstadoDocumento.APROBADO)  # type: ignore[arg-type]
+
+    await rol(uow, revocacion, reloj).execute(cmd_rol(admin, turista, Rol.PRESTADOR))
+
+    [evento] = uow.outbox.eventos
+    assert isinstance(evento, PrestadorAprobado)
+
+
+@pytest.mark.parametrize(
+    "estados",
+    [(EstadoDocumento.APROBADO,), (EstadoDocumento.APROBADO, EstadoDocumento.PENDIENTE)],
+    ids=["falta_un_documento", "uno_pendiente"],
+)
+async def test_reactivar_sin_aprobacion_completa_no_publica(
+    uow: FakeUnitOfWork,
+    revocacion: FakeRevocacion,
+    reloj: RelojQueAvanza,
+    admin: Usuario,
+    estados: tuple[EstadoDocumento, ...],
+) -> None:
+    inactivo = uow.usuarios.sembrar(cuenta("p5@example.com", Rol.PRESTADOR, activo=False))
+    for tipo, estado_doc in zip((TipoDocumento.RNT, TipoDocumento.RUT), estados, strict=False):
+        uow.documentos.sembrar(inactivo.id, tipo, estado_doc)  # type: ignore[arg-type]
+
+    await estado(uow, revocacion, reloj).execute(cmd_estado(admin, inactivo, activo=True))
+
+    assert uow.outbox.eventos == []
+
+
+async def test_desactivar_prestador_aprobado_publica_solo_suspendido(
+    uow: FakeUnitOfWork,
+    revocacion: FakeRevocacion,
+    reloj: RelojQueAvanza,
+    admin: Usuario,
+    prestador: Usuario,
+) -> None:
+    for tipo in (TipoDocumento.RNT, TipoDocumento.RUT):
+        uow.documentos.sembrar(prestador.id, tipo, EstadoDocumento.APROBADO)  # type: ignore[arg-type]
+
+    await estado(uow, revocacion, reloj).execute(cmd_estado(admin, prestador, activo=False))
+
+    assert [type(e) for e in uow.outbox.eventos] == [PrestadorSuspendido]

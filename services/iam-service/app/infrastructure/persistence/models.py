@@ -69,6 +69,8 @@ class Usuario(Base):
     )
     # C-06: idioma de los correos (UC36, UC3); lo lee catalog en la ruta interna de contacto.
     idioma: Mapped[str] = mapped_column(String(2), nullable=False, server_default=text("'es'"))
+    # C-07: razón social del RUT, para `prestador.aprobado`.
+    razon_social: Mapped[str | None] = mapped_column(String(200))
     creado_en: Mapped[datetime] = timestamptz_now()
     # El trigger usuario_actualizado_en lo refresca en cada UPDATE, venga o no del ORM.
     actualizado_en: Mapped[datetime] = timestamptz_now()
@@ -76,6 +78,16 @@ class Usuario(Base):
 
 class DocumentoVerificacion(Base):
     __tablename__ = "documento_verificacion"
+    # C-30: un solo documento vigente por tipo y prestador; los reemplazados se conservan.
+    __table_args__ = (
+        Index(
+            "uq_documento_verificacion_vigente",
+            "usuario_id",
+            "tipo_documento",
+            unique=True,
+            postgresql_where=text("vigente"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     usuario_id: Mapped[uuid.UUID] = mapped_column(
@@ -88,6 +100,10 @@ class DocumentoVerificacion(Base):
         pg_enum(TipoDocumento, "tipo_documento"), nullable=False
     )
     objeto_s3: Mapped[str] = mapped_column(String(512), nullable=False)
+    # Detectado por la firma de bytes (C-30); se fija al servir el archivo.
+    tipo_contenido: Mapped[str] = mapped_column(String(50), nullable=False)
+    tamano_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    vigente: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     estado: Mapped[EstadoDocumento] = mapped_column(
         pg_enum(EstadoDocumento, "estado_documento"),
         nullable=False,

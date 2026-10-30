@@ -9,20 +9,27 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.api.ip_origen import ip_origen
+from app.application.use_cases.abrir_documento import AbrirDocumento
+from app.application.use_cases.aprobar_prestador import AprobarPrestador
 from app.application.use_cases.cambiar_estado_usuario import CambiarEstadoUsuario
 from app.application.use_cases.cambiar_rol_usuario import CambiarRolUsuario
 from app.application.use_cases.cerrar_sesion import CerrarSesion
 from app.application.use_cases.check_health import CheckHealth
 from app.application.use_cases.consultar_bitacora import ConsultarBitacora
+from app.application.use_cases.consultar_verificacion import ConsultarVerificacion
 from app.application.use_cases.iniciar_sesion import IniciarSesion
+from app.application.use_cases.listar_prestadores import ListarPrestadores
 from app.application.use_cases.listar_usuarios import ListarUsuarios
 from app.application.use_cases.obtener_contacto_usuario import ObtenerContactoUsuario
 from app.application.use_cases.obtener_usuario import ObtenerUsuario
+from app.application.use_cases.rechazar_prestador import RechazarPrestador
 from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoDenegado
 from app.application.use_cases.registrar_usuario import RegistrarUsuario
+from app.application.use_cases.subir_documento import SubirDocumento
 from app.application.use_cases.verificar_acceso import VerificarAcceso
 from app.config import Settings, get_settings
 from app.domain.exceptions import RolInsuficienteError, TokenInvalidoError
+from app.domain.ports.almacen_documentos import AlmacenDocumentos
 from app.domain.ports.password_hasher import PasswordHasher
 from app.domain.ports.revocacion_tokens import RevocacionTokens
 from app.domain.ports.token_service import TokenService
@@ -121,6 +128,39 @@ def get_obtener_contacto_usuario(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
 ) -> ObtenerContactoUsuario:
     return ObtenerContactoUsuario(uow=uow)
+
+
+def get_almacen_documentos(request: Request) -> AlmacenDocumentos:
+    return request.app.state.almacen_documentos
+
+
+Reloj = Annotated[Callable[[], datetime], Depends(get_reloj)]
+Uow = Annotated[UnitOfWork, Depends(get_unit_of_work)]
+Almacen = Annotated[AlmacenDocumentos, Depends(get_almacen_documentos)]
+
+
+def get_subir_documento(uow: Uow, almacen: Almacen, reloj: Reloj) -> SubirDocumento:
+    return SubirDocumento(uow=uow, almacen=almacen, reloj=reloj)
+
+
+def get_consultar_verificacion(uow: Uow) -> ConsultarVerificacion:
+    return ConsultarVerificacion(uow=uow)
+
+
+def get_listar_prestadores(uow: Uow) -> ListarPrestadores:
+    return ListarPrestadores(uow=uow)
+
+
+def get_abrir_documento(uow: Uow, almacen: Almacen, reloj: Reloj) -> AbrirDocumento:
+    return AbrirDocumento(uow=uow, almacen=almacen, reloj=reloj)
+
+
+def get_aprobar_prestador(uow: Uow, reloj: Reloj) -> AprobarPrestador:
+    return AprobarPrestador(uow=uow, reloj=reloj)
+
+
+def get_rechazar_prestador(uow: Uow, reloj: Reloj) -> RechazarPrestador:
+    return RechazarPrestador(uow=uow, reloj=reloj)
 
 
 def get_consultar_bitacora(

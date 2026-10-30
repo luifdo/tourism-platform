@@ -2,6 +2,7 @@ from types import TracebackType
 from typing import Protocol, Self
 
 from app.domain.ports.auditoria_repository import AuditoriaRepository
+from app.domain.ports.documento_repository import DocumentoRepository
 from app.domain.ports.outbox import Outbox
 from app.domain.ports.usuario_repository import UsuarioRepository
 
@@ -11,6 +12,7 @@ class UnitOfWork(Protocol):
 
     usuarios: UsuarioRepository
     auditoria: AuditoriaRepository
+    documentos: DocumentoRepository
     outbox: Outbox
 
     async def __aenter__(self) -> Self: ...

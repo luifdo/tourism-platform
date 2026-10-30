@@ -8,12 +8,13 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.api.dependencies import get_reloj
 from app.api.errors import register_error_handlers
 from app.api.middleware.correlacion_middleware import CorrelacionMiddleware
-from app.api.routers import admin, auth, health, internal
+from app.api.routers import admin, auth, health, internal, prestador
 from app.config import Settings, get_settings
 from app.infrastructure.cache.valkey_revocacion import build_valkey_client
 from app.infrastructure.observabilidad.configurar_logs import configurar_logs
 from app.infrastructure.persistence.database import build_engine, build_session_factory
 from app.infrastructure.security.jwt_token_service import JwtTokenService, leer_llaves
+from app.infrastructure.storage.almacen_documentos_s3 import AlmacenDocumentosS3
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -36,6 +37,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = build_engine(settings.database_url)
         app.state.session_factory = build_session_factory(app.state.engine)
         app.state.valkey = build_valkey_client(settings.valkey_url)
+        app.state.almacen_documentos = AlmacenDocumentosS3(
+            endpoint_interno=settings.s3_endpoint_url,
+            endpoint_publico=settings.s3_endpoint_publico,
+            region=settings.s3_region,
+            access_key=settings.s3_access_key,
+            secret_key=settings.s3_secret_key,
+            bucket=settings.s3_bucket,
+        )
         yield
         await app.state.valkey.aclose()
         await app.state.engine.dispose()
@@ -46,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(admin.router)
+    app.include_router(prestador.router)
     app.include_router(internal.router)
     Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
     return app

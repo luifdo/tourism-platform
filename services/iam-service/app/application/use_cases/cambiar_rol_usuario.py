@@ -16,8 +16,8 @@ class CambiarRolCommand(CambioAdministrativoCommand):
 class CambiarRolUsuario(CambioAdministrativo):
     """UC27: el Admin cambia el rol de una cuenta (`ROLE_CHANGE`, C-19).
 
-    Si un Prestador pasa a otro rol, publica `prestador.suspendido`. Hacia Prestador no se
-    publica nada: la aprobación depende de sus documentos (bloque 5, C-42).
+    Si un Prestador pasa a otro rol, publica `prestador.suspendido`. Hacia Prestador publica
+    `prestador.aprobado` solo si sus documentos vigentes están aprobados (C-42).
     """
 
     accion = "ROLE_CHANGE"

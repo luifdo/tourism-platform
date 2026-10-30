@@ -29,10 +29,10 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 
 ### C-02 · Campos adicionales en `DOCUMENTO_VERIFICACION`
 - **Referencia:** SRS §3.7, Tabla XVII; UC28.
-- **Se hizo:** se agregaron `motivo_rechazo`, `revisado_por` y `revisado_en`.
+- **Se hizo:** se agregaron `motivo_rechazo`, `revisado_por` y `revisado_en`, que UC28 llena al aprobar o rechazar. En el bloque 5 se sumaron `tipo_contenido` (el tipo real, detectado por la firma de bytes), `tamano_bytes` y `vigente`, con un índice único parcial `(usuario_id, tipo_documento) WHERE vigente` (C-30). El prestador ve el estado y el motivo; solo el Admin ve `revisado_por`. La llave `objeto_s3` nunca sale en una respuesta.
 - **Por qué:** UC28 permite rechazar, pero el modelo no guarda ni el motivo ni quién decidió.
 - **Para qué:** que el prestador sepa qué corregir y que cada decisión del Admin sea trazable.
-- **Estado:** ✅ esquema en `8851049`; se usan desde el bloque 5.
+- **Estado:** ✅ esquema en `8851049`. 🔨 bloque 5: implementado y probado, pendiente del commit.
 
 ### C-03 · Restricciones de integridad en la base
 - **Referencia:** SRS §3.7 (no las especifica); RNF-10; UC6.
@@ -65,24 +65,24 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 
 ### C-07 ★ `razon_social` guardada en `iam_db`
 - **Referencia:** SRS Tabla XVIII (`razon_social` pertenece a `PRESTADOR_PERFIL`, en `catalog_db`); contrato `prestador.aprobado.v1`.
-- **Se hizo:** el IAM pide `razon_social` al cargar el RUT (UC37), la guarda en `usuario` y la envía en `prestador.aprobado`.
+- **Se hizo:** el IAM pide `razon_social` al cargar el RUT (UC37), la guarda en `usuario.razon_social` (de 2 a 200 caracteres; sin ella, 422 `RAZON_SOCIAL_INVALIDA`) y la envía en `prestador.aprobado`. Con el RNT el campo no se usa. Si se vuelve a cargar el RUT, la razón social se actualiza.
 - **Por qué:** catálogo crea el perfil al consumir el evento y necesita un nombre comercial desde el primer momento. Quien la conoce en ese momento es el IAM, porque viene del RUT.
 - **Para qué:** que el perfil del prestador nazca completo. Catálogo sigue siendo el dueño del perfil y puede editarlo después.
-- **Estado:** 📅 bloque 5.
+- **Estado:** 🔨 bloque 5: implementado y probado, pendiente del commit.
 
 ### C-08 ★ `prestador_id` igual al `usuario_id`
 - **Referencia:** SRS Tabla XVIII (`PRESTADOR_PERFIL.id` es una PK propia de catálogo); contratos `prestador.aprobado.v1` y `prestador.suspendido.v1`.
-- **Se hizo:** `prestador.suspendido` (bloque 4) lleva `prestador_id` = `usuario_id`; `prestador.aprobado` hará lo mismo en el bloque 5.
+- **Se hizo:** `prestador.suspendido` (bloque 4) lleva `prestador_id` = `usuario_id`; `prestador.aprobado` (bloque 5) también.
 - **Por qué:** el contrato exige un `prestador_id` que asigna el IAM. Un identificador nuevo obligaría a crear otra tabla y a mantenerlo estable cuando un prestador se suspende y se vuelve a aprobar.
 - **Para qué:** un identificador estable sin estructuras adicionales; catálogo reactiva el mismo perfil.
-- **Estado:** 🔨 bloque 4 (`prestador.suspendido`), pendiente del commit. 📅 bloque 5 (`prestador.aprobado`). Acordado con Luis Fernando.
+- **Estado:** ✅ `8583e38` (`prestador.suspendido`). 🔨 bloque 5 (`prestador.aprobado`), pendiente del commit. Acordado con Luis Fernando.
 
 ### C-09 · Tabla `outbox` en `iam_db`
 - **Referencia:** SRS §3.6.2, nota (el patrón outbox es opcional); Plan §4.3 y §4.4; ADR-008.
 - **Se hizo:** tabla `outbox` con el mismo esquema que la de catalog (`event_id` PK, `event_type`, `sobre jsonb`, `creado_en`, `publicado_en`, `intentos`, índice parcial `ix_outbox_pendientes`). El evento se guarda con su sobre completo (`producer: "iam-service"`, `occurred_at` = momento del cambio, `correlation_id` de la petición) en la misma transacción que el cambio y su fila de la bitácora. El relay del worker, adaptado de catalog, toma lotes de 100 con `FOR UPDATE SKIP LOCKED`, publica con *publisher confirms* y mensajes persistentes, marca `publicado_en` solo cuando el broker confirma, reintenta con espera creciente (1 s hasta 30 s) y borra a diario lo publicado hace más de 7 días. Métricas en el worker: `iam_eventos_publicados_total{event_type}`, `iam_eventos_fallos_publicacion_total`, `iam_outbox_pendientes` e `iam_outbox_antiguedad_segundos`. La entrega es "al menos una vez": catalog descarta duplicados por `event_id`.
 - **Por qué:** si el proceso falla entre el commit de la aprobación y la publicación, `prestador.aprobado` se pierde y el prestador queda aprobado en el IAM pero sin perfil en catálogo.
 - **Para qué:** garantizar la entrega de `prestador.aprobado` y `prestador.suspendido`. Es el mismo patrón que ya usa catálogo.
-- **Estado:** 🔨 bloque 4: implementado y probado (unitarias, integración `db` y de punta a punta contra RabbitMQ 4), pendiente del commit.
+- **Estado:** ✅ `8583e38`.
 
 ### C-10 · Columna `datos_suprimidos_en` (ver C-27)
 - **Estado:** 📅 bloque 6.
@@ -146,7 +146,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** el IAM lo agrega al outbox cuando un Prestador activo deja de estarlo: el Admin lo desactiva o le cambia el rol. El payload lleva `prestador_id` (= `usuario_id`, C-08), `usuario_id` y `suspendido_por` (el Admin), sin `motivo` (C-41). Si el prestador ya estaba inactivo no se publica otra vez. Pasar una cuenta **a** Prestador no publica nada (C-42). Una prueba valida el sobre contra `envelope.v1.json` y el payload contra `prestador.suspendido.v1.json` leyendo los archivos del monorepo.
 - **Por qué:** cuando el Admin desactiva a un prestador (UC27), su oferta seguiría visible en el catálogo.
 - **Para qué:** que catálogo oculte el perfil y los servicios, y que la reserva deje de aceptarlos.
-- **Estado:** 🔨 bloque 4: implementado y probado, pendiente del commit.
+- **Estado:** ✅ `8583e38`.
 
 ### C-18 · Valores de `resultado` en el contrato de auditoría
 - **Referencia:** SRS Tabla XVII (`Exito`, `Denegado`, `Error`); contrato `auditoria.registrada.v1` (`EXITO`, `DENEGADO`, `ERROR`).
@@ -160,7 +160,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** se usan los nombres del SRS. Las acciones nuevas siguen su mismo estilo (inglés, mayúsculas con guion bajo): `LOGIN_SUCCESS`, `LOGOUT`, `USER_REGISTER`, `USER_STATUS_CHANGE`, `PROVIDER_APPROVED`, `PROVIDER_REJECTED`, `DOCUMENT_UPLOAD`, `DOCUMENT_VIEW`, `PROFILE_UPDATE`, `PASSWORD_CHANGE`, `PASSWORD_RESET_REQUEST`, `PASSWORD_RESET`, `DATA_SUPPRESSION`, `AUDIT_VIEW`. Las que llegan de otros módulos (`ZONA_CREADA`, etc.) se guardan tal como vienen.
 - **Por qué:** los tres documentos no coinciden entre sí. El SRS es el acuerdo de mayor jerarquía.
 - **Para qué:** un vocabulario consistente para filtrar en UC33. El filtro `accion` de `GET /api/iam/admin/bitacora` compara el nombre exacto (C-43): con nombres mezclados (`ROLE_CHANGE` y `ROL_MODIFICADO`), una búsqueda dejaría fuera parte de los cambios de rol. Las acciones de otros módulos se guardan como vienen, así que se filtran con su propio nombre (`ZONA_CREADA`). El Plan y el laboratorio deberían actualizarse con estos nombres.
-- **Estado:** ✅ los existentes; 🔨 bloque 4: `ROLE_CHANGE` (del SRS), `USER_STATUS_CHANGE` y `AUDIT_VIEW`, pendiente del commit; el resto, en cada bloque.
+- **Estado:** ✅ los existentes; ✅ `8583e38`: `ROLE_CHANGE` (del SRS), `USER_STATUS_CHANGE` y `AUDIT_VIEW`; 🔨 bloque 5: `DOCUMENT_UPLOAD`, `DOCUMENT_VIEW`, `PROVIDER_APPROVED` y `PROVIDER_REJECTED`, pendiente del commit; el resto, en cada bloque.
 
 ### C-41 · `prestador.suspendido` sin `motivo`
 - **Referencia:** `contracts/events/prestador.suspendido.v1.json` (admite `motivo` opcional, hasta 500 caracteres); Plan §4.2 (los eventos llevan solo identificadores).
@@ -168,15 +168,17 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** el IAM nunca lo envía. El motivo que escribe el Admin queda solo en la bitácora (`detalles.motivo`, recortado a 500 caracteres, C-29).
 - **Por qué:** es texto libre: el Admin puede escribir ahí un nombre, un número de documento o el detalle de una queja, y todo lo que viaja por el bus queda en las colas, en la DLQ y en los logs de cada consumidor. El Plan §4.2 pide que el bus lleve solo identificadores para que los datos personales no salgan de su servicio (Ley 1581).
 - **Para qué:** que el motivo quede en un solo lugar, la bitácora del IAM, con acceso restringido al Admin (UC33). Catalog no lo necesita para ocultar la oferta.
-- **Estado:** 🔨 bloque 4: implementado y probado (el payload se valida contra el contrato sin `motivo`), pendiente del commit.
+- **Estado:** ✅ `8583e38`.
 
-### C-42 · Volver a Prestador o reactivar a un Prestador no publica nada todavía
+### C-42 · Rehabilitar a un Prestador publica `prestador.aprobado` solo si está verificado
 - **Referencia:** `contracts/events/prestador.suspendido.v1.json` ("si iam lo vuelve a habilitar, publica de nuevo `prestador.aprobado`"); UC27 y UC28.
 - **El documento fija:** que al rehabilitar a un prestador suspendido se publica `prestador.aprobado`.
-- **Se hizo:** en el bloque 4 no se publica ningún evento al reactivar a un Prestador ni al cambiar una cuenta a Prestador. La oferta de un prestador reactivado **no vuelve a mostrarse** en catalog hasta el bloque 5.
-- **Por qué:** `prestador.aprobado` significa que el prestador tiene sus documentos (RNT y RUT) aprobados, y ese estado llega con UC28 en el bloque 5. Publicarlo antes habilitaría en catalog a prestadores que nunca fueron verificados.
-- **Para qué:** que catalog solo muestre prestadores verificados. En el bloque 5, al reactivar a un Prestador o al volver a darle ese rol a una cuenta **con documentos aprobados**, se publicará `prestador.aprobado` (con `aprobado_por` = el Admin), y catalog restaurará los servicios que había apagado por la suspensión.
-- **Estado:** 🔨 bloque 4: sin evento, pendiente del commit. 📅 bloque 5: `prestador.aprobado` al rehabilitar.
+- **Se hizo:**
+  - **Bloque 4:** no se publicaba ningún evento al reactivar a un Prestador ni al cambiar una cuenta a Prestador; la oferta no volvía a mostrarse en catalog.
+  - **Bloque 5:** `cambio_administrativo.py` publica `prestador.aprobado` (con `aprobado_por` = el Admin y la `razon_social`) cuando un Prestador **vuelve a quedar visible**, sea porque lo reactivan o porque la cuenta vuelve a tener ese rol, y **sus dos documentos vigentes están aprobados**. Con documentos pendientes, rechazados o faltantes, no se publica nada. Del mismo modo, aprobar a un prestador inactivo aprueba sus documentos pero no publica (C-47): el evento sale al reactivarlo.
+- **Por qué:** `prestador.aprobado` significa que el prestador tiene sus documentos (RNT y RUT) aprobados. Publicarlo sin esa condición habilitaría en catalog a prestadores que nunca fueron verificados.
+- **Para qué:** que catalog solo muestre prestadores verificados y que, al rehabilitar a uno, restaure los servicios que había apagado por la suspensión.
+- **Estado:** ✅ `8583e38` (sin evento). 🔨 bloque 5: `prestador.aprobado` al rehabilitar, pendiente del commit.
 
 ### C-43 · Consulta de la bitácora (UC33)
 - **Referencia:** SRS UC33 ("Consultar bitácora de auditoría inmutable") y RNF-10 ("consulta de bitácora disponible en panel administrativo"). Ninguno fija filtros, orden ni formato.
@@ -189,7 +191,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - **Cada consulta se audita** con una fila `AUDIT_VIEW` / `Exito`: `usuario_id` = el Admin, su IP y el `correlation_id` de la petición, y `detalles` = `{filtros, pagina, tamano}`, donde `filtros` lleva solo los que se usaron, en texto (los UUID como cadena y las fechas en ISO 8601). **Nunca los resultados.** Se escribe en su propia transacción y **después de leer**, así que una consulta no se ve a sí misma. Si esa escritura falla, solo queda un log de error y la consulta responde 200 igual. Un 422 (filtro inválido o rango invertido) no lee ni deja fila. Los rechazos (401 y 403) quedan como `ACCESS_DENIED`, como en todo `require_role` (C-23).
 - **Por qué:** sin zona horaria, PostgreSQL interpretaría la fecha en la zona del servidor, y el mismo filtro daría resultados distintos según dónde corra. `accion` y `servicio_origen` son exactos porque son vocabularios cerrados (C-19), y así usan el índice de `accion`. La consulta se audita porque la bitácora guarda datos sensibles (IPs, motivos de suspensión, a quién se le cambió el rol): RNF-10 pide trazabilidad de los eventos administrativos, y leerla también lo es. Saber quién la consultó, con qué filtros y cuándo permite detectar un uso indebido de una cuenta Admin. Los resultados no se guardan porque duplicarían en la bitácora lo que ya está en ella. La escritura va aparte y no bloquea la respuesta, como la de los rechazos (C-23): si la bitácora no admite escrituras pero sí lecturas, el Admin igual puede revisarla.
 - **Para qué:** que el Admin revise en un solo lugar las acciones propias del IAM y las de los demás módulos (RNF-10), y cruce cada fila con los logs por su `correlation_id`.
-- **Estado:** 🔨 bloque 4: implementado y probado, con `AUDIT_VIEW` (API e integración `db`), pendiente del commit.
+- **Estado:** ✅ `8583e38` (con `AUDIT_VIEW`).
 
 ---
 
@@ -211,7 +213,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   1. **Antes del commit**, con `desde` = el momento del cambio. Si Valkey no responde, 503 `SERVICIO_NO_DISPONIBLE` y la transacción se deshace: ni el cambio, ni la bitácora, ni el evento quedan confirmados (falla cerrado, como C-22).
   2. **Después del commit**, con un `desde` nuevo. Si esta falla, solo queda un log de error: el cambio ya está confirmado y la primera marca sigue vigente.
 - **Ventana que cierra la segunda revocación:** entre la primera marca y el commit pasan milisegundos, pero el login de ese usuario puede caer en ese intervalo. Como la transacción del Admin aún no es visible, el login lee el rol o el estado viejos, y si el `iat` cae en el segundo siguiente al de la marca, el token queda fuera de ella (`iat > desde`): un usuario degradado o desactivado conservaría un token válido por 15 minutos. La segunda marca, tomada después del commit, es posterior a ese `iat` y lo revoca. Un login posterior al commit ya lee el cambio.
-- **Estado:** ✅ `d30aef8`: el mecanismo y la verificación (probados también con integración `valkey`). 🔨 bloque 4: UC27 con la doble revocación, pendiente del commit. 📅 bloque 6: cambio de contraseña y supresión.
+- **Estado:** ✅ `d30aef8`: el mecanismo y la verificación (probados también con integración `valkey`). ✅ `8583e38`: UC27 con la doble revocación. 📅 bloque 6: cambio de contraseña y supresión.
 
 ### C-22 · Logout por revocación del `jti`, fallando cerrado
 - **Referencia:** SRS RNF-04; Plan §2.3.
@@ -252,6 +254,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 ### C-27 ★ Supresión de datos por anonimización
 - **Referencia:** SRS §2.4.5 (derecho de supresión, Ley 1581); RNF-10.
 - **Se hizo:** `DELETE /api/iam/perfil` reemplaza el correo, el nombre y la razón social por valores neutros, desactiva la cuenta y registra `datos_suprimidos_en`. No borra la fila.
+- **Documentos de verificación (requisito del bloque 5 para el bloque 6):** la supresión debe **borrar** de SeaweedFS todos los objetos del usuario, los vigentes y los reemplazados (`vigente = false`, que se conservan para el historial de revisión, C-30), porque el RUT contiene datos personales. Las filas de `documento_verificacion` se conservan **anonimizadas** (sin `objeto_s3` utilizable y sin `motivo_rechazo`), porque las referencian la bitácora y las decisiones del Admin. Una consulta de su URL después de la supresión debe responder 404.
 - **Por qué:** la bitácora inmutable (RNF-10) referencia al usuario con una llave foránea `RESTRICT`, y borrar la fila rompería la trazabilidad exigida por ESC-04.
 - **Para qué:** cumplir la supresión de datos personales conservando la auditoría sin datos que identifiquen a la persona.
 - **Estado:** 📅 bloque 6.
@@ -271,13 +274,53 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - Bitácora: `usuario_id` = el Admin que actúa; `detalles` = `{usuario_afectado, antes, despues, motivo}`, con solo los campos que cambiaron y el `motivo` recortado a 500 caracteres. La petición acepta hasta 2000 (más es 422), para frenar cuerpos abusivos.
   - Cuenta inexistente: 404 `USUARIO_NO_ENCONTRADO`.
 - **Para qué:** evitar perder el acceso administrativo de la plataforma.
-- **Estado:** 🔨 bloque 4: implementado y probado (también el bloqueo con dos transacciones reales), pendiente del commit.
+- **Estado:** ✅ `8583e38`.
 
 ### C-30 · Documentos: tipo, tamaño, vigente y acceso
-- **Referencia:** SRS RF-12 ("PDF/imagen") y UC37.
-- **Se hizo:** se aceptan PDF, JPG y PNG de hasta 5 MB, validando el contenido real del archivo y no solo la extensión. Hay un solo documento vigente por tipo: si se carga uno nuevo, reemplaza al pendiente o al rechazado. El Admin los abre con URL prefirmadas de 5 minutos, y cada consulta queda en la bitácora.
+- **Referencia:** SRS RF-12 ("PDF/imagen"), UC37 y UC28; Plan §4.1 (SeaweedFS, "acceso solo mediante URLs firmadas para el Administrador").
+- **Se hizo:**
+  - **El archivo pasa por el IAM** (`POST /api/iam/prestador/documentos`, multipart), y no por una URL prefirmada de subida como las imágenes de catalog: así se puede validar el contenido real antes de guardarlo.
+  - **Tipo por firma de bytes:** `%PDF-`, `FF D8 FF` (JPG) o `89 50 4E 47 0D 0A 1A 0A` (PNG), al inicio del archivo. La extensión y el `Content-Type` que declara el cliente se ignoran; cualquier otro contenido (un ejecutable renombrado `.pdf`, un HTML, un ZIP) es 422 `TIPO_ARCHIVO_NO_PERMITIDO`.
+  - **Tamaño:** hasta 5 MB. El IAM lee a lo sumo 5 MB + 1 byte; si hay más, 413 `ARCHIVO_DEMASIADO_GRANDE`. El cuerpo completo igual llega al servidor antes de validarse: el límite del cuerpo en Traefik (`buffering.maxRequestBodyBytes`) se coordina con Juan Francisco.
+  - **Llave del objeto:** `{usuario_id}/{tipo}/{uuid}.{ext}`. Nunca usa el nombre que mandó el cliente y no se puede adivinar.
+  - **Un solo vigente por tipo:** un archivo nuevo reemplaza al pendiente o al rechazado, que queda con `vigente = false` y **se conserva** en SeaweedFS para el historial de revisión. Si el vigente ya está aprobado, 409 `DOCUMENTO_APROBADO` sin subir nada (la renovación queda fuera, C-45). La carga y la revisión bloquean la cuenta del prestador, así que nunca se revisa un documento que se está reemplazando.
+  - **Orden:** primero SeaweedFS (si no responde, 503 y no se registra nada) y luego la base. Si la base falla después de subir, el objeto queda huérfano y se registra en el log.
+  - **Lectura (UC28):** `GET /api/iam/admin/documentos/{id}/url` devuelve una URL prefirmada de 5 minutos, firmada con el host público de SeaweedFS, que fija `ResponseContentType` (el tipo detectado) y `ResponseContentDisposition: inline; filename=<tipo>.<ext>`: el navegador muestra `RUT.pdf`, no la llave interna. Cada consulta queda como `DOCUMENT_VIEW` **antes** de entregar la URL. Si la bitácora no responde, no hay URL: a diferencia de `AUDIT_VIEW` (C-43), aquí sale un dato personal.
+  - Auditoría de la carga: `DOCUMENT_UPLOAD` con `{documento_id, tipo, tipo_contenido, tamano_bytes, reemplaza}`.
 - **Por qué:** sin estas reglas se pueden subir archivos maliciosos o enormes, y los documentos tributarios quedarían accesibles sin control.
-- **Estado:** 📅 bloque 5.
+- **Para qué:** que el Admin solo abra PDF o imágenes reales, por un enlace que caduca, y que cada acceso a un documento personal quede registrado.
+- **Estado:** 🔨 bloque 5: implementado y probado, pendiente del commit. ⏸ El límite del cuerpo en Traefik, por coordinar con Juan Francisco.
+
+### C-44 · Sin antivirus en los documentos
+- **Referencia:** SRS RF-12 y UC37 (no lo piden).
+- **Se hizo:** los documentos no pasan por un antivirus. Mitigaciones:
+  1. **Firma de bytes:** solo se aceptan PDF, JPG y PNG reales; un ejecutable, un script o un HTML con otra extensión se rechaza (C-30).
+  2. **Tamaño máximo de 5 MB.**
+  3. **Bucket privado:** nadie lee un objeto sin una URL firmada (en k3s, con las identidades de infra/, C-46).
+  4. **URL de 5 minutos, solo para el Admin:** el prestador nunca recibe un enlace, y cada apertura queda en la bitácora (`DOCUMENT_VIEW`).
+  5. **Tipo de contenido fijado al servir** (`ResponseContentType`, el detectado por la firma) y nombre neutro (`RUT.pdf`): el navegador no puede interpretar el archivo como HTML ni como otro tipo.
+- **Por qué:** un antivirus (por ejemplo ClamAV) es otro servicio que operar, con firmas que actualizar y memoria que reservar en k3s. Un PDF puede llevar contenido activo, pero un PDF real abierto en el visor del navegador, desde el origen de SeaweedFS y no desde el de la plataforma, no compromete la sesión del Admin.
+- **Para qué:** cubrir los riesgos principales (archivos ejecutables o enormes, acceso no autorizado) sin otro componente.
+- **Estado:** ⏸ fuera de alcance.
+
+### C-45 · Renovación de documentos aprobados
+- **Referencia:** UC37 y UC28 (no prevén la renovación).
+- **Se hizo:** un documento vigente aprobado no se reemplaza: 409 `DOCUMENTO_APROBADO`.
+- **Por qué:** el RNT se renueva cada año. Permitir otra carga obliga a decidir si el prestador sigue aprobado con el documento viejo mientras se revisa el nuevo, y si catalog debe enterarse. Eso necesita reglas que el SRS no da.
+- **Para qué:** que un prestador aprobado no quede en un estado ambiguo. Si su documento vence, el Admin puede suspenderlo (UC27).
+- **Estado:** ⏸ fuera de alcance.
+
+### C-47 · Reglas de la verificación de prestadores (UC28)
+- **Referencia:** SRS UC28 ("Aprobar / rechazar prestadores de servicios"; precondición: documentos cargados, UC37) y RF-12.
+- **Se hizo:**
+  - **La decisión es por prestador**, no por documento: `POST /api/iam/admin/prestadores/{id}/aprobar` y `POST .../rechazar` con `{documentos: [{tipo, motivo}]}` (uno o los dos tipos, sin repetir, motivo de 1 a 500 caracteres). Auditan `PROVIDER_APPROVED` y `PROVIDER_REJECTED` (C-19), con `usuario_id` = el Admin.
+  - **Estado derivado** de los documentos vigentes: `rechazado` (alguno rechazado), `incompleto` (falta el RNT o el RUT), `aprobado` (los dos aprobados) o `pendiente`. Lo ven el prestador (`GET /api/iam/prestador/documentos`) y el Admin, que filtra la cola con `GET /api/iam/admin/prestadores?estado=pendiente`.
+  - **Aprobar** exige los dos vigentes, ninguno rechazado (409 `DOCUMENTOS_INCOMPLETOS` o `DOCUMENTO_YA_REVISADO`). Si ya están aprobados, responde 200 sin auditar ni publicar. Si la cuenta está activa, agrega `prestador.aprobado` al outbox en la misma transacción. Si está inactiva, aprueba sin publicar (C-42).
+  - **Rechazar** solo afecta a documentos pendientes (404 `DOCUMENTO_NO_ENCONTRADO` si no hay vigente de ese tipo; 409 `DOCUMENTO_YA_REVISADO` si ya se revisó). No publica nada. A un prestador aprobado se le suspende con UC27.
+  - Una cuenta sin rol Prestador: 409 `NO_ES_PRESTADOR`.
+- **Por qué:** UC28 habla de aprobar o rechazar **prestadores**, y catalog solo necesita saber si el prestador quedó habilitado. Rechazar por documento permite decirle al prestador exactamente qué corregir.
+- **Para qué:** una cola de revisión clara para el Admin y un solo evento por aprobación.
+- **Estado:** 🔨 bloque 5: implementado y probado, pendiente del commit.
 
 ---
 
@@ -288,7 +331,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Se hizo:** la misma imagen corre como API (`app.main`) y como worker (`python -m app.worker`), cada uno en su propio Deployment. El worker consume la cola durable `iam.auditoria` con el consumidor de catalog: mismos argumentos de cola, reintentos a 1, 5 y 25 s, y DLQ `turismo.dead-letter`. Expone `/metrics` en el puerto 9101 (`WORKER_METRICS_PORT`), que sirve también de sonda de vida. Si RabbitMQ no responde al arrancar, reintenta con espera creciente hasta 30 s. Desde el bloque 4 también corre el relay del outbox (C-09), en paralelo con los consumidores.
 - **Por qué:** la API atiende el ForwardAuth de *cada* petición protegida de la plataforma. Si el consumo de eventos compite con ella por los recursos, sube la latencia de todo el sistema.
 - **Para qué:** escalar la API con su HPA (2 a 4 réplicas) sin duplicar consumidores, y que reiniciar la API no interrumpa la auditoría. Es el mismo patrón que usa catálogo.
-- **Estado:** ✅ `2d011e0` (consumidor, probado también de punta a punta contra RabbitMQ 4 y PostgreSQL). 🔨 bloque 4: relay del outbox, pendiente del commit. 📅 bloque 7: Deployment y sondas en k3s. ⏸ El servicio `iam-worker` en `infra/docker-compose.yml` se coordina con quien mantiene `infra/`.
+- **Estado:** ✅ `2d011e0` (consumidor, probado también de punta a punta contra RabbitMQ 4 y PostgreSQL). ✅ `8583e38` (relay del outbox). 📅 bloque 7: Deployment y sondas en k3s. ⏸ El servicio `iam-worker` en `infra/docker-compose.yml` se coordina con quien mantiene `infra/`.
 
 ### C-32 ★ Sondas `/health` y `/health/live` separadas
 - **Referencia:** Plan §7.3 (`/health` para readiness y liveness); Lab 3, Figura 10.
@@ -305,7 +348,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Referencia:** no está en el SRS ni en el Plan.
 - **Se hizo:** `GET /api/iam/admin/ping`, protegido con `require_role(Rol.ADMIN)`, responde `{"ok": true}`. Un Turista recibe 403 `ROL_INSUFICIENTE` y deja su fila en la bitácora; sin token, 401.
 - **Por qué:** permite probar el RBAC (403) de punta a punta, incluido `scripts/smoke_test.py`, antes de que existan los endpoints de administración.
-- **Estado:** ✅ `d30aef8`. 🔨 bloque 4: eliminado (responde 404), pendiente del commit. Las pruebas de RBAC y `scripts/smoke_test.py` usan ahora `GET /api/iam/admin/usuarios`.
+- **Estado:** ✅ `d30aef8`. ✅ `8583e38`: eliminado (responde 404). Las pruebas de RBAC y `scripts/smoke_test.py` usan ahora `GET /api/iam/admin/usuarios`.
 
 ### C-34 · Contenido de las filas `ACCESS_DENIED` (motivo interno y columna "plantilla")
 - **Referencia:** SRS Tabla XVII (`detalles`: "Metadatos contextuales", sin estructura); ESC-04; Plan §6.1.
@@ -365,16 +408,24 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Para qué:** que ningún evento se pierda en silencio y que la revisión quede en manos de quien opera la plataforma. Conviene una alerta sobre la métrica `dlq` (bloque 7).
 - **Estado:** ✅ `2d011e0`. 📅 bloque 7: alerta en Grafana.
 
+### C-46 · Bucket y credenciales del IAM en SeaweedFS
+- **Referencia:** Plan §4.1 y §7 (SeaweedFS en `turismo-datos`); `infra/docker-compose.yml`.
+- **Se hizo:** el IAM usa el bucket privado `documentos-verificacion` (`S3_BUCKET`), con dos endpoints: `S3_ENDPOINT_URL` (interno, para subir) y `S3_ENDPOINT_PUBLICO` (el que ve el navegador del Admin; la firma incluye el host). En desarrollo, `docker-compose.dev.yml` usa `chrislusf/seaweedfs:3.80` (la misma versión que `infra/`) **sin archivo de identidades**: acepta cualquier credencial (incluso vacía) y no comprueba firmas, así que las credenciales por defecto (`iam_access_dev` / `iam_secret_dev`) son solo de relleno. El bucket se crea con `uv run python -m scripts.crear_bucket`.
+- **Por qué:** en `infra/` (y en k3s) SeaweedFS usa un archivo de identidades (`-s3.config`), como el de catalog. Allí, sin una identidad propia con permisos sobre su bucket, el IAM no puede subir ni firmar, y es ese archivo el que hace privado el bucket.
+- **Para qué:** que en k3s el bucket y las credenciales del IAM los provea `infra/` (Luis Fernando): una identidad `iam` con acciones `Read`, `Write` y `List` solo sobre `documentos-verificacion`, y sus llaves en un Secret que se monta como `S3_ACCESS_KEY` y `S3_SECRET_KEY`. El IAM no crea el bucket en producción.
+- **Estado:** 🔨 bloque 5: configuración y script de desarrollo, pendiente del commit. ⏸ identidad, bucket y Secret en `infra/`, por coordinar con Luis Fernando.
+
 ---
 
 ## Pendiente de reflejar en los documentos del equipo
 
 Coordinar con Luis Fernando, que es el responsable de la arquitectura y de los contratos:
 
-- **SRS v1.2:** C-04, C-07, C-08, C-17 (y las reglas de UC27 de C-29), C-20, C-27 y C-36 (unificar la Tabla V con la Tabla XXII y ESC-04), además de los campos de C-01, C-02, C-05 y C-06, y de C-38 y C-39 en la descripción de `BITACORA_AUDITORIA`. En ESC-04, aclarar que el IAM audita directamente sus propios 403 y que el usuario solo se registra si la firma del token es válida (C-23).
+- **SRS v1.2:** C-04, C-07, C-08, C-17 (y las reglas de UC27 de C-29 y de UC28 de C-47), C-20, C-27 y C-36 (unificar la Tabla V con la Tabla XXII y ESC-04), además de los campos de C-01, C-02, C-05 y C-06, y de C-38 y C-39 en la descripción de `BITACORA_AUDITORIA`. En ESC-04, aclarar que el IAM audita directamente sus propios 403 y que el usuario solo se registra si la firma del token es válida (C-23).
 - **Plan:** §4.1 (C-11, C-12 y el riesgo de C-13: la confianza en `X-Usuario-*` exige eliminarlos en las rutas públicas), §2.3 (C-19 y C-21) §4.3 (C-38 y C-40: qué va a la DLQ y que se revisa a mano) y §7.3 (C-32: readiness y liveness en `/health/live`, y `/health` solo para el monitoreo).
 - **Lab:** Figuras 1 y 2 y especificación ACME (C-04); Figura 6 (C-31); Figura 10 (C-32: readiness y liveness en `/health/live`); §4.2 (C-20 y C-21: en la transición "rol modificado o usuario desactivado", cambiar "jti a Valkey" por la revocación por usuario con revocado-desde).
-- **Gateway (`gateway/`, Juan Francisco):** `authResponseHeaders` con `X-Usuario-Id` y `X-Usuario-Rol`, y eliminación de esos encabezados en toda petición entrante (C-13).
+- **Gateway (`gateway/`, Juan Francisco):** `authResponseHeaders` con `X-Usuario-Id` y `X-Usuario-Rol`, y eliminación de esos encabezados en toda petición entrante (C-13). Límite del cuerpo (`buffering.maxRequestBodyBytes`, unos 6 MB) en `POST /api/iam/prestador/documentos` (C-30).
+- **Infra (`infra/`, Luis Fernando):** identidad `iam` en el archivo de identidades de SeaweedFS, el bucket `documentos-verificacion` y el Secret con sus llaves (C-46).
 - **Contratos (`contracts/`, Luis Fernando):** en `prestador.suspendido.v1.json`, aclarar que el IAM no envía `motivo` (C-41), o quitarlo del esquema.
 - **Catalog (`services/catalog-service/`, Luis Fernando):** que `DirectorioUsuariosIam` envíe `X-Correlation-ID` con el `correlation_id` del evento al pedir el contacto (C-15).
 - **Registro de decisiones:** proponer un ADR del IAM que reúna C-04, C-16, C-21, C-27 y C-34.

@@ -1,4 +1,4 @@
-"""El sobre que guarda el outbox cumple `contracts/events/` del monorepo (C-17)."""
+"""El sobre que guarda el outbox cumple `contracts/events/` del monorepo (C-17, UC28)."""
 
 import json
 import uuid
@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 
+from app.domain.events.evento_dominio import EventoDominio
+from app.domain.events.prestador_aprobado import PrestadorAprobado
 from app.domain.events.prestador_suspendido import PrestadorSuspendido
 from app.infrastructure.observabilidad.contexto_correlacion import fijar_correlation_id
 from app.infrastructure.persistence.models import Outbox
@@ -37,7 +39,7 @@ def validador(nombre: str) -> Draft202012Validator:
     return Draft202012Validator(esquema, format_checker=Draft202012Validator.FORMAT_CHECKER)
 
 
-async def guardar(evento: PrestadorSuspendido) -> Outbox:
+async def guardar(evento: EventoDominio) -> Outbox:
     sesion = SesionQueGuarda()
     await SqlAlchemyOutbox(sesion).agregar(evento)  # type: ignore[arg-type]
     [fila] = sesion.agregados
@@ -89,3 +91,23 @@ def test_el_validador_rechaza_un_payload_fuera_del_contrato() -> None:
     errores = list(validador("prestador.suspendido.v1.json").iter_errors(malo))
 
     assert {e.validator for e in errores} == {"format", "required"}
+
+
+@pytest.mark.parametrize("razon_social", ["Hostal Tayrona SAS", None], ids=["con", "sin"])
+async def test_prestador_aprobado_cumple_el_contrato(razon_social: str | None) -> None:
+    fijar_correlation_id("corr-uc28")
+    evento = PrestadorAprobado(
+        ocurrido_en=AHORA,
+        usuario_id=uuid.uuid4(),
+        aprobado_por=uuid.uuid4(),
+        razon_social=razon_social,
+    )
+
+    sobre = (await guardar(evento)).sobre
+
+    validador("envelope.v1.json").validate(sobre)
+    validador("prestador.aprobado.v1.json").validate(sobre["payload"])
+    assert sobre["event_type"] == "prestador.aprobado"
+    assert sobre["payload"]["prestador_id"] == sobre["payload"]["usuario_id"]  # C-08
+    # razon_social es opcional en el contrato: se omite si no se conoce (C-07).
+    assert sobre["payload"].get("razon_social") == razon_social

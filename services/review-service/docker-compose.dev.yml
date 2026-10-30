@@ -1,0 +1,43 @@
+# Infraestructura de desarrollo de review-service
+# Uso: docker compose -f docker-compose.dev.yml up -d
+# Puertos distintos a los de iam-service (5433, 5672) y catalog-service (5434, 5673) para poder
+# levantarlos a la vez. Review no usa Valkey: idempotencia y límite de reportes van en PostgreSQL.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: review-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-review_db}
+      POSTGRES_USER: ${POSTGRES_USER:-review_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-review_password}
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-review_user} -d ${POSTGRES_DB:-review_db}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: review-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5674:5672"
+      - "15674:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
+  rabbitmq_data:

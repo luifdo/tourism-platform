@@ -1,0 +1,26 @@
+# Manifiestos de review-service (Plan §7.2-7.4). La base no trae el Secret `review-secretos`:
+# cada entorno lo genera en su overlay desde un archivo que no se sube (ver overlays/local).
+# Sin PodDisruptionBudget: con 1 réplica, `minAvailable: 1` impediría drenar el nodo para
+# mantenimiento, y el Plan acepta que review caiga sin afectar a nadie (ESC-01).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: turismo-app
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: turismo-santa-marta
+    includeSelectors: false
+
+resources:
+  - configmap.yaml
+  - deployment-api.yaml
+  - deployment-worker.yaml
+  - service.yaml
+  - hpa.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: review-service
+    newName: ghcr.io/turismo-santa-marta/review-service
+    newTag: latest # CI la cambia por el commit: kustomize edit set image review-service=...:<sha>

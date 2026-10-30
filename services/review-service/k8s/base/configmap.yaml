@@ -1,0 +1,14 @@
+# Configuración que no es secreta. Las credenciales (DATABASE_URL, RABBITMQ_URL) van en el
+# Secret `review-secretos`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: review-config
+data:
+  ENVIRONMENT: production
+  LOG_LEVEL: INFO
+  EVENTS_EXCHANGE: turismo.eventos
+  OUTBOX_RETENCION_DIAS: "7"
+  EVENTO_PROCESADO_RETENCION_DIAS: "30"
+  CONSUMIDOR_PREFETCH: "10"
+  WORKER_METRICS_PORT: "9104"

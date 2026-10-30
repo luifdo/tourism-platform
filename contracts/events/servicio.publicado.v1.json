@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "servicio.publicado.v1.json",
   "title": "servicio.publicado (payload v1)",
-  "description": "Publicado por catalog-service al crear, editar, desactivar o reactivar un servicio (UC17, UC18) y al suspender o rehabilitar a su prestador. Lleva el estado completo que necesitan los consumidores: booking-service lo usa para su proyección servicio_ref (dueño y aforo). Los consumidores descartan los mensajes con una versión menor o igual a la que ya tienen.",
+  "description": "Publicado por catalog-service al crear, editar, desactivar o reactivar un servicio (UC17, UC18) y al suspender o rehabilitar a su prestador. Lleva el estado completo que necesitan los consumidores: booking-service lo usa para su proyección servicio_ref (dueño y aforo) y review-service para saber qué prestador es dueño del servicio (responder y reportar reseñas). Los consumidores descartan los mensajes con una versión menor o igual a la que ya tienen.",
   "type": "object",
   "required": ["servicio_id", "prestador_id", "prestador_usuario_id", "capacidad_aforo_diario", "tarifa_base", "activo", "version"],
   "properties": {

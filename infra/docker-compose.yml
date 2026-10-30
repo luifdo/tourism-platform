@@ -25,6 +25,13 @@ x-catalog-entorno: &catalog-entorno
   S3_SECRET_KEY: catalog_secret_dev
   IMAGENES_URL_PUBLICA: http://localhost:8333/catalogo-imagenes
 
+# Variables comunes de review-service (API, worker y migraciones). No usa Valkey ni llama a
+# otros servicios: solo PostgreSQL (review_db) y RabbitMQ.
+x-review-entorno: &review-entorno
+  ENVIRONMENT: development
+  LOG_LEVEL: INFO
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/review_db
+  RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
 # Variables comunes de booking-service (API y migraciones).
 x-booking-entorno: &booking-entorno
   ENVIRONMENT: development
@@ -78,7 +85,6 @@ services:
     entrypoint: ["/bin/sh", "-c", "echo 's3.bucket.create -name catalogo-imagenes' | weed shell -master=seaweedfs:9333"]
     restart: "no"
 
-  # review-service usa PostgreSQL con JSONB (base review_db), ver ADR-003.
 
   # ---------- Mensajería ----------
   rabbitmq:
@@ -86,6 +92,9 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      # Sin esto la máquina virtual de Erlang hace espera activa y gasta 70-115 % de CPU sin
+      # trabajo, quitándosela al resto del entorno local (se vio al medir ESC-01).
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+sbwt none +sbwtdcpu none +sbwtdio none"
     ports:
       - "5672:5672"     # AMQP
       - "15672:15672"   # consola web
@@ -148,6 +157,13 @@ services:
       catalog-migraciones: { condition: service_completed_successfully }
       rabbitmq: { condition: service_healthy }
 
+  # review-service (Módulo 4): igual que catalog, migraciones una vez y luego API y worker.
+  # El worker declara sus colas (review.elegibilidad, review.servicios) al arrancar.
+  review-migraciones:
+    build: ../services/review-service
+    image: review-service:local
+    command: ["alembic", "upgrade", "head"]
+    environment: *review-entorno
   # booking-service (Módulo 3): las migraciones corren una vez y luego arranca la API, que lleva
   # dentro el relay del outbox y el consumidor de servicio.publicado.
   booking-migraciones:
@@ -159,6 +175,26 @@ services:
       postgres: { condition: service_healthy }
     restart: "no"
 
+  review-service:
+    image: review-service:local
+    environment: *review-entorno
+    ports: ["8004:8004"]
+    depends_on:
+      review-migraciones: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+
+  review-worker:
+    image: review-service:local
+    command: ["python", "-m", "app.worker"]
+    environment: *review-entorno
+    ports: ["9104:9104"]   # /metrics
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9104/metrics')"]
+      interval: 30s
+      retries: 3
+    depends_on:
+      review-migraciones: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
   booking-service:
     image: booking-service:local
     environment: *booking-entorno

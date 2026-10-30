@@ -172,6 +172,7 @@ services/<servicio>/
   * **Elegibilidad:** El módulo consume `reserva.finalizada` y guarda en `elegibilidad_resena` qué turista puede reseñar qué servicio. Sin ese registro, la reseña se rechaza con HTTP 403.
   * **Moderación posterior:** Las reseñas se publican de inmediato con estado `PUBLICADO`. Un turista o prestador puede reportarlas (UC39); al recibir un reporte pasan a `EN_REVISION` y quedan ocultas hasta que el Administrador las publica de nuevo u oculta definitivamente (UC29).
   * **Almacenamiento Documental:** Tabla con columnas `JSONB` en PostgreSQL para las calificaciones multidimensionales (limpieza, guianza, relación calidad-precio) y la respuesta anidada del prestador.
+  * *Al diseñar el contrato del Módulo 4 ([`review.yaml`](../../contracts/openapi/review.yaml)) se ajustaron cuatro puntos:* (1) **un reporte no oculta la reseña**: entra en la cola del Administrador y pasa a `EN_REVISION` al tercer reporte o si la reporta el prestador dueño (con un solo reporte, cualquiera podía esconder la reseña de un competidor); (2) mientras está en revisión **su puntuación sigue contando** en el promedio, y solo `OCULTA` la quita; (3) **una reseña por turista y servicio**, editable, y el autor es **anónimo** ("Turista verificado" y el mes de la visita); (4) el módulo consume `servicio.publicado` para saber quién es el prestador dueño de cada servicio, sin llamar al catálogo.
 
 #### 5. Módulo 5: IA & Recomendación (AI Recommendation Chatbot)
 * **Responsabilidad Interna:** Chatbot turístico que atiende consultas en lenguaje natural (español e inglés) y entrega recomendaciones personalizadas y justificadas (RNF-08). Usa la API de Gemini como modelo de lenguaje; el equipo no entrena ni aloja ningún modelo.
@@ -234,8 +235,8 @@ Las peticiones de la PWA interactúan exclusivamente con el **API Gateway (Traef
 | `/api/catalog/...` (resto, incluye `/api/catalog/analitica`) | `catalog-service:8002` | ForwardAuth |
 | `/api/bookings/disponibilidad` (GET) | `booking-service:8003` | Pública |
 | `/api/bookings/...` (resto) | `booking-service:8003` | ForwardAuth |
-| `GET /api/reviews/servicios/{id}` *(propuesta, contrato en Fase 4)* | `review-service:8004` | Pública (la usa la tool `resenas_servicio`) |
-| `/api/reviews/...` (GET públicos, escritura protegida) | `review-service:8004` | Mixta |
+| `GET /api/reviews/servicios/{id}/resenas` y `GET /api/reviews/servicios/{id}/resumen` | `review-service:8004` | Pública (la usa la tool `resenas_servicio`) |
+| `/api/reviews/...` (públicas solo las lecturas de un servicio y de una reseña; `/turista`, `/prestador`, `/moderacion` y toda escritura, protegidas) | `review-service:8004` | Mixta |
 | `/api/recommendations/chat` | `recommendation-service:8005` | ForwardAuth |
 
 Convenciones:
@@ -266,6 +267,7 @@ Para que las tareas secundarias (correos, métricas, habilitación de reseñas, 
 | `resena.publicada` | review-service | `catalog.calificaciones` | catalog-service | Actualiza calificación promedio y métricas del prestador (UC22). |
 | `resena.ocultada` | review-service | `catalog.calificaciones` | catalog-service | Quita del promedio la reseña que el Administrador ocultó al moderarla (UC29); si se vuelve a publicar, vuelve a contar. |
 | `prestador.aprobado` | iam-service | `catalog.prestadores` | catalog-service | Crea el perfil del prestador y habilita UC17. |
+| `servicio.publicado` | catalog-service | cola propia de booking, `review.servicios` | booking-service, review-service | booking: dueño y aforo de cada servicio (`servicio_ref`). review: qué prestador es dueño del servicio, para responder y reportar reseñas (UC21, UC39). |
 | `auditoria.registrada` | catalog, booking y review | `iam.auditoria` | iam-service | Inserta el evento en la bitácora (Sección 4.4). |
 
 > El Módulo 5 no participa en el bus de eventos: obtiene los datos que necesita bajo demanda mediante sus herramientas de consulta.

@@ -1,4 +1,4 @@
-"""prestador.aprobado / prestador.suspendido con dobles: perfil, servicios, orden e idempotencia."""
+"""Eventos de iam con dobles (aprobado, suspendido, suprimido): perfil, orden e idempotencia."""
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -11,8 +11,10 @@ import pytest
 from app.application.dto.prestador_aprobado_recibido import PrestadorAprobadoRecibido
 from app.application.dto.prestador_suspendido_recibido import PrestadorSuspendidoRecibido
 from app.application.dto.resultado_consumo import ResultadoConsumo
+from app.application.dto.usuario_suprimido_recibido import UsuarioSuprimidoRecibido
 from app.application.use_cases.aplicar_prestador_aprobado import AplicarPrestadorAprobado
 from app.application.use_cases.aplicar_prestador_suspendido import AplicarPrestadorSuspendido
+from app.application.use_cases.aplicar_usuario_suprimido import AplicarUsuarioSuprimido
 from app.domain.entities.atractivo_servicio import AtractivoServicio, DatosServicio
 from app.domain.entities.prestador_perfil import PrestadorPerfil
 from app.domain.events.evento_dominio import EventoDominio
@@ -43,6 +45,9 @@ class Prestadores:
 
     async def obtener(self, prestador_id: UUID) -> PrestadorPerfil | None:
         return self.datos.get(prestador_id)
+
+    async def obtener_por_usuario(self, usuario_id: UUID) -> PrestadorPerfil | None:
+        return next((p for p in self.datos.values() if p.usuario_id == usuario_id), None)
 
     async def guardar(self, perfil: PrestadorPerfil) -> None:
         self.datos[perfil.id] = perfil
@@ -124,6 +129,10 @@ def suspendido(minutos: int = 0) -> PrestadorSuspendidoRecibido:
     return PrestadorSuspendidoRecibido(
         uuid4(), AHORA + timedelta(minutes=minutos), PRESTADOR, USUARIO
     )
+
+
+def suprimido(minutos: int = 0) -> UsuarioSuprimidoRecibido:
+    return UsuarioSuprimidoRecibido(uuid4(), AHORA + timedelta(minutes=minutos), USUARIO)
 
 
 def casos(uow: Unidad, invalidador: Invalidador) -> tuple:
@@ -218,3 +227,80 @@ async def test_aprobado_repetido_actualiza_la_razon_social(
     await aprobar.execute(aprobado(0, razon=None))
     await aprobar.execute(aprobado(1, razon="Minca Viva S.A.S."))
     assert uow.prestadores.datos[PRESTADOR].razon_social == "Minca Viva S.A.S."
+
+
+async def test_suprimido_borra_los_datos_personales_y_no_toca_perfil_ni_servicios(
+    uow: Unidad, invalidador: Invalidador
+) -> None:
+    aprobar, _ = casos(uow, invalidador)
+    await aprobar.execute(aprobado(0))
+    perfil = uow.prestadores.datos[PRESTADOR]
+    perfil.editar(perfil.version, "3001234567", "Minca", None)
+    servicio = servicio_de(perfil)
+    uow.servicios.datos = [servicio]
+    version, confirmaciones = perfil.version, uow.confirmaciones
+
+    evento = suprimido(5)
+    assert await AplicarUsuarioSuprimido(lambda: uow).execute(evento) is ResultadoConsumo.APLICADO
+
+    assert (perfil.razon_social, perfil.telefono, perfil.direccion) == (None, None, None)
+    assert perfil.version == version + 1 and perfil.estado_iam_en == evento.ocurrido_en
+    assert perfil.activo and servicio.activo  # los apaga prestador.suspendido, no este evento
+    assert uow.confirmaciones == confirmaciones + 1 and not uow.outbox.eventos
+    assert invalidador.llamadas == 0  # ni la razón social ni el teléfono están en caché
+
+
+async def test_suprimido_duplicado_se_descarta(uow: Unidad, invalidador: Invalidador) -> None:
+    aprobar, _ = casos(uow, invalidador)
+    await aprobar.execute(aprobado(0))
+    suprimir, evento = AplicarUsuarioSuprimido(lambda: uow), suprimido(5)
+    await suprimir.execute(evento)
+    assert await suprimir.execute(evento) is ResultadoConsumo.DUPLICADO
+
+
+async def test_suprimido_sin_perfil_se_confirma_e_ignora(uow: Unidad) -> None:
+    # Turista, Entidad, Admin o un prestador que catalog no conoce.
+    suprimir, evento = AplicarUsuarioSuprimido(lambda: uow), suprimido()
+    assert await suprimir.execute(evento) is ResultadoConsumo.IGNORADO
+    assert uow.confirmaciones == 1 and not uow.prestadores.datos
+    assert await suprimir.execute(evento) is ResultadoConsumo.DUPLICADO  # quedó registrado
+
+
+async def test_suprimido_viejo_se_ignora(uow: Unidad, invalidador: Invalidador) -> None:
+    aprobar, _ = casos(uow, invalidador)
+    await aprobar.execute(aprobado(10))
+    resultado = await AplicarUsuarioSuprimido(lambda: uow).execute(suprimido(5))
+    assert resultado is ResultadoConsumo.IGNORADO
+    perfil = uow.prestadores.datos[PRESTADOR]
+    assert perfil.razon_social == "Minca Viva" and perfil.estado_iam_en == AHORA + timedelta(
+        minutes=10
+    )
+
+
+async def test_aprobado_viejo_despues_de_la_supresion_no_devuelve_la_razon_social(
+    uow: Unidad, invalidador: Invalidador
+) -> None:
+    aprobar, _ = casos(uow, invalidador)
+    await aprobar.execute(aprobado(0))
+    await AplicarUsuarioSuprimido(lambda: uow).execute(suprimido(10))
+    # Un reintento trae tarde una aprobación anterior a la supresión.
+    assert await aprobar.execute(aprobado(5)) is ResultadoConsumo.IGNORADO
+    assert uow.prestadores.datos[PRESTADOR].razon_social is None
+
+
+@pytest.mark.parametrize("suspendido_primero", [True, False])
+async def test_suprimido_y_suspendido_del_mismo_momento_se_aplican_en_cualquier_orden(
+    uow: Unidad, invalidador: Invalidador, suspendido_primero: bool
+) -> None:
+    # iam publica los dos en la misma transacción, con el mismo occurred_at.
+    aprobar, suspender = casos(uow, invalidador)
+    await aprobar.execute(aprobado(0))
+    suprimir = AplicarUsuarioSuprimido(lambda: uow)
+    if suspendido_primero:
+        assert await suspender.execute(suspendido(5)) is ResultadoConsumo.APLICADO
+        assert await suprimir.execute(suprimido(5)) is ResultadoConsumo.APLICADO
+    else:
+        assert await suprimir.execute(suprimido(5)) is ResultadoConsumo.APLICADO
+        assert await suspender.execute(suspendido(5)) is ResultadoConsumo.APLICADO
+    perfil = uow.prestadores.datos[PRESTADOR]
+    assert perfil.razon_social is None and not perfil.activo

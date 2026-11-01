@@ -36,6 +36,25 @@ Disponibilidad de cupos en tiempo real con bloqueo transaccional, máquina de es
 
 Esquemas en [`contracts/events/`](../../contracts/events/).
 
+## Integración con otros módulos
+
+Estado comprobado el 2026-10-30 con `infra/docker-compose.yml` (arranque desde volúmenes vacíos y flujo de punta a punta, con la identidad enviada a mano porque aún no hay Traefik). ✅ conectado y probado · ⏳ pendiente.
+
+Lo que le toca a cada módulo, en [`INTEGRACION.md`](./INTEGRACION.md).
+
+| Necesita | De | Para qué | Estado |
+|---|---|---|---|
+| `servicio.publicado` con `prestador_usuario_id` y `version` | catalog | `servicio_ref`: dueño, aforo y estado | ✅ un servicio inactivo deja de aceptar reservas |
+| Cola `iam.auditoria` | iam | `RESERVA_*` y `ACCESS_DENIED` en la bitácora | ✅ con `correlation_id` |
+| Colas `catalog.*` y `review.elegibilidad` | catalog y review | Recibir `reserva.*` y `disponibilidad.actualizada` | ✅ correos, demanda, cupos y reseñas |
+| Rutas, ForwardAuth y borrado de `X-Usuario-*` | Traefik (Juan Francisco) | Exponer `/api/bookings` e identidad | ⏳ `gateway/config` no existe; sin él no hay acceso desde fuera del clúster |
+
+| Ofrece | A | Estado |
+|---|---|---|
+| `/disponibilidad` y `/mis-reservas` | recommendation | ✅ |
+
+**Pendiente propio:** `ACCESS_DENIED` sale sin `ip_origen` (en la bitácora queda nulo) y ESC-04 pide registrar la IP. catalog y review la toman de `X-Forwarded-For`.
+
 ## Estructura (arquitectura hexagonal)
 
 ```

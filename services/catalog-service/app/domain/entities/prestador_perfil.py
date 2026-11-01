@@ -51,6 +51,13 @@ class PrestadorPerfil(Versionado):
         self._avanzar_version()
         return True
 
+    def suprimir_datos(self) -> None:
+        """Aplica `usuario.suprimido`: borra los datos personales. No cambia `activo`."""
+        if self.razon_social is None and self.telefono is None and self.direccion is None:
+            return
+        self.razon_social = self.telefono = self.direccion = None
+        self._avanzar_version()
+
     def es_evento_iam_viejo(self, ocurrido_en: datetime) -> bool:
         return self.estado_iam_en is not None and ocurrido_en < self.estado_iam_en
 

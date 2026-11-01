@@ -15,7 +15,7 @@ resources:
   - ../../base
 
 images:
-  - name: ghcr.io/turismo-santa-marta/service-template # nombre que deja la base
+  - name: ghcr.io/luifdo/service-template # nombre que deja la base
     newName: service-template
     newTag: local # la imagen construida en tu Docker; con una etiqueta fija no se descarga
 

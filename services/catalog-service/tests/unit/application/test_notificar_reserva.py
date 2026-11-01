@@ -38,6 +38,7 @@ from app.domain.value_objects.texto_traducido import TextoTraducido
 from app.domain.value_objects.tipo_servicio import TipoServicio
 from app.infrastructure.clients.directorio_usuarios_iam import DirectorioUsuariosIam
 from app.infrastructure.notificaciones.redactor_correos_jinja import RedactorCorreosJinja
+from app.infrastructure.observabilidad.contexto_correlacion import fijar_correlation_id
 
 AHORA = datetime(2026, 10, 24, 15, 0, tzinfo=UTC)
 T = TipoEventoReserva
@@ -302,3 +303,18 @@ async def test_adaptador_de_iam() -> None:
     )
     with pytest.raises(DependenciaNoDisponible):
         await caido.contacto(uuid4())
+
+
+async def test_adaptador_de_iam_envia_la_correlacion_del_evento() -> None:
+    recibidos: list[str | None] = []
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        recibidos.append(peticion.headers.get("X-Correlation-ID"))
+        return httpx.Response(404)
+
+    iam = DirectorioUsuariosIam(
+        httpx.AsyncClient(base_url="http://iam", transport=httpx.MockTransport(responder))
+    )
+    fijar_correlation_id("evento-123")
+    await iam.contacto(uuid4())
+    assert recibidos == ["evento-123"]

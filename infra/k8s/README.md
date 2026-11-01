@@ -52,7 +52,7 @@ kubectl -n turismo-app exec -i deploy/iam-service -c api -- \
   env ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_NOMBRE=... python - < services/iam-service/scripts/seed_admin.py
 ```
 
-Los manifiestos de cada servicio apuntan a imágenes de `ghcr.io/turismo-santa-marta/` y a los dominios de producción de sus ConfigMap, que hay que confirmar antes de desplegar. Todavía ningún flujo de GitHub Actions publica esas imágenes (Plan §7.2).
+Las imágenes van en `ghcr.io/luifdo/<servicio>` con la etiqueta `develop`; al desplegar se fija el sha del commit con `kustomize edit set image` en un PR `deploy(<servicio>): <sha>`. Los manifiestos de iam y booking siguen con `ghcr.io/turismo-santa-marta/` hasta que sus responsables los cambien, y faltan los flujos de GitHub Actions que publican las imágenes (Plan §7.2). Los dominios de producción de cada ConfigMap hay que confirmarlos antes de desplegar.
 
 ## Secrets que espera cada servicio
 

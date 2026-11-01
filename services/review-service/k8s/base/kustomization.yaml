@@ -22,5 +22,5 @@ resources:
 
 images:
   - name: review-service
-    newName: ghcr.io/turismo-santa-marta/review-service
-    newTag: latest # CI la cambia por el commit: kustomize edit set image review-service=...:<sha>
+    newName: ghcr.io/luifdo/review-service
+    newTag: develop # Al desplegar se fija el sha del commit con kustomize edit set image en un PR deploy(review-service): <sha>.

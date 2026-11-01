@@ -10,6 +10,7 @@ from app.api.dependencies import (
     get_iniciar_sesion,
     get_registrar_acceso_denegado,
     get_registrar_usuario,
+    get_renovar_sesion,
     get_restablecer_contrasena,
     get_solicitar_recuperacion,
     get_tareas_segundo_plano,
@@ -23,6 +24,7 @@ from app.api.schemas.auth import (
     LoginResponse,
     RecuperarRequest,
     RecuperarResponse,
+    RefreshRequest,
     RegistroRequest,
     RestablecerRequest,
     UsuarioPublicoResponse,
@@ -33,6 +35,7 @@ from app.application.use_cases.cerrar_sesion import CerrarSesion
 from app.application.use_cases.iniciar_sesion import IniciarSesion, IniciarSesionCommand
 from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoDenegado
 from app.application.use_cases.registrar_usuario import RegistrarUsuario, RegistrarUsuarioCommand
+from app.application.use_cases.renovar_sesion import RenovarSesion
 from app.application.use_cases.restablecer_contrasena import (
     RestablecerContrasena,
     RestablecerContrasenaCommand,
@@ -45,6 +48,7 @@ from app.application.use_cases.verificar_acceso import VerificarAcceso
 from app.domain.exceptions import TokenInvalidoError
 from app.domain.value_objects.enums import Idioma, Rol
 from app.infrastructure.observabilidad.metricas_recuperacion import SOLICITUDES_RECUPERACION
+from app.infrastructure.observabilidad.metricas_sesion import RENOVACIONES
 from app.infrastructure.security.jwt_token_service import JwtTokenService
 
 router = APIRouter(prefix="/api/iam", tags=["auth"])
@@ -115,21 +119,30 @@ _ERROR_401 = {
             "model": ErrorResponse,
             "description": "La cuenta está desactivada (CUENTA_INACTIVA).",
         },
-        status.HTTP_503_SERVICE_UNAVAILABLE: _ERROR_OCUPADO,
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Demasiadas peticiones calculando contraseñas (SERVICIO_OCUPADO, con "
+            "Retry-After: 2) o Valkey no responde (SERVICIO_NO_DISPONIBLE).",
+        },
     },
 )
 async def login(
     body: LoginRequest,
     request: Request,
+    response: Response,
     iniciar: Annotated[IniciarSesion, Depends(get_iniciar_sesion)],
 ) -> LoginResponse:
-    token, usuario = await iniciar.execute(
+    token, usuario, sesion = await iniciar.execute(
         IniciarSesionCommand(email=body.email, password=body.password, ip_origen=ip_origen(request))
     )
+    # La respuesta lleva una credencial de 7 días.
+    response.headers["Cache-Control"] = "no-store"
     return LoginResponse(
         access_token=token.access_token,
         expires_in=token.expires_in,
         usuario=UsuarioPublicoResponse.model_validate(usuario),
+        refresh_token=sesion.refresh_token,
+        refresh_expires_in=sesion.expires_in,
     )
 
 
@@ -166,6 +179,52 @@ async def logout(
         await auditar_token_rechazado(registrar, exc, request, request.method, request.url.path)
         raise
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/auth/refresh",
+    response_model=LoginResponse,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorResponse,
+            "description": "Refresh token inválido, vencido, revocado o ya usado (TOKEN_INVALIDO). "
+            "Siempre el mismo cuerpo. Incluye el encabezado WWW-Authenticate: Bearer.",
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Valkey o PostgreSQL no responden (SERVICIO_NO_DISPONIBLE).",
+        },
+    },
+)
+async def refresh(
+    body: RefreshRequest,
+    request: Request,
+    response: Response,
+    renovar: Annotated[RenovarSesion, Depends(get_renovar_sesion)],
+    registrar: Annotated[RegistrarAccesoDenegado, Depends(get_registrar_acceso_denegado)],
+) -> LoginResponse:
+    """Cambia el refresh token por uno nuevo y entrega otro access token (C-20).
+
+    Pública: el access token puede haber vencido. El token anterior deja de servir, y usarlo otra
+    vez revoca la sesión: el cliente debe renovar una sola vez a la vez.
+    """
+    try:
+        sesion = await renovar.execute(body.refresh_token, ip_origen(request))
+    except TokenInvalidoError as exc:
+        RENOVACIONES.labels(resultado=exc.motivo).inc()
+        # El token reutilizado ya dejó su propia fila, REFRESH_REUTILIZADO.
+        if exc.motivo != "reutilizado":
+            await auditar_token_rechazado(registrar, exc, request, request.method, request.url.path)
+        raise
+    RENOVACIONES.labels(resultado="ok").inc()
+    response.headers["Cache-Control"] = "no-store"
+    return LoginResponse(
+        access_token=sesion.token.access_token,
+        expires_in=sesion.token.expires_in,
+        usuario=UsuarioPublicoResponse.model_validate(sesion.usuario),
+        refresh_token=sesion.rotacion.nuevo_token,
+        refresh_expires_in=sesion.rotacion.expires_in,
+    )
 
 
 def _sin_query(uri: str | None) -> str | None:

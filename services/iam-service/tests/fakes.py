@@ -37,6 +37,14 @@ from app.domain.value_objects.filtro_prestadores import (
     ResumenPrestador,
 )
 from app.domain.value_objects.filtro_usuarios import FiltroUsuarios, PaginaUsuarios
+from app.domain.value_objects.sesion import (
+    ResultadoRotacion,
+    RotacionInvalida,
+    RotacionOk,
+    RotacionReutilizada,
+    RotacionRevocada,
+    SesionCreada,
+)
 from app.infrastructure.observabilidad.contexto_correlacion import correlation_id_actual
 
 AHORA = datetime(2026, 10, 23, 15, 0, tzinfo=UTC)
@@ -226,6 +234,7 @@ class FakeRevocacion:
         self.revocados: dict[str, datetime] = {}
         self.revocados_desde: dict[uuid.UUID, int] = {}
         self.revocaciones_usuario: list[tuple[uuid.UUID, datetime]] = []
+        self.sesiones_revocadas: set[str] = set()
         self.al_revocar_usuario: Callable[[], None] | None = None
         self.caida = caida
 
@@ -242,11 +251,99 @@ class FakeRevocacion:
         self.revocaciones_usuario.append((usuario_id, desde))
         self.revocados_desde[usuario_id] = int(desde.timestamp())
 
-    async def esta_revocado_token(self, jti: str, usuario_id: uuid.UUID, iat: datetime) -> bool:
+    async def esta_revocado_token(
+        self, jti: str, usuario_id: uuid.UUID, iat: datetime, sid: str | None = None
+    ) -> bool:
         if self.caida:
             raise ServicioNoDisponibleError()
+        if jti in self.revocados or sid in self.sesiones_revocadas:
+            return True
         desde = self.revocados_desde.get(usuario_id)
-        return jti in self.revocados or (desde is not None and int(iat.timestamp()) <= desde)
+        return desde is not None and int(iat.timestamp()) <= desde
+
+
+class FakeSesionesRenovacion:
+    """Familias de refresh en memoria, con las mismas reglas que el script Lua (el script se prueba
+    en integración). Comparte las marcas con FakeRevocacion, como las comparten en Valkey.
+
+    caida=True simula Valkey sin responder; caida_al_revocar, solo en revocar_familia.
+    """
+
+    TTL = 7 * 24 * 60 * 60
+
+    def __init__(self, revocacion: FakeRevocacion | None = None, caida: bool = False) -> None:
+        self.revocacion = revocacion or FakeRevocacion()
+        self.caida = caida
+        self.caida_al_revocar = False
+        self.tokens: dict[str, dict[str, Any]] = {}
+        self.familias: dict[str, dict[str, Any]] = {}
+        self._contador = 0
+
+    def _comprobar(self) -> None:
+        if self.caida:
+            raise ServicioNoDisponibleError()
+
+    def _nuevo_token(self, familia: str, usuario_id: uuid.UUID) -> str:
+        self._contador += 1
+        token = f"refresh-{self._contador}-{uuid.uuid4().hex}"
+        self.tokens[token] = {"familia": familia, "usuario_id": usuario_id, "estado": "vigente"}
+        return token
+
+    def revocada(self, familia: str) -> bool:
+        return self.familias[familia]["revocada"]
+
+    async def crear(
+        self, usuario_id: uuid.UUID, familia: str, emitido_en: datetime
+    ) -> SesionCreada:
+        self._comprobar()
+        token = self._nuevo_token(familia, usuario_id)
+        self.familias[familia] = {
+            "actual": token,
+            "revocada": False,
+            "renovado_en": int(emitido_en.timestamp()),
+        }
+        return SesionCreada(
+            refresh_token=token,
+            familia=familia,
+            expira_en=emitido_en + timedelta(seconds=self.TTL),
+            expires_in=self.TTL,
+        )
+
+    def _revocar(self, familia: str) -> None:
+        self.familias[familia]["revocada"] = True
+        self.revocacion.sesiones_revocadas.add(familia)
+
+    async def rotar(self, refresh_token: str) -> ResultadoRotacion:
+        self._comprobar()
+        registro = self.tokens.get(refresh_token)
+        if registro is None:
+            return RotacionInvalida()
+        familia, usuario_id = registro["familia"], registro["usuario_id"]
+        datos = self.familias[familia]
+        if datos["revocada"]:
+            return RotacionRevocada(familia=familia, usuario_id=usuario_id)
+        desde = self.revocacion.revocados_desde.get(usuario_id)
+        if desde is not None and datos["renovado_en"] <= desde:
+            self._revocar(familia)
+            return RotacionRevocada(familia=familia, usuario_id=usuario_id)
+        if registro["estado"] != "vigente" or datos["actual"] != refresh_token:
+            self._revocar(familia)
+            return RotacionReutilizada(familia=familia, usuario_id=usuario_id)
+        registro["estado"] = "rotado"
+        nuevo = self._nuevo_token(familia, usuario_id)
+        datos["actual"] = nuevo
+        datos["renovado_en"] = int(datetime.now(UTC).timestamp())
+        return RotacionOk(
+            nuevo_token=nuevo, familia=familia, usuario_id=usuario_id, expires_in=self.TTL
+        )
+
+    async def revocar_familia(self, familia: str) -> None:
+        self._comprobar()
+        if self.caida_al_revocar:
+            raise ServicioNoDisponibleError()
+        if familia in self.familias:
+            self.familias[familia]["revocada"] = True
+        self.revocacion.sesiones_revocadas.add(familia)
 
 
 class FakeRedisClient:
@@ -256,6 +353,7 @@ class FakeRedisClient:
         self.valores: dict[str, str] = {}
         self.ttls: dict[str, int] = {}
         self.llamadas_mget = 0
+        self.llaves_ultimo_mget: list[str] = []
         self.caido = caido
 
     def _comprobar(self) -> None:
@@ -270,6 +368,7 @@ class FakeRedisClient:
     async def mget(self, *keys: str) -> list[str | None]:
         self._comprobar()
         self.llamadas_mget += 1
+        self.llaves_ultimo_mget = list(keys)
         return [self.valores.get(key) for key in keys]
 
 

@@ -8,10 +8,12 @@ from app.domain.exceptions import (
     EmailInvalidoError,
 )
 from app.domain.ports.password_hasher import PasswordHasher
+from app.domain.ports.sesiones_renovacion import SesionesRenovacion
 from app.domain.ports.token_service import TokenService
 from app.domain.ports.unit_of_work import UnitOfWork
 from app.domain.value_objects.email import Email
 from app.domain.value_objects.enums import ResultadoAuditoria
+from app.domain.value_objects.sesion import SesionCreada
 from app.domain.value_objects.token import TokenEmitido
 
 # Hash Argon2id de una contraseña aleatoria descartada, con los mismos parámetros que los
@@ -31,14 +33,24 @@ class IniciarSesionCommand:
 
 
 class IniciarSesion:
-    """UC2: inicio de sesión con correo y contraseña; emite un access token RS256."""
+    """UC2: inicio de sesión con correo y contraseña; emite un access token RS256 y crea la
+    familia de refresh tokens de la sesión (C-20)."""
 
-    def __init__(self, uow: UnitOfWork, hasher: PasswordHasher, tokens: TokenService) -> None:
+    def __init__(
+        self,
+        uow: UnitOfWork,
+        hasher: PasswordHasher,
+        tokens: TokenService,
+        sesiones: SesionesRenovacion,
+    ) -> None:
         self._uow = uow
         self._hasher = hasher
         self._tokens = tokens
+        self._sesiones = sesiones
 
-    async def execute(self, cmd: IniciarSesionCommand) -> tuple[TokenEmitido, Usuario]:
+    async def execute(
+        self, cmd: IniciarSesionCommand
+    ) -> tuple[TokenEmitido, Usuario, SesionCreada]:
         try:
             email: Email | None = Email(cmd.email)
         except EmailInvalidoError:
@@ -81,7 +93,12 @@ class IniciarSesion:
             if nuevo_hash is not None:
                 await uow.usuarios.actualizar_password_hash(encontrado.id, nuevo_hash)
 
-            token = self._tokens.emitir(usuario)
+            # Sin await desde la lectura, y con el iat como renovado_en: el access token y el
+            # refresh quedan del mismo lado de una marca revocado-desde (C-21, C-53). Antes del
+            # commit: si Valkey no responde, 503 sin fila LOGIN_SUCCESS (falla cerrado, C-22).
+            familia = str(uuid.uuid4())
+            token = self._tokens.emitir(usuario, sid=familia)
+            sesion = await self._sesiones.crear(encontrado.id, familia, token.emitido_en)
             await uow.auditoria.registrar(
                 accion="LOGIN_SUCCESS",
                 resultado=ResultadoAuditoria.EXITO,
@@ -90,7 +107,7 @@ class IniciarSesion:
                 detalles={},
             )
             await uow.commit()
-        return token, usuario
+        return token, usuario, sesion
 
     async def _registrar_fallo(
         self, usuario_id: uuid.UUID | None, motivo: str, ip_origen: str | None

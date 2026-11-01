@@ -2,7 +2,7 @@ import uuid
 from typing import Literal
 
 # Motivo interno de un 401: va a la bitácora, nunca a la respuesta.
-MotivoRechazo = Literal["sin_token", "invalido", "expirado", "revocado", "tipo"]
+MotivoRechazo = Literal["sin_token", "invalido", "expirado", "revocado", "tipo", "reutilizado"]
 
 
 class DominioError(Exception):

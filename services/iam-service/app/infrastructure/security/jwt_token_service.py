@@ -89,7 +89,7 @@ class JwtTokenService:
         self._reloj = reloj
         self.kid = huella_rfc7638(public_key)
 
-    def emitir(self, usuario: Usuario) -> TokenEmitido:
+    def emitir(self, usuario: Usuario, sid: str | None = None) -> TokenEmitido:
         # Los claims numéricos de JWT van en segundos enteros.
         iat = self._reloj().replace(microsecond=0)
         exp = iat + self._ttl
@@ -103,6 +103,8 @@ class JwtTokenService:
             "iss": self._issuer,
             "typ": "access",
         }
+        if sid is not None:
+            claims["sid"] = sid
         token = jwt.encode(
             claims, self._private_key, algorithm=ALGORITMO, headers={"kid": self.kid}
         )
@@ -111,6 +113,7 @@ class JwtTokenService:
             expires_in=int(self._ttl.total_seconds()),
             jti=jti,
             expira_en=exp,
+            emitido_en=iat,
         )
 
     def verificar(self, token: str) -> ClaimsToken:
@@ -134,12 +137,16 @@ class JwtTokenService:
         if payload.get("typ") != "access":
             raise TokenInvalidoError(motivo="tipo", usuario_id=_uuid_o_none(payload["sub"]))
         try:
+            sid = payload.get("sid")
+            if sid is not None and not isinstance(sid, str):
+                raise ValueError("sid debe ser una cadena")
             return ClaimsToken(
                 sub=payload["sub"],
                 rol=Rol(payload["rol"]),
                 jti=payload["jti"],
                 iat=datetime.fromtimestamp(payload["iat"], UTC),
                 exp=datetime.fromtimestamp(payload["exp"], UTC),
+                sid=sid,
             )
         except (KeyError, ValueError, TypeError) as exc:
             raise TokenInvalidoError(motivo="invalido") from exc

@@ -10,6 +10,7 @@ class TokenEmitido:
     expires_in: int
     jti: str
     expira_en: datetime
+    emitido_en: datetime
 
 
 @dataclass(frozen=True)
@@ -19,3 +20,5 @@ class ClaimsToken:
     jti: str
     iat: datetime
     exp: datetime
+    # Id de la familia de refresh; None en los tokens emitidos antes de C-20.
+    sid: str | None = None

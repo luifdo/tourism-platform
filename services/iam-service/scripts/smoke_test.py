@@ -2,17 +2,23 @@
 Uso: uv run python scripts/smoke_test.py
 """
 
+import asyncio
 import os
 import re
 import sys
 import time
 import uuid
 
+import asyncpg
 import httpx
 import jwt
 
 BASE = os.environ.get("IAM_BASE_URL", "http://localhost:8001")
 MAILPIT = os.environ.get("MAILPIT_URL", "http://localhost:8025") + "/api/v1"
+# Solo para leer la bitácora: el smoke no tiene un Admin sembrado.
+BASE_DE_DATOS = os.environ.get(
+    "IAM_SMOKE_DATABASE_URL", "postgresql://iam_user:iam_password@localhost:5433/iam_db"
+)
 todo_ok = True
 
 
@@ -34,6 +40,24 @@ def leer_enlace(destinatario: str, intentos: int = 20) -> str | None:
                 return encontrado.group(0) if encontrado else None
         time.sleep(0.25)
     return None
+
+
+async def _filas_de_bitacora(accion: str, usuario_id: str) -> list[str]:
+    conexion = await asyncpg.connect(BASE_DE_DATOS)
+    try:
+        filas = await conexion.fetch(
+            "SELECT detalles::text AS detalles FROM bitacora_auditoria "
+            "WHERE accion = $1 AND usuario_id = $2::uuid",
+            accion,
+            usuario_id,
+        )
+    finally:
+        await conexion.close()
+    return [fila["detalles"] for fila in filas]
+
+
+def filas_de_bitacora(accion: str, usuario_id: str) -> list[str]:
+    return asyncio.run(_filas_de_bitacora(accion, usuario_id))
 
 
 with httpx.Client(base_url=BASE, timeout=10) as c:
@@ -329,6 +353,87 @@ with httpx.Client(base_url=BASE, timeout=10) as c:
     check("Token revocado -> 401", r.status_code == 401, r.text)
     r = c.post("/api/iam/logout")
     check("Logout sin token -> 401", r.status_code == 401, r.text)
+
+    # Sesión y refresh token (C-20, C-60)
+    email_s = f"smoke.sesion.{uuid.uuid4().hex[:8]}@example.com"
+    r = c.post("/api/iam/register", json={**datos, "email": email_s})
+    check("Registro para la sesión -> 201", r.status_code == 201, r.text)
+    id_s = r.json().get("id", "")
+    credenciales = {"email": email_s, "password": clave}
+    corr = {"X-Correlation-ID": "smoke-refresh"}
+
+    def renovar(refresh_token: str) -> httpx.Response:
+        return c.post("/api/iam/auth/refresh", json={"refresh_token": refresh_token}, headers=corr)
+
+    def verifica(access_token: str) -> int:
+        cabeceras = {"Authorization": f"Bearer {access_token}"}
+        return c.get("/api/iam/auth/verificar", headers=cabeceras).status_code
+
+    r = c.post("/api/iam/login", json=credenciales)
+    inicial = r.json()
+    check(
+        "Login agrega refresh_token y refresh_expires_in, con no-store",
+        r.status_code == 200
+        and bool(inicial.get("refresh_token"))
+        and inicial.get("refresh_expires_in") == 604800
+        and {"access_token", "token_type", "expires_in", "usuario"} <= inicial.keys()
+        and r.headers.get("cache-control") == "no-store",
+        r.text[:200],
+    )
+    claims_s = jwt.decode(inicial["access_token"], options={"verify_signature": False})
+    check("El access token lleva sid", bool(claims_s.get("sid")))
+    otra_sesion = c.post("/api/iam/login", json=credenciales).json()
+
+    r = renovar(inicial["refresh_token"])
+    renovada = r.json()
+    check(
+        "Refresh -> 200 con tokens nuevos y el mismo sid",
+        r.status_code == 200
+        and renovada.get("refresh_token") != inicial["refresh_token"]
+        and jwt.decode(renovada["access_token"], options={"verify_signature": False}).get("sid")
+        == claims_s.get("sid")
+        and r.headers.get("cache-control") == "no-store",
+        r.text[:200],
+    )
+    check("El access token renovado sirve", verifica(renovada["access_token"]) == 200)
+
+    reutilizado = renovar(inicial["refresh_token"])
+    check(
+        "El refresh viejo otra vez -> 401 TOKEN_INVALIDO",
+        reutilizado.status_code == 401 and reutilizado.json().get("code") == "TOKEN_INVALIDO",
+        reutilizado.text,
+    )
+    filas = filas_de_bitacora("REFRESH_REUTILIZADO", id_s)
+    check(
+        "Queda una fila REFRESH_REUTILIZADO con la familia",
+        len(filas) == 1 and claims_s.get("sid", "?") in filas[0],
+        str(filas),
+    )
+    revocado = renovar(renovada["refresh_token"])
+    check("El nuevo también -> 401 (familia revocada)", revocado.status_code == 401, revocado.text)
+    check(
+        "Los 401 no revelan la causa (mismo cuerpo)",
+        revocado.content == reutilizado.content,
+        f"{revocado.text} / {reutilizado.text}",
+    )
+    check(
+        "Tras el robo, los access tokens de esa sesión -> 401",
+        verifica(inicial["access_token"]) == 401 and verifica(renovada["access_token"]) == 401,
+    )
+    check("La otra sesión del usuario sigue -> 200", verifica(otra_sesion["access_token"]) == 200)
+
+    r = c.post(
+        "/api/iam/logout", headers={"Authorization": f"Bearer {otra_sesion['access_token']}"}
+    )
+    check("Logout de la otra sesión -> 204", r.status_code == 204, r.text)
+    r = renovar(otra_sesion["refresh_token"])
+    check("Refresh después del logout -> 401", r.status_code == 401, r.text)
+    check(
+        "Sin una fila más de robo",
+        len(filas_de_bitacora("REFRESH_REUTILIZADO", id_s)) == 1,
+    )
+    r = c.post("/api/iam/auth/refresh", json={"refresh_token": ""})
+    check("Refresh vacío -> 422", r.status_code == 422, r.text)
 
 print("\nTODO FUNCIONA" if todo_ok else "\nHAY FALLAS")
 sys.exit(0 if todo_ok else 1)

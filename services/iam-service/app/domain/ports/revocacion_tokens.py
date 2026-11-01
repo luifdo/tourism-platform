@@ -15,6 +15,9 @@ class RevocacionTokens(Protocol):
         """Invalida todos los tokens del usuario emitidos hasta `desde` (inclusive, en segundos)."""
         ...
 
-    async def esta_revocado_token(self, jti: str, usuario_id: uuid.UUID, iat: datetime) -> bool:
-        """True si el jti fue revocado o si el token se emitió en o antes de revocado-desde."""
+    async def esta_revocado_token(
+        self, jti: str, usuario_id: uuid.UUID, iat: datetime, sid: str | None = None
+    ) -> bool:
+        """True si el jti o la sesión (sid) fueron revocados, o si el token se emitió en o antes
+        de revocado-desde. Todo en una sola consulta."""
         ...

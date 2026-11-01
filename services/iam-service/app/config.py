@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     jwt_private_key_path: Path = Path("keys/private.pem")
     jwt_public_key_path: Path = Path("keys/public.pem")
     jwt_access_token_ttl_minutes: int = 15
+    # La sesión vence tras estos días sin renovar (C-20).
+    jwt_refresh_token_ttl_days: int = Field(default=7, ge=1)
 
     # Hashes Argon2 simultáneos por réplica (C-53). Cada uno reserva 64 MiB: va de la mano con
     # el límite de memoria del Deployment.

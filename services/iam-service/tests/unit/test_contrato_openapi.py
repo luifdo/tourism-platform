@@ -77,6 +77,16 @@ def test_las_rutas_que_calculan_argon2_declaran_servicio_ocupado(
     assert "SERVICIO_OCUPADO" in esquema["paths"][ruta][metodo]["responses"]["503"]["description"]
 
 
+def test_refresh_es_publica_y_agrega_campos_al_login(esquema: dict[str, Any]) -> None:
+    operacion = esquema["paths"]["/api/iam/auth/refresh"]["post"]
+
+    assert not operacion.get("security")
+    assert {"401", "422", "503"} <= operacion["responses"].keys()
+    campos = esquema["components"]["schemas"]["LoginResponse"]["properties"]
+    assert {"access_token", "token_type", "expires_in", "usuario"} <= campos.keys()
+    assert {"refresh_token", "refresh_expires_in"} <= campos.keys()
+
+
 def test_los_errores_usan_el_esquema_comun(esquema: dict[str, Any]) -> None:
     for metodo, ruta, operacion in _operaciones(esquema):
         for codigo, respuesta in operacion["responses"].items():

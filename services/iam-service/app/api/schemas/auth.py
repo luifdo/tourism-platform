@@ -62,6 +62,10 @@ class RestablecerRequest(BaseModel):
     password: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=128)
+
+
 class UsuarioPublicoResponse(BaseModel):
     """Datos públicos de una cuenta. Nunca incluye la contraseña ni su hash."""
 
@@ -81,6 +85,9 @@ class LoginResponse(BaseModel):
     token_type: Literal["bearer"] = "bearer"
     expires_in: int
     usuario: UsuarioPublicoResponse
+    # Token opaco de un solo uso (C-20, C-60). Cada renovación entrega otro.
+    refresh_token: str
+    refresh_expires_in: int
 
 
 class Jwk(BaseModel):

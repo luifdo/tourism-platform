@@ -30,6 +30,18 @@ spec:
     period: 1m
     burst: 5
 ---
+# El refresh es tráfico legítimo (una vez cada 15 min por usuario), y varios usuarios pueden
+# salir por la misma IP: límite propio, con su propio contador (C-26, C-60).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: iam-rate-limit-refresh
+spec:
+  rateLimit:
+    average: 20
+    period: 1m
+    burst: 10
+---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -51,6 +63,15 @@ spec:
       middlewares:
         - { name: quitar-identidad }
         - { name: iam-rate-limit }
+      services:
+        - { name: iam-service, port: 8001 }
+    # Sin ForwardAuth: el access token puede haber vencido.
+    - match: Path(`/api/iam/auth/refresh`)
+      kind: Rule
+      priority: 100
+      middlewares:
+        - { name: quitar-identidad }
+        - { name: iam-rate-limit-refresh }
       services:
         - { name: iam-service, port: 8001 }
     - match: Path(`/api/iam/register`) || Path(`/api/iam/auth/restablecer`) || Path(`/api/iam/.well-known/jwks.json`)

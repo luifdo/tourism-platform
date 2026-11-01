@@ -25,6 +25,20 @@ async def test_inserta_access_denied_en_su_propia_transaccion() -> None:
     )
 
 
+async def test_admite_otra_accion() -> None:
+    uow = FakeUnitOfWork()
+
+    await RegistrarAccesoDenegado(uow).execute(
+        None, None, {"familia": "f"}, accion="REFRESH_REUTILIZADO"
+    )
+
+    [registro] = uow.auditoria.registros
+    assert (registro.accion, registro.resultado) == (
+        "REFRESH_REUTILIZADO",
+        ResultadoAuditoria.DENEGADO,
+    )
+
+
 async def test_si_la_bitacora_falla_registra_el_error_y_no_propaga(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

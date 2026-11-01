@@ -754,6 +754,51 @@ def escenario_i(p: Plataforma, e: Escenario) -> None:
     e.check("El sexto login da 429", codigos[5] == 429, codigos[5])
 
 
+def escenario_l(p: Plataforma, e: Escenario) -> None:
+    refresh = "/api/iam/auth/refresh"
+    e.dato("Se espera 65 s para partir con los dos límites completos")
+    time.sleep(65)
+
+    email, usuario_id = p.registrar()
+    primera = p.post_limitado("/api/iam/login", {"email": email, "password": CLAVE}).json()
+    otra = p.post_limitado("/api/iam/login", {"email": email, "password": CLAVE}).json()
+    e.check("El login entrega refresh_token", bool(primera.get("refresh_token")))
+
+    # Con un Bearer inválido: pasaría a 401 si la ruta tuviera ForwardAuth.
+    r = p.http.post(
+        refresh,
+        json={"refresh_token": primera["refresh_token"]},
+        headers=bearer("access-token-vencido"),
+    )
+    e.check("Refresh sin ForwardAuth -> 200", r.status_code == 200, r.status_code)
+    e.check("Refresh con no-store", r.headers.get("cache-control") == "no-store")
+    segunda = r.json()
+    e.check("El access token renovado sirve", p.verifica(segunda["access_token"]) == 200)
+
+    r = p.http.post(refresh, json={"refresh_token": primera["refresh_token"]})
+    e.check("El refresh viejo otra vez -> 401", r.status_code == 401, r.status_code)
+    filas = p.bitacora(accion="REFRESH_REUTILIZADO", usuario_id=usuario_id)
+    e.check("Queda una fila REFRESH_REUTILIZADO", len(filas) == 1, len(filas))
+    r = p.http.post(refresh, json={"refresh_token": segunda["refresh_token"]})
+    e.check("El nuevo también -> 401 (familia revocada)", r.status_code == 401, r.status_code)
+    e.check("El access token inicial -> 401", p.verifica(primera["access_token"]) == 401)
+    e.check("El access token renovado -> 401", p.verifica(segunda["access_token"]) == 401)
+    e.check("La otra sesión del usuario sigue -> 200", p.verifica(otra["access_token"]) == 200)
+
+    e.dato("Se espera 65 s para partir con los dos límites completos")
+    time.sleep(65)
+    codigos = [
+        p.http.post(refresh, json={"refresh_token": f"falso-{i}"}).status_code for i in range(15)
+    ]
+    e.dato(f"Códigos de la ráfaga de refresh: {codigos}")
+    e.check("Los diez primeros pasan al IAM (401)", codigos[:10] == [401] * 10, codigos[:10])
+    e.check("La ráfaga termina en 429", codigos[-1] == 429, codigos[-1])
+    r = p.http.post(
+        "/api/iam/login", json={"email": "nadie.e2e@example.com", "password": "ClaveMala123"}
+    )
+    e.check("El login conserva su propio cupo (401, no 429)", r.status_code == 401, r.status_code)
+
+
 @dataclass
 class Bucle:
     """Llamadas continuas a verificar por el gateway, con conexiones nuevas en cada hilo."""
@@ -905,6 +950,7 @@ ESCENARIOS: list[tuple[str, Callable[[Plataforma, Escenario], None]]] = [
     ("i. Rate limiting", escenario_i),
     ("j. RNF-12: rolling update bajo carga", escenario_j),
     ("k. ESC-01 aproximado: borrar una réplica", escenario_k),
+    ("l. Sesión: refresh, reutilización y su límite propio", escenario_l),
 ]
 
 

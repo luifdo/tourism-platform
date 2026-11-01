@@ -8,8 +8,8 @@
   "properties": {
     "prestador_id": { "type": "string", "format": "uuid" },
     "usuario_id": { "type": "string", "format": "uuid" },
-    "suspendido_por": { "type": "string", "format": "uuid", "description": "Administrador que suspendió." },
-    "motivo": { "type": "string", "maxLength": 500 }
+    "suspendido_por": { "type": "string", "format": "uuid", "description": "Administrador que suspendió. En una supresión de datos (ver usuario.suprimido) es el propio usuario." },
+    "motivo": { "type": "string", "maxLength": 500, "description": "iam-service no lo envía: lo escribe el administrador como texto libre y puede contener datos personales, que no viajan en los eventos (Plan §4.2). Queda solo en la bitácora de iam." }
   },
   "additionalProperties": false
 }

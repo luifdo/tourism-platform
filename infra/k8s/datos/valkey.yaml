@@ -26,7 +26,8 @@ spec:
         - name: valkey
           image: valkey/valkey:8
           command: ["valkey-server"]
-          args: ["--requirepass", "$(VALKEY_PASSWORD)", "--appendonly", "yes", "--dir", "/data"]
+          # Límite del contenedor: 512Mi; el margen es para la reescritura del AOF.
+          args: ["--requirepass", "$(VALKEY_PASSWORD)", "--appendonly", "yes", "--dir", "/data", "--maxmemory", "384mb", "--maxmemory-policy", "noeviction"]
           envFrom:
             - secretRef: { name: valkey-credenciales } # VALKEY_PASSWORD
           ports:

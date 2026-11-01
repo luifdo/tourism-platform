@@ -11,6 +11,8 @@ Cada servicio trae sus propios manifiestos en `services/<servicio>/k8s/`. **Aqu�
 | Valkey 8 | `valkey:6379` | Con contraseña y AOF. Bases: catalog 0, booking 1, iam 2, recommendation 3 |
 | SeaweedFS | `seaweedfs:8333` | Buckets `catalogo-imagenes`, `documentos-verificacion` y `respaldos-postgres` |
 
+Valkey guarda las sesiones del refresh token de iam, por eso usa `noeviction` con `maxmemory` explícito; catalog falla abierto si Valkey rechaza escrituras.
+
 ## Desplegar
 
 Desde la raíz del repositorio, con `kubectl` apuntando al clúster:

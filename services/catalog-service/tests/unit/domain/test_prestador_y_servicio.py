@@ -74,6 +74,20 @@ class TestPrestadorPerfil:
         with pytest.raises(PerfilInactivo):
             p.editar(p.version, None, None, None)
 
+    def test_suprimir_datos_borra_lo_personal_y_avanza_la_version(self) -> None:
+        politica = TextoTraducido(es="Gratis hasta 24 h")
+        p = perfil()
+        p.editar(1, "3001234567", "Minca", politica)
+        p.suprimir_datos()
+        assert (p.razon_social, p.telefono, p.direccion) == (None, None, None)
+        assert p.version == 3 and p.activo and p.politica_cancelacion == politica
+
+    def test_suprimir_datos_sin_datos_no_cambia_la_version(self) -> None:
+        p = perfil()
+        p.suprimir_datos()
+        p.suprimir_datos()
+        assert p.version == 2
+
 
 class TestRegistrarServicio:
     def test_registra_con_dueno_y_version_1(self) -> None:

@@ -27,6 +27,7 @@ Catálogo de atractivos, actividades y perfiles de prestador; búsqueda multicri
 **Consume:**
 * `prestador.aprobado.v1` (crea o reactiva el perfil del prestador)
 * `prestador.suspendido.v1` (desactiva el perfil y sus servicios)
+* `usuario.suprimido.v1` (borra los datos personales del perfil del prestador)
 * `reserva.solicitada.v1`, `reserva.modificada.v1`, `reserva.confirmada.v1`, `reserva.rechazada.v1`, `reserva.cancelada.v1`, `reserva.finalizada.v1` (correos y demanda)
 * `resena.publicada.v1` (calificación promedio y métricas)
 * `resena.ocultada.v1` (quita del promedio la reseña ocultada por moderación)
@@ -44,6 +45,7 @@ Detalle de cada pedido en [`Coordinacion_Modulo_Catalogo.md`](./Coordinacion_Mod
 |---|---|---|---|
 | `prestador.aprobado` con `razon_social` | iam | Crear o reactivar el perfil y habilitar UC17 | ✅ |
 | `prestador.suspendido` | iam | Ocultar el perfil y sus servicios | ✅ también se restauran al rehabilitarlo |
+| `usuario.suprimido` | iam | Borrar los datos personales del perfil (Ley 1581) | ⏳ catalog ya lo consume; iam aún no lo publica. Debe hacerlo después de desplegar catalog con la cola enlazada y con el mismo `occurred_at` de `prestador.suspendido` |
 | `GET /internal/usuarios/{id}/contacto` | iam | Destinatario de los correos | ✅ envía `X-Correlation-ID` y un 404 no se reintenta |
 | Cola `iam.auditoria` | iam | Que no se pierda `auditoria.registrada` | ✅ |
 | `reserva.*` (los seis) | booking | Demanda y correos | ✅ |
@@ -398,14 +400,15 @@ Cada cola tiene un **manejador** (`messaging/manejador_*.py`) que traduce el eve
 
 ### `catalog.prestadores` (iam → perfil del prestador)
 
-**Claves:** `prestador.aprobado`, `prestador.suspendido`.
+**Claves:** `prestador.aprobado`, `prestador.suspendido`, `usuario.suprimido`.
 
-**Objetivo:** que solo un prestador aprobado por iam pueda publicar servicios (UC17, UC28), y que una suspensión saque del catálogo sus servicios (UC27).
+**Objetivo:** que solo un prestador aprobado por iam pueda publicar servicios (UC17, UC28), que una suspensión saque del catálogo sus servicios (UC27) y que una supresión borre sus datos personales (UC6, Ley 1581).
 
 **Qué hace:**
 
 * **Aprobado:** crea el perfil (habilita UC17) o lo reactiva, y actualiza la razón social. Al reactivar vuelven solo los servicios apagados por la suspensión; los que apagó el propio prestador siguen apagados.
 * **Suspendido:** apaga el perfil y sus servicios activos, marcados como apagados por suspensión para saber cuáles restaurar.
+* **Suprimido:** deja `razon_social`, `telefono` y `direccion` en `NULL`. No toca `activo` ni los servicios, porque iam publica `prestador.suspendido` en la misma transacción si el prestador estaba visible. Sin perfil (Turista, Entidad, Admin) se confirma y se ignora. No invalida la caché: esos datos solo salen en el detalle del servicio, que no se cachea.
 * Cada servicio que cambia guarda un `servicio.publicado` en el outbox, para que booking deje de aceptar reservas o vuelva a aceptarlas. Si cambió algún servicio, se invalida la caché de búsqueda y mapa.
 * Siempre bloquea primero el perfil y después los servicios, el mismo orden que en toda escritura, para no crear interbloqueos con la API.
 
@@ -413,6 +416,7 @@ Cada cola tiene un **manejador** (`messaging/manejador_*.py`) que traduce el eve
 
 * **Orden:** `prestador_perfil.estado_iam_en` (migración 0005) guarda el `occurred_at` del último evento de iam aplicado. Uno más viejo (p. ej. un reintento que llega tarde) se ignora y no reactiva a un suspendido.
 * **Suspensión antes de la aprobación:** si llega primero (por un reintento de la aprobación), se guarda un perfil mínimo ya suspendido. La aprobación vieja se ignora y no queda activo un prestador que iam suspendió; una aprobación más nueva sí lo activa.
+* **Supresión y orden:** el evento también registra su `occurred_at`, así que una aprobación vieja que llegue después no vuelve a escribir la razón social. **Riesgo conocido:** si la supresión llega cuando catalog aún no tiene el perfil y después llega la aprobación por un reintento, el perfil se crea con la razón social y el dato queda. El evento no trae `prestador_id`, así que no se puede dejar un perfil mínimo como en la suspensión.
 
 ### `catalog.demanda` (booking → proyección de reservas)
 

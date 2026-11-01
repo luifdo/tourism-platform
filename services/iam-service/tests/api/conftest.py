@@ -11,6 +11,7 @@ from app.api.dependencies import (
     get_enviador_correo,
     get_password_hasher,
     get_revocacion,
+    get_sesiones_renovacion,
     get_tokens_recuperacion,
     get_unit_of_work,
 )
@@ -25,6 +26,7 @@ from tests.fakes import (
     FakeEnviadorCorreo,
     FakePasswordHasher,
     FakeRevocacion,
+    FakeSesionesRenovacion,
     FakeTokensRecuperacion,
     FakeUnitOfWork,
     RegistroAuditoria,
@@ -83,6 +85,11 @@ def revocacion() -> FakeRevocacion:
 
 
 @pytest.fixture
+def sesiones(revocacion: FakeRevocacion) -> FakeSesionesRenovacion:
+    return FakeSesionesRenovacion(revocacion)
+
+
+@pytest.fixture
 def tokens_recuperacion() -> FakeTokensRecuperacion:
     return FakeTokensRecuperacion()
 
@@ -96,12 +103,14 @@ def enviador() -> FakeEnviadorCorreo:
 def client(
     uow: FakeUnitOfWork,
     revocacion: FakeRevocacion,
+    sesiones: FakeSesionesRenovacion,
     tokens_recuperacion: FakeTokensRecuperacion,
     enviador: FakeEnviadorCorreo,
 ) -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[get_unit_of_work] = lambda: uow
     app.dependency_overrides[get_revocacion] = lambda: revocacion
+    app.dependency_overrides[get_sesiones_renovacion] = lambda: sesiones
     app.dependency_overrides[get_tokens_recuperacion] = lambda: tokens_recuperacion
     app.dependency_overrides[get_enviador_correo] = lambda: enviador
     with TestClient(app, client=(IP_CLIENTE, 50000), headers=CON_CORRELACION) as c:

@@ -4,13 +4,13 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import get_revocacion, get_unit_of_work
+from app.api.dependencies import get_revocacion, get_sesiones_renovacion, get_unit_of_work
 from app.domain.entities.usuario import Usuario
 from app.domain.value_objects.enums import ResultadoAuditoria, Rol
 from app.infrastructure.security.argon2_password_hasher import Argon2PasswordHasher
 from app.main import create_app
 from tests.api.conftest import CON_CORRELACION, CORRELATION_ID
-from tests.fakes import AHORA, FakeRevocacion, FakeUnitOfWork
+from tests.fakes import AHORA, FakeRevocacion, FakeSesionesRenovacion, FakeUnitOfWork
 
 LOGIN = "/api/iam/login"
 LOGOUT = "/api/iam/logout"
@@ -52,8 +52,16 @@ def revocacion() -> FakeRevocacion:
 
 
 @pytest.fixture
-def client(uow: FakeUnitOfWork, revocacion: FakeRevocacion) -> Iterator[TestClient]:
+def sesiones(revocacion: FakeRevocacion) -> FakeSesionesRenovacion:
+    return FakeSesionesRenovacion(revocacion)
+
+
+@pytest.fixture
+def client(
+    uow: FakeUnitOfWork, revocacion: FakeRevocacion, sesiones: FakeSesionesRenovacion
+) -> Iterator[TestClient]:
     app = create_app()
+    app.dependency_overrides[get_sesiones_renovacion] = lambda: sesiones
     app.dependency_overrides[get_unit_of_work] = lambda: uow
     app.dependency_overrides[get_revocacion] = lambda: revocacion
     with TestClient(app, headers=CON_CORRELACION) as c:
@@ -75,7 +83,16 @@ def test_login_200(client: TestClient) -> None:
 
     assert response.status_code == 200
     data = response.json()
-    assert set(data) == {"access_token", "token_type", "expires_in", "usuario"}
+    assert set(data) == {
+        "access_token",
+        "token_type",
+        "expires_in",
+        "usuario",
+        "refresh_token",
+        "refresh_expires_in",
+    }
+    assert data["refresh_expires_in"] == 7 * 24 * 60 * 60
+    assert response.headers["Cache-Control"] == "no-store"
     assert data["token_type"] == "bearer"
     assert data["expires_in"] == 900
     assert set(data["usuario"]) == {
@@ -198,6 +215,19 @@ def test_logout_503_si_valkey_no_responde(client: TestClient, revocacion: FakeRe
 
     assert response.status_code == 503
     assert response.json()["code"] == "SERVICIO_NO_DISPONIBLE"
+
+
+def test_login_503_si_valkey_no_responde_sin_fila_de_exito(
+    client: TestClient, uow: FakeUnitOfWork, sesiones: FakeSesionesRenovacion
+) -> None:
+    sesiones.caida = True
+
+    response = client.post(LOGIN, json={"email": "maria.perez@example.com", "password": PASSWORD})
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "SERVICIO_NO_DISPONIBLE"
+    assert uow.commits == 0
+    assert uow.auditoria.registros == []
 
 
 def test_jwks(client: TestClient) -> None:

@@ -28,6 +28,7 @@ from app.application.use_cases.obtener_usuario import ObtenerUsuario
 from app.application.use_cases.rechazar_prestador import RechazarPrestador
 from app.application.use_cases.registrar_acceso_denegado import RegistrarAccesoDenegado
 from app.application.use_cases.registrar_usuario import RegistrarUsuario
+from app.application.use_cases.renovar_sesion import RenovarSesion
 from app.application.use_cases.restablecer_contrasena import RestablecerContrasena
 from app.application.use_cases.solicitar_recuperacion import SolicitarRecuperacion
 from app.application.use_cases.subir_documento import SubirDocumento
@@ -39,6 +40,7 @@ from app.domain.ports.almacen_documentos import AlmacenDocumentos
 from app.domain.ports.enviador_correo import EnviadorCorreo
 from app.domain.ports.password_hasher import PasswordHasher
 from app.domain.ports.revocacion_tokens import RevocacionTokens
+from app.domain.ports.sesiones_renovacion import SesionesRenovacion
 from app.domain.ports.token_service import TokenService
 from app.domain.ports.tokens_recuperacion import TokensRecuperacion
 from app.domain.ports.unit_of_work import UnitOfWork
@@ -46,6 +48,7 @@ from app.domain.value_objects.enums import Rol
 from app.domain.value_objects.token import ClaimsToken
 from app.infrastructure.cache.valkey_probe import ValkeyProbe
 from app.infrastructure.cache.valkey_revocacion import ValkeyRevocacionTokens
+from app.infrastructure.cache.valkey_sesiones_renovacion import ValkeySesionesRenovacion
 from app.infrastructure.cache.valkey_tokens_recuperacion import ValkeyTokensRecuperacion
 from app.infrastructure.persistence.database import SqlAlchemyDatabaseProbe
 from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -53,6 +56,8 @@ from app.infrastructure.security.jwt_token_service import LEEWAY_SEGUNDOS, JwtTo
 
 # auto_error=False: sin token respondemos 401 TOKEN_INVALIDO con el formato de error común.
 bearer = HTTPBearer(auto_error=False)
+
+SEGUNDOS_POR_DIA = 86_400
 
 
 def get_engine(request: Request) -> AsyncEngine:
@@ -97,9 +102,24 @@ def get_revocacion(
     reloj: Annotated[Callable[[], datetime], Depends(get_reloj)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RevocacionTokens:
-    # "revocado-desde" vive lo mismo que el token más largo que pudo emitirse antes del cambio.
-    ttl = settings.jwt_access_token_ttl_minutes * 60 + LEEWAY_SEGUNDOS
+    # "revocado-desde" vive lo mismo que el token más largo que pudo emitirse antes del cambio:
+    # el refresh, que también se revoca con esta marca (C-21).
+    ttl = settings.jwt_refresh_token_ttl_days * SEGUNDOS_POR_DIA + LEEWAY_SEGUNDOS
     return ValkeyRevocacionTokens(request.app.state.valkey, reloj, ttl_revocado_desde=ttl)
+
+
+def get_sesiones_renovacion(
+    request: Request,
+    reloj: Annotated[Callable[[], datetime], Depends(get_reloj)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SesionesRenovacion:
+    return ValkeySesionesRenovacion(
+        request.app.state.valkey,
+        reloj,
+        ttl_refresh=settings.jwt_refresh_token_ttl_days * SEGUNDOS_POR_DIA,
+        # Cubre el access token más largo que pudo emitirse con ese sid (C-60).
+        ttl_sesion_revocada=settings.jwt_access_token_ttl_minutes * 60 + LEEWAY_SEGUNDOS,
+    )
 
 
 def get_verificar_acceso(
@@ -119,16 +139,27 @@ def get_iniciar_sesion(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
     hasher: Annotated[PasswordHasher, Depends(get_password_hasher)],
     tokens: Annotated[TokenService, Depends(get_token_service)],
+    sesiones: Annotated[SesionesRenovacion, Depends(get_sesiones_renovacion)],
 ) -> IniciarSesion:
-    return IniciarSesion(uow=uow, hasher=hasher, tokens=tokens)
+    return IniciarSesion(uow=uow, hasher=hasher, tokens=tokens, sesiones=sesiones)
+
+
+def get_renovar_sesion(
+    uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+    tokens: Annotated[TokenService, Depends(get_token_service)],
+    sesiones: Annotated[SesionesRenovacion, Depends(get_sesiones_renovacion)],
+    registrar: Annotated[RegistrarAccesoDenegado, Depends(get_registrar_acceso_denegado)],
+) -> RenovarSesion:
+    return RenovarSesion(uow=uow, tokens=tokens, sesiones=sesiones, registrar=registrar)
 
 
 def get_cerrar_sesion(
     uow: Annotated[UnitOfWork, Depends(get_unit_of_work)],
     verificar: Annotated[VerificarAcceso, Depends(get_verificar_acceso)],
     revocacion: Annotated[RevocacionTokens, Depends(get_revocacion)],
+    sesiones: Annotated[SesionesRenovacion, Depends(get_sesiones_renovacion)],
 ) -> CerrarSesion:
-    return CerrarSesion(uow=uow, verificar=verificar, revocacion=revocacion)
+    return CerrarSesion(uow=uow, verificar=verificar, revocacion=revocacion, sesiones=sesiones)
 
 
 def get_obtener_contacto_usuario(

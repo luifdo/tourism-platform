@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 PREFIJO = "iam:revoked:"
 PREFIJO_USUARIO = "iam:revocado-desde:"
+PREFIJO_SESION = "iam:sesion-revocada:"
 _FALLAS_DE_CONEXION = (RedisConnectionError, RedisTimeoutError, ConnectionError, TimeoutError)
 
 
@@ -26,7 +27,7 @@ class ValkeyRevocacionTokens:
     """Implementa RevocacionTokens en Valkey. Falla cerrado: sin respuesta, no hay "no revocado".
 
     ttl_revocado_desde: segundos que vive "revocado-desde"; basta con la vida máxima de un
-    token (TTL + leeway), porque después ya no queda ninguno emitido antes del cambio.
+    refresh token (TTL + leeway), porque después ya no queda ninguno emitido antes del cambio.
     """
 
     def __init__(
@@ -57,16 +58,19 @@ class ValkeyRevocacionTokens:
             logger.warning("Valkey no responde al revocar los tokens del usuario %s", usuario_id)
             raise ServicioNoDisponibleError() from exc
 
-    async def esta_revocado_token(self, jti: str, usuario_id: uuid.UUID, iat: datetime) -> bool:
-        # Una sola ida a Valkey para las dos llaves.
+    async def esta_revocado_token(
+        self, jti: str, usuario_id: uuid.UUID, iat: datetime, sid: str | None = None
+    ) -> bool:
+        # Una sola ida a Valkey: dos llaves, o tres si el token lleva sid.
+        llaves = [PREFIJO + jti, PREFIJO_USUARIO + str(usuario_id)]
+        if sid is not None:
+            llaves.append(PREFIJO_SESION + sid)
         try:
-            por_jti, desde = await self._client.mget(
-                PREFIJO + jti, PREFIJO_USUARIO + str(usuario_id)
-            )
+            por_jti, desde, *por_sesion = await self._client.mget(*llaves)
         except _FALLAS_DE_CONEXION as exc:
             logger.warning("Valkey no responde al consultar el jti %s…", jti[:8])
             raise ServicioNoDisponibleError() from exc
-        if por_jti is not None:
+        if por_jti is not None or any(valor is not None for valor in por_sesion):
             return True
         # <= : un token emitido en el mismo segundo del cambio también queda revocado.
         return desde is not None and int(iat.timestamp()) <= int(desde)

@@ -59,6 +59,30 @@ async def test_revocado_por_jti() -> None:
     assert await rev.esta_revocado_token("jti-2", USUARIO_ID, AHORA) is False
 
 
+async def test_con_sid_lee_tres_llaves_en_un_solo_mget() -> None:
+    redis = FakeRedisClient()
+    rev = revocacion(redis)
+    assert await rev.esta_revocado_token("jti", USUARIO_ID, AHORA, "sesion-1") is False
+    redis.valores["iam:sesion-revocada:sesion-1"] = "1"
+
+    assert await rev.esta_revocado_token("jti", USUARIO_ID, AHORA, "sesion-1") is True
+    assert await rev.esta_revocado_token("jti", USUARIO_ID, AHORA, "sesion-2") is False
+    assert redis.llamadas_mget == 3
+    assert redis.llaves_ultimo_mget == [
+        "iam:revoked:jti",
+        f"iam:revocado-desde:{USUARIO_ID}",
+        "iam:sesion-revocada:sesion-2",
+    ]
+
+
+async def test_sin_sid_lee_dos_llaves() -> None:
+    redis = FakeRedisClient()
+
+    await revocacion(redis).esta_revocado_token("jti", USUARIO_ID, AHORA)
+
+    assert redis.llaves_ultimo_mget == ["iam:revoked:jti", f"iam:revocado-desde:{USUARIO_ID}"]
+
+
 async def test_revocacion_de_otro_usuario_no_afecta() -> None:
     redis = FakeRedisClient()
     rev = revocacion(redis)

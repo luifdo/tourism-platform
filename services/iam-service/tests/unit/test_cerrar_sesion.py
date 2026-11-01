@@ -10,7 +10,12 @@ from app.domain.exceptions import ServicioNoDisponibleError, TokenInvalidoError
 from app.domain.value_objects.enums import ResultadoAuditoria, Rol
 from app.infrastructure.cache.valkey_revocacion import ValkeyRevocacionTokens
 from tests.conftest import LlavesRsa, crear_token_service
-from tests.fakes import FakeRedisClient, FakeUnitOfWork
+from tests.fakes import (
+    FakeRedisClient,
+    FakeRevocacion,
+    FakeSesionesRenovacion,
+    FakeUnitOfWork,
+)
 
 AHORA = datetime.now(UTC).replace(microsecond=0)
 USUARIO = Usuario(
@@ -43,7 +48,9 @@ def cerrar(
     # La revocación ocurre `segundos_despues` de emitido el token.
     rev = revocacion(redis, segundos_despues)
     verificar = VerificarAcceso(tokens=crear_token_service(llaves), revocacion=rev)
-    return CerrarSesion(uow=uow, verificar=verificar, revocacion=rev)
+    return CerrarSesion(
+        uow=uow, verificar=verificar, revocacion=rev, sesiones=FakeSesionesRenovacion()
+    )
 
 
 def token(llaves: LlavesRsa) -> tuple[str, str]:
@@ -114,6 +121,63 @@ async def test_token_invalido(
     assert exc_info.value.motivo == motivo
     assert redis.ttls == {}
     assert uow.auditoria.registros == []
+
+
+def caso_con_sesiones(
+    llaves: LlavesRsa, uow: FakeUnitOfWork
+) -> tuple[CerrarSesion, FakeRevocacion, FakeSesionesRenovacion]:
+    rev = FakeRevocacion()
+    sesiones = FakeSesionesRenovacion(rev)
+    verificar = VerificarAcceso(tokens=crear_token_service(llaves), revocacion=rev)
+    return (
+        CerrarSesion(uow=uow, verificar=verificar, revocacion=rev, sesiones=sesiones),
+        rev,
+        sesiones,
+    )
+
+
+async def test_logout_revoca_la_familia_del_sid(llaves_rsa: LlavesRsa, uow: FakeUnitOfWork) -> None:
+    caso, rev, sesiones = caso_con_sesiones(llaves_rsa, uow)
+    assert USUARIO.id is not None
+    await sesiones.crear(USUARIO.id, "familia-1", AHORA)
+    emitido = crear_token_service(llaves_rsa).emitir(USUARIO, sid="familia-1")
+
+    await caso.execute(emitido.access_token, None)
+
+    assert sesiones.revocada("familia-1") is True
+    assert emitido.jti in rev.revocados
+
+
+async def test_token_sin_sid_no_revoca_ninguna_familia(
+    llaves_rsa: LlavesRsa, uow: FakeUnitOfWork
+) -> None:
+    caso, rev, sesiones = caso_con_sesiones(llaves_rsa, uow)
+    emitido = crear_token_service(llaves_rsa).emitir(USUARIO)
+
+    await caso.execute(emitido.access_token, None)
+
+    assert rev.sesiones_revocadas == set()
+    assert sesiones.familias == {}
+    assert emitido.jti in rev.revocados
+
+
+async def test_si_falla_la_familia_el_token_sigue_sirviendo_para_reintentar(
+    llaves_rsa: LlavesRsa, uow: FakeUnitOfWork
+) -> None:
+    # La familia va antes que el jti: al revés, el refresh quedaría vivo y el reintento daría 401.
+    caso, rev, sesiones = caso_con_sesiones(llaves_rsa, uow)
+    assert USUARIO.id is not None
+    await sesiones.crear(USUARIO.id, "familia-1", AHORA)
+    emitido = crear_token_service(llaves_rsa).emitir(USUARIO, sid="familia-1")
+    sesiones.caida_al_revocar = True
+
+    with pytest.raises(ServicioNoDisponibleError):
+        await caso.execute(emitido.access_token, None)
+    assert rev.revocados == {}
+
+    sesiones.caida_al_revocar = False
+    await caso.execute(emitido.access_token, None)
+    assert sesiones.revocada("familia-1") is True
 
 
 async def test_valkey_caido_falla_cerrado(llaves_rsa: LlavesRsa, uow: FakeUnitOfWork) -> None:

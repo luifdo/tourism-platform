@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "usuario.suprimido.v1.json",
+  "title": "usuario.suprimido (payload v1)",
+  "description": "Publicado por iam-service cuando un usuario ejerce su derecho de supresión (Ley 1581 de 2012, SRS §2.4.5): iam ya anonimizó la cuenta y borró sus documentos de verificación. Cada consumidor borra o anonimiza los datos personales de ese usuario que guarde en su propia base; los identificadores, las reservas y la bitácora se conservan. catalog-service borra razon_social, telefono y direccion de PRESTADOR_PERFIL. Si el usuario era un Prestador visible, iam publica además prestador.suspendido en la misma transacción, así que este evento no oculta servicios: solo borra datos. Llega una sola vez por usuario; repetirlo no debe cambiar nada.",
+  "type": "object",
+  "required": ["usuario_id", "rol"],
+  "properties": {
+    "usuario_id": { "type": "string", "format": "uuid" },
+    "rol": { "type": "string", "enum": ["Turista", "Prestador", "Entidad", "Admin"], "description": "Rol que tenía el usuario, para que cada consumidor sepa qué datos revisar." }
+  },
+  "additionalProperties": false
+}

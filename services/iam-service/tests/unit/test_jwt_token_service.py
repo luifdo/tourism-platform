@@ -219,3 +219,28 @@ def test_llaves_que_no_forman_par(llaves_rsa: LlavesRsa) -> None:
             ttl=timedelta(minutes=15),
             reloj=lambda: datetime.now(UTC),
         )
+
+
+def test_emite_y_devuelve_el_sid(token_service: JwtTokenService) -> None:
+    emitido = token_service.emitir(usuario(), sid="familia-1")
+
+    assert token_service.verificar(emitido.access_token).sid == "familia-1"
+
+
+def test_token_sin_sid(token_service: JwtTokenService) -> None:
+    emitido = token_service.emitir(usuario())
+
+    assert "sid" not in jwt.decode(emitido.access_token, options={"verify_signature": False})
+    assert token_service.verificar(emitido.access_token).sid is None
+
+
+def test_sid_que_no_es_cadena_invalida_el_token(
+    token_service: JwtTokenService, llaves_rsa: LlavesRsa
+) -> None:
+    claims = {**_claims_validos(token_service), "sid": 123}
+    token = jwt.encode(claims, llaves_rsa.private_pem, algorithm="RS256")
+
+    with pytest.raises(TokenInvalidoError) as exc_info:
+        token_service.verificar(token)
+
+    assert exc_info.value.motivo == "invalido"

@@ -24,6 +24,8 @@ class VerificarAcceso:
             usuario_id = uuid.UUID(claims.sub)
         except ValueError as exc:
             raise TokenInvalidoError(motivo="invalido") from exc
-        if await self._revocacion.esta_revocado_token(claims.jti, usuario_id, claims.iat):
+        if await self._revocacion.esta_revocado_token(
+            claims.jti, usuario_id, claims.iat, claims.sid
+        ):
             raise TokenInvalidoError(motivo="revocado", usuario_id=usuario_id)
         return claims

@@ -434,6 +434,89 @@ Después: login e `recuperar` se comportan como si la cuenta no existiera, el co
 
 Público. Devuelve las llaves públicas (`{"keys": [{"kty", "n", "e", "kid", "use": "sig", "alg": "RS256"}]}`) para que el Gateway y los demás servicios verifiquen los tokens. Responde `200` con `Cache-Control: public, max-age=300`.
 
+## Sesión y refresh token
+
+El access token dura 15 minutos. Cada renovación entrega otro y un refresh token nuevo con otros 7 días: la sesión solo vence tras 7 días sin uso (C-20, C-60).
+
+**Esta sección completa a las de login, logout y revocación por usuario:** el login agrega `refresh_token` y `refresh_expires_in` a su respuesta y envía `Cache-Control: no-store`; el access token lleva además el claim `sid`; el logout también revoca la sesión; `revocado-desde` vive 7 días + 10 s, y el `MGET` de `verificar` lee una tercera llave si el token trae `sid`.
+
+### Flujo
+
+1. `POST /api/iam/login` entrega `access_token` y `refresh_token`.
+2. Cuando el access token vence, la PWA llama a `POST /api/iam/auth/refresh` con el refresh token vigente.
+3. Guarda los dos tokens nuevos. El refresh anterior ya no sirve: **usarlo otra vez se trata como robo** y revoca la sesión. La PWA debe renovar una sola vez a la vez, también entre pestañas.
+4. Tras un 401 en el refresh, la PWA pide el login.
+
+### `POST /api/iam/auth/refresh`
+
+Pública: no lleva `Authorization`, porque el access token puede haber vencido.
+
+```json
+{ "refresh_token": "<token opaco>" }
+```
+
+`200 OK`, con `Cache-Control: no-store` y el mismo cuerpo que el login:
+
+```json
+{
+  "access_token": "<JWT RS256>",
+  "token_type": "bearer",
+  "expires_in": 900,
+  "usuario": { "id": "…", "email": "…", "nombre_completo": "…", "rol": "Turista", "email_verificado": false, "idioma": "es", "creado_en": "…" },
+  "refresh_token": "<token opaco nuevo>",
+  "refresh_expires_in": 604800
+}
+```
+
+| HTTP | `code` | Causa | Bitácora |
+|---|---|---|---|
+| 401 | `TOKEN_INVALIDO` | Desconocido o vencido | `ACCESS_DENIED`, motivo `invalido` |
+| 401 | `TOKEN_INVALIDO` | Sesión revocada, o cuenta inactiva, suprimida o inexistente | `ACCESS_DENIED`, motivo `revocado` |
+| 401 | `TOKEN_INVALIDO` | Ya rotado | `REFRESH_REUTILIZADO`, con la familia |
+| 422 | `VALIDACION` | Falta el token, o no tiene de 1 a 128 caracteres | — |
+| 503 | `SERVICIO_NO_DISPONIBLE` | Valkey no responde, o PostgreSQL falló después de rotar | — |
+
+Los tres 401 tienen el mismo cuerpo, con `WWW-Authenticate: Bearer`: la respuesta no revela la causa. Una renovación correcta no deja fila en la bitácora. Métrica: `iam_refresh_total{resultado=ok|invalido|revocado|reutilizado}`.
+
+### Qué termina la sesión
+
+| Acción | Refresh tokens | Access tokens |
+|---|---|---|
+| Logout | Los de esa sesión | Los de esa sesión |
+| Refresh reutilizado | Los de esa sesión | Los de esa sesión |
+| Cambio de rol, desactivación, cambio o restablecimiento de contraseña, supresión | Todos los del usuario | Todos los del usuario |
+
+Las otras sesiones del usuario siguen funcionando en las dos primeras filas.
+
+### Valkey
+
+| Llave | Contenido | TTL |
+|---|---|---|
+| `iam:refresh:<sha256>` | `familia`, `usuario_id`, `estado` (`vigente` o `rotado`) | 7 días desde su creación |
+| `iam:refresh-familia:<familia>` | `usuario_id`, `actual`, `revocada`, `renovado_en` | 7 días, se renueva en cada rotación |
+| `iam:sesion-revocada:<sid>` | `1` | 15 min + 10 s |
+
+El token en claro nunca se guarda. Rotar es atómico, con un script Lua: de dos peticiones con el mismo token, solo una gana y la sesión queda revocada. Requiere una instancia de Valkey sin Cluster y `--maxmemory-policy noeviction` (C-60).
+
+### Gateway
+
+La ruta debe ser **pública, sin ForwardAuth**, y con su propio límite, en su propia regla: es tráfico legítimo de una vez cada 15 minutos por usuario, y varios usuarios pueden salir por la misma IP (C-26).
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: iam-rate-limit-refresh, namespace: turismo-app }
+spec:
+  rateLimit: { average: 20, period: 1m, burst: 10 }
+---
+# En el IngressRoute de iam-service, con la misma prioridad que las demás rutas públicas.
+- match: Path(`/api/iam/auth/refresh`)
+  kind: Rule
+  priority: 100
+  middlewares: [{ name: quitar-identidad }, { name: iam-rate-limit-refresh }]
+  services: [{ name: iam-service, port: 8001 }]
+```
+
 ## Contrato OpenAPI
 
 [`contracts/openapi/iam.yaml`](../../contracts/openapi/iam.yaml) se genera desde la app, con las rutas públicas y protegidas, los esquemas y los errores de cada ruta (C-57):
@@ -620,7 +703,7 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **401 para token inválido y 403 `ROL_INSUFICIENTE` para rol insuficiente** (C-36).
 * **Revocación por `jti` y por usuario en Valkey, fallando cerrado** (C-21, C-22): con Valkey caído, `verificar` y las rutas protegidas responden 503.
 * **IP de origen solo desde proxies de confianza** (C-37).
-* **Tokens de acceso de 15 minutos, sin refresh token** (C-20).
+* **Tokens de acceso de 15 minutos, con refresh token opaco y rotado de 7 días** (C-20, C-60).
 * **Enumeración de cuentas en el registro** (C-24): el `409` revela si un correo existe; el login no.
 * **Bitácora inmutable y usuarios que se desactivan en lugar de borrarse** (C-01, C-03, C-27).
 * **Auditoría de los demás servicios en un worker aparte, idempotente en la base** (C-04, C-31): un `event_id` repetido no duplica la fila.

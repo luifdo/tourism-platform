@@ -76,8 +76,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '503':
-          description: 'Demasiadas peticiones calculando contraseñas (SERVICIO_OCUPADO). Incluye el encabezado
-            Retry-After: 2.'
+          description: 'Demasiadas peticiones calculando contraseñas (SERVICIO_OCUPADO, con Retry-After:
+            2) o Valkey no responde (SERVICIO_NO_DISPONIBLE).'
           content:
             application/json:
               schema:
@@ -112,6 +112,45 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
       security:
       - HTTPBearer: []
+  /api/iam/auth/refresh:
+    post:
+      tags:
+      - auth
+      summary: Refresh
+      description: 'Cambia el refresh token por uno nuevo y entrega otro access token (C-20).
+
+
+        Pública: el access token puede haber vencido. El token anterior deja de servir, y usarlo otra
+
+        vez revoca la sesión: el cliente debe renovar una sola vez a la vez.'
+      operationId: refresh_api_iam_auth_refresh_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: 'Refresh token inválido, vencido, revocado o ya usado (TOKEN_INVALIDO). Siempre
+            el mismo cuerpo. Incluye el encabezado WWW-Authenticate: Bearer.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Valkey o PostgreSQL no responden (SERVICIO_NO_DISPONIBLE).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422': *id001
   /api/iam/auth/verificar:
     get:
       tags:
@@ -1583,11 +1622,19 @@ components:
           title: Expires In
         usuario:
           $ref: '#/components/schemas/UsuarioPublicoResponse'
+        refresh_token:
+          type: string
+          title: Refresh Token
+        refresh_expires_in:
+          type: integer
+          title: Refresh Expires In
       type: object
       required:
       - access_token
       - expires_in
       - usuario
+      - refresh_token
+      - refresh_expires_in
       title: LoginResponse
     PaginaBitacoraResponse:
       properties:
@@ -1729,6 +1776,17 @@ components:
       required:
       - detail
       title: RecuperarResponse
+    RefreshRequest:
+      properties:
+        refresh_token:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Refresh Token
+      type: object
+      required:
+      - refresh_token
+      title: RefreshRequest
     RegistroRequest:
       properties:
         email:

@@ -5,7 +5,7 @@ from app.domain.value_objects.token import ClaimsToken, TokenEmitido
 
 
 class TokenService(Protocol):
-    def emitir(self, usuario: Usuario) -> TokenEmitido: ...
+    def emitir(self, usuario: Usuario, sid: str | None = None) -> TokenEmitido: ...
 
     def verificar(self, token: str) -> ClaimsToken:
         """Lanza TokenInvalidoError si la firma, el emisor, el algoritmo o la expiración fallan."""

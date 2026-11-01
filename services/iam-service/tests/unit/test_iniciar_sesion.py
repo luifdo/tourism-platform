@@ -9,10 +9,14 @@ from app.application.use_cases.iniciar_sesion import (
     IniciarSesionCommand,
 )
 from app.domain.entities.usuario import Usuario
-from app.domain.exceptions import CredencialesInvalidasError, CuentaInactivaError
+from app.domain.exceptions import (
+    CredencialesInvalidasError,
+    CuentaInactivaError,
+    ServicioNoDisponibleError,
+)
 from app.domain.value_objects.enums import ResultadoAuditoria, Rol
 from app.infrastructure.security.jwt_token_service import JwtTokenService
-from tests.fakes import AHORA, FakePasswordHasher, FakeUnitOfWork
+from tests.fakes import AHORA, FakePasswordHasher, FakeSesionesRenovacion, FakeUnitOfWork
 
 PASSWORD = "Tayrona2026"
 COMANDO = IniciarSesionCommand(
@@ -46,9 +50,17 @@ def sembrar(uow: FakeUnitOfWork, hasher: FakePasswordHasher, activo: bool = True
 
 
 def iniciar(
-    uow: FakeUnitOfWork, hasher: FakePasswordHasher, token_service: JwtTokenService
+    uow: FakeUnitOfWork,
+    hasher: FakePasswordHasher,
+    token_service: JwtTokenService,
+    sesiones: FakeSesionesRenovacion | None = None,
 ) -> IniciarSesion:
-    return IniciarSesion(uow=uow, hasher=hasher, tokens=token_service)
+    return IniciarSesion(
+        uow=uow,
+        hasher=hasher,
+        tokens=token_service,
+        sesiones=sesiones or FakeSesionesRenovacion(),
+    )
 
 
 class HasherQueCambiaLaCuenta(FakePasswordHasher):
@@ -73,7 +85,7 @@ async def test_login_emite_el_rol_vigente_si_cambio_durante_el_hash(
         uow.usuarios.por_email[existente.email] = replace(existente, rol=Rol.ENTIDAD)
 
     hasher.durante_el_hash = degradar
-    token, usuario = await iniciar(uow, hasher, token_service).execute(COMANDO)
+    token, usuario, _ = await iniciar(uow, hasher, token_service).execute(COMANDO)
 
     assert usuario.rol is Rol.ENTIDAD
     assert token_service.verificar(token.access_token).rol is Rol.ENTIDAD
@@ -119,7 +131,7 @@ async def test_login_exitoso(
 ) -> None:
     existente = sembrar(uow, hasher)
 
-    token, usuario = await iniciar(uow, hasher, token_service).execute(COMANDO)
+    token, usuario, _ = await iniciar(uow, hasher, token_service).execute(COMANDO)
 
     assert usuario.id == existente.id
     assert usuario.email_verificado is False  # no bloquea el login por ahora
@@ -133,6 +145,38 @@ async def test_login_exitoso(
     assert registro.ip_origen == "190.0.0.1"
     # Sin rehash: el hash guardado no cambia.
     assert uow.usuarios.por_email[existente.email].password_hash == existente.password_hash
+
+
+async def test_login_crea_la_familia_con_el_sid_y_el_iat_del_token(
+    uow: FakeUnitOfWork, hasher: FakePasswordHasher, token_service: JwtTokenService
+) -> None:
+    sembrar(uow, hasher)
+    sesiones = FakeSesionesRenovacion()
+
+    token, _, sesion = await iniciar(uow, hasher, token_service, sesiones).execute(COMANDO)
+
+    claims = token_service.verificar(token.access_token)
+    assert claims.sid == sesion.familia
+    # Con el iat, el access token y el refresh quedan del mismo lado de una marca (C-21).
+    assert sesiones.familias[sesion.familia]["renovado_en"] == int(claims.iat.timestamp())
+    assert sesiones.familias[sesion.familia]["actual"] == sesion.refresh_token
+
+
+async def test_login_con_valkey_caido_no_confirma_nada(
+    uow: FakeUnitOfWork, token_service: JwtTokenService
+) -> None:
+    # Con un rehash por aplicar: tampoco se confirma el hash nuevo.
+    sembrar(uow, FakePasswordHasher(version=1))
+    hasher_actual = FakePasswordHasher(version=2)
+
+    with pytest.raises(ServicioNoDisponibleError):
+        await iniciar(
+            uow, hasher_actual, token_service, FakeSesionesRenovacion(caida=True)
+        ).execute(COMANDO)
+
+    assert uow.commits == 0
+    assert uow.rollbacks == 2  # la lectura inicial y la transacción del login
+    assert uow.auditoria.registros == []
 
 
 async def test_password_incorrecta(

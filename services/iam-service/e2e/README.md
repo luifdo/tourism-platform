@@ -10,4 +10,4 @@ uv run python -m scripts.e2e_k3d --conservar     # no borra el clúster al termi
 uv run python -m scripts.e2e_k3d --solo-borrar   # borra lo que haya quedado
 ```
 
-Necesita Docker, `k3d` y `kubectl`, y los puertos 18080 (Traefik), 25433, 25673, 28025 y 28333 libres. El reporte queda en `docs/evidencias/e2e-k3d.txt`. Tarda unos 10 minutos, porque el rate limiting del login obliga a esperar entre escenarios.
+Necesita Docker, `k3d` y `kubectl`, y los puertos 18080 (Traefik), 25433, 25673, 28025 y 28333 libres. El reporte queda en `docs/evidencias/e2e-k3d.txt`. Tarda unos 12 minutos, porque el rate limiting del login obliga a esperar entre escenarios.

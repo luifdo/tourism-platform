@@ -1,0 +1,253 @@
+name: iam-service
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "services/iam-service/**"
+      # test_contrato_openapi y la prueba de prestador.suspendido leen de aquí.
+      - "contracts/**"
+      - ".github/workflows/iam-service.yml"
+  push:
+    branches: [develop]
+    paths:
+      - "services/iam-service/**"
+      - "contracts/**"
+      - ".github/workflows/iam-service.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: iam-service-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+env:
+  IMAGEN_LOCAL: iam-service:ci
+
+jobs:
+  calidad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: services/iam-service
+    env:
+      UV_FROZEN: "1"
+      DATABASE_URL: postgresql+asyncpg://iam_user:iam_password@localhost:5433/iam_db
+      DB_APP_ROLE: iam_user
+      VALKEY_URL: redis://localhost:6379/0
+      S3_ENDPOINT_URL: http://localhost:8333
+      S3_ENDPOINT_PUBLICO: http://localhost:8333
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: iam_db
+          POSTGRES_USER: iam_user
+          POSTGRES_PASSWORD: iam_password
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U iam_user -d iam_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv (misma versión que el Dockerfile)
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.1"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: services/iam-service/uv.lock
+
+      - name: Instalar dependencias
+        run: uv sync --frozen
+
+      - name: Ruff
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      # Con docker run: un service de GitHub Actions no admite el comando que esta imagen necesita.
+      - name: Levantar SeaweedFS
+        run: |
+          docker run -d --name seaweedfs -p 8333:8333 chrislusf/seaweedfs:3.80 \
+            server -dir=/data -ip.bind=0.0.0.0 -s3 -s3.port=8333
+          for _ in $(seq 1 30); do
+            if uv run python -m scripts.crear_bucket; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs seaweedfs
+          exit 1
+
+      - name: Migraciones
+        run: uv run alembic upgrade head
+
+      # RabbitMQ lo levanta testcontainers. Las llaves JWT las genera tests/conftest.py.
+      - name: Pruebas con cobertura
+        run: >-
+          uv run pytest -q -rs
+          --cov=app/domain
+          --cov=app/application
+          --cov-report=term
+          --cov-fail-under=70
+          --junitxml=reporte-pruebas.xml
+
+      - name: Exigir cero pruebas omitidas
+        if: ${{ !cancelled() }}
+        run: |
+          uv run python - <<'PY'
+          import os
+          import subprocess
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          reporte = Path("reporte-pruebas.xml")
+          if not reporte.is_file():
+              sys.exit("pytest no generó el reporte: no se puede comprobar qué se omitió.")
+
+          casos = list(ET.parse(reporte).getroot().iter("testcase"))
+          omitidas = [c for c in casos if c.find("skipped") is not None]
+          fallidas = [c for c in casos if c.find("failure") is not None or c.find("error") is not None]
+          cobertura = subprocess.run(
+              ["coverage", "report", "--format=total"], capture_output=True, text=True
+          ).stdout.strip()
+
+          lineas = [
+              "### iam-service: pruebas",
+              "",
+              f"- Ejecutadas: {len(casos)}",
+              f"- Fallidas: {len(fallidas)}",
+              f"- Omitidas: {len(omitidas)}",
+              f"- Cobertura de app/domain y app/application: {cobertura or 'sin dato'} %",
+              "",
+          ]
+          for caso in omitidas:
+              motivo = caso.find("skipped").get("message", "sin motivo")
+              lineas.append(f"- Omitida: `{caso.get('classname')}.{caso.get('name')}`: {motivo}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as resumen:
+              resumen.write("\n".join(lineas) + "\n")
+
+          if not casos:
+              sys.exit("El reporte no tiene pruebas.")
+          if omitidas:
+              # Una integración caída se omite sola: sin esto, el job pasaría en verde.
+              sys.exit(f"{len(omitidas)} pruebas omitidas: la regla es cero omisiones.")
+          PY
+
+  imagen:
+    needs: calidad
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Construir la imagen
+        uses: docker/build-push-action@v7
+        with:
+          context: services/iam-service
+          push: false
+          load: true
+          tags: ${{ env.IMAGEN_LOCAL }}
+          cache-from: type=gha,scope=iam-service
+          cache-to: type=gha,mode=max,scope=iam-service
+
+      - name: Escanear con Trivy
+        # Sin etiqueta mayor en este repositorio: se fija por el commit de la etiqueta.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGEN_LOCAL }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          # Guarda la base de vulnerabilidades con actions/cache, para no descargarla cada vez.
+          cache: "true"
+
+      - name: Resumen
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          {
+            echo "### iam-service: imagen"
+            echo ""
+            echo "Construida y escaneada (CRITICAL con parche disponible)."
+            echo ""
+            echo "\`newName\` propuesto para la kustomization, por acordar con Luis:" \
+              "\`ghcr.io/${OWNER,,}/iam-service\`."
+            echo "Hoy dice \`ghcr.io/turismo-santa-marta/iam-service\`, donde GITHUB_TOKEN no" \
+              "puede publicar."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publicar:
+    needs: imagen
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Entrar a GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calcular el nombre de la imagen
+        id: nombre
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "imagen=ghcr.io/${OWNER,,}/iam-service" >> "$GITHUB_OUTPUT"
+
+      # Reutiliza de la caché las capas que escaneó el job imagen.
+      - name: Publicar con la etiqueta del commit y develop
+        uses: docker/build-push-action@v7
+        with:
+          context: services/iam-service
+          push: true
+          tags: |
+            ${{ steps.nombre.outputs.imagen }}:${{ github.sha }}
+            ${{ steps.nombre.outputs.imagen }}:develop
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=iam-service
+
+      - name: Resumen
+        env:
+          IMAGEN: ${{ steps.nombre.outputs.imagen }}
+        run: |
+          {
+            echo "### iam-service: imagen publicada"
+            echo ""
+            echo "- \`${IMAGEN}:${GITHUB_SHA}\`"
+            echo "- \`${IMAGEN}:develop\`"
+          } >> "$GITHUB_STEP_SUMMARY"

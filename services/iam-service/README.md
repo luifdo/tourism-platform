@@ -506,6 +506,27 @@ uv run python -m scripts.exportar_openapi
 
 Una prueba falla si quedó desactualizado: después de cambiar una ruta, un esquema o un error, hay que volver a generarlo. `/internal`, `/health`, `/health/live` y `/metrics` no aparecen.
 
+## Integración continua
+
+[`.github/workflows/iam-service.yml`](../../.github/workflows/iam-service.yml) corre en cada PR a `develop` o `main` y en cada push a `develop` que toque este servicio, `contracts/` o el propio workflow. También se puede lanzar a mano; en ese caso no publica nada.
+
+| Job | Cuándo | Qué hace |
+|---|---|---|
+| `calidad` | Siempre | `ruff check`, `ruff format --check`, migraciones y toda la suite con cobertura de `app/domain` y `app/application` (mínimo 70 %) |
+| `imagen` | Si pasa `calidad` | Construye la imagen y la escanea con Trivy: falla con una vulnerabilidad `CRITICAL` que tenga parche |
+| `publicar` | Si pasa `imagen`, solo en push a `develop` | Publica en GHCR con dos etiquetas: el SHA completo del commit y `develop`. Nunca `latest` |
+
+* **Integración sin omisiones:** PostgreSQL 16 y Valkey 8 corren como services, SeaweedFS con `docker run` y RabbitMQ con testcontainers. Estas pruebas se omiten solas si su servicio no responde, así que **el job falla si queda cualquier prueba omitida**: una integración caída no pasa en verde. Una omisión legítima en el futuro también lo pondría en rojo, y habría que cambiar esa regla a propósito.
+* **Sin secretos nuevos:** las llaves JWT de las pruebas son temporales (`tests/conftest.py`) y la publicación usa `GITHUB_TOKEN`.
+* **Permisos por job:** solo `publicar` tiene `packages: write`. Por eso reconstruye desde la caché de capas (`type=gha`) en lugar de publicar el mismo artefacto escaneado (C-61).
+* **Trivy puede bloquear un PR que no lo causó:** una vulnerabilidad `CRITICAL` nueva con parche en la imagen base o en una dependencia. Se corrige actualizando esa base o dependencia. `trivy-action` va fijado por commit porque ese repositorio no tiene etiqueta mayor.
+
+### Por acordar con Luis Fernando
+
+* **Nombre de la imagen:** el workflow publica en `ghcr.io/<dueño del repositorio en minúsculas>/iam-service`, hoy `ghcr.io/luifdo/iam-service`, porque `GITHUB_TOKEN` no puede publicar en `ghcr.io/turismo-santa-marta`, que es lo que dicen `k8s/base/kustomization.yaml` y las de los demás servicios. **Cambiar el `newName` de la base exige cambiar también `k8s/overlays/local/kustomization.yaml` y `e2e/overlay/kustomization.yaml`**, que buscan la imagen por ese nombre.
+* **Visibilidad del paquete:** es privado por defecto. El clúster necesitaría un `imagePullSecret`, o hay que hacerlo público.
+* **Quién cambia la etiqueta en la kustomization al desplegar:** hoy dice `newTag: latest`, una etiqueta que este workflow nunca publica, y su comentario dice que la cambia CI. Este workflow no lo hace.
+
 ## Despliegue
 
 ### Imagen

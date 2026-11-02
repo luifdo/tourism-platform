@@ -669,6 +669,46 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - Los access tokens emitidos antes de este bloque no llevan `sid`: un logout solo revoca su `jti`, durante los 15 minutos que les quedan.
 - **Estado:** ✅ commit del bloque 9 (refresh token). Probado con integración `valkey`, incluida la carrera. ⏸ `e2e_k3d.py` escrito (escenario `l`), sin ejecutar. ⏸ `noeviction`, con Luis Fernando.
 
+### C-62 · Imagen sobre Alpine (musl) en lugar de Debian
+- **Referencia:** SRS Tabla XVI (Python 3.12); `docs/verificacion-fase4.md`, F-07.
+- **El documento fija:** Python 3.12. Ningún documento fija la distribución de la imagen base.
+- **Se hizo:**
+  - **Base:** `python:3.12-alpine` en las dos etapas del `Dockerfile`, en lugar de `python:3.12-slim` (Debian 13).
+  - **Dependencias:** uv instala los wheels musllinux del `uv.lock`; las 16 dependencias de producción compiladas tienen uno. El primer `uv sync` usa `--no-build`: si una dependencia pierde su wheel, el build falla ahí y no intenta compilar, porque la imagen no lleva compilador. No hizo falta ningún paquete de Alpine: `ca-certificates` y `tzdata` ya vienen en la base.
+  - **Sin cambios:** usuario y grupo 1000 (`addgroup` y `adduser` en lugar de `useradd`), sin `pip`, `ensurepip`, `idle`, `pydoc` ni `2to3`, `compileall` de la biblioteca estándar, `HEALTHCHECK` con `python`, el mismo `CMD` y la misma imagen para la API, el worker y las migraciones.
+  - **Kustomizations:** `k8s/base` publica como `ghcr.io/luifdo/iam-service` con `newTag: develop`, como catalog y review (`dc3f635`). Los overlays `local` y `e2e` buscan ese nombre para seguir usando sus imágenes locales.
+- **Medición** (2026-11-02, las dos imágenes con `docker build --pull` y la misma base de datos de `aquasec/trivy:0.69.3`):
+
+  | | Debian (`python:3.12-slim`, 13.7) | Alpine (`python:3.12-alpine`, 3.24.3) |
+  |---|---|---|
+  | Vulnerabilidades del sistema | 185 sin parche (45 altas, 71 medias, 61 bajas y 8 desconocidas) | 0 |
+  | Paquetes de Python con vulnerabilidades y secretos | 0 y 0 | 0 y 0 |
+  | Tamaño | 416 MB | 308 MB |
+  | Paquetes del sistema | 87 (dpkg) | 38 (apk) |
+  | Argon2 (t=3, m=65536, p=4; 20 hashes, `--cpus=1 --memory=1g`; dos tandas de dos rondas) | Mediana 187-192 ms | Mediana 188-193 ms |
+  | `verificar` (500 peticiones seguidas, mismo límite) | Mediana 2,39 y 2,48 ms; p95 3,44 y 3,68 ms | Mediana 2,57 y 2,70 ms; p95 3,26 y 4,16 ms |
+  | Memoria de la API, en reposo y tras la carga | 85-86 MiB y 88-89 MiB | 86 MiB y 89-90 MiB |
+
+  Las salidas completas están en `docs/evidencias/f07-trivy-debian.txt` y `f07-trivy-alpine.txt`, con el digest de cada base. Con Argon2 no hubo diferencia fuera del ruido: en la primera tanda Alpine fue un 1,5 % más rápido, en la segunda un 1-3 % más lento. Por eso el semáforo de 1 cupo y el tope de 10 s de C-53 siguen valiendo.
+- **Verificado con la imagen nueva:**
+  - **Restricciones de k8s:** `--read-only`, `/tmp` en tmpfs, usuario 1000:1000, sin capacidades y con `no-new-privileges`, en la red de `docker-compose.dev.yml` y con las llaves montadas en `/srv/keys`.
+  - **Resultados:** `smoke_test.py` completo (63 comprobaciones), `HEALTHCHECK` en `healthy`, el worker consumiendo `iam.auditoria` con sus métricas en `:9101` y `alembic upgrade head`, tanto sobre una base vacía (6 migraciones) como sobre la de desarrollo.
+  - **Kustomize:** `kubectl kustomize` sobre `base`, `local` y `e2e` da la imagen esperada en `migraciones`, `api` y `worker`.
+- **Por qué:** las 44 altas de F-07 venían de paquetes de Debian sin parche (util-linux, ncurses, systemd, perl y acl) que la app no usa. Alpine trae menos de la mitad de paquetes del sistema, y no hubo que dejar Python 3.12 ni compilar nada.
+- **Para qué:** que el escaneo de la imagen (el gate de Trivy del CI) refleje lo que el servicio usa, con una superficie menor y una imagen más liviana.
+- **Riesgos:**
+  - **El cero de Alpine no es comparable con Debian:** la base de seguridad de Alpine registra sobre todo vulnerabilidades que ya tienen parche, mientras que el rastreador de Debian también lista las que no lo tienen. Parte de la diferencia es que hay menos paquetes y parte, que se registra menos. No se puede afirmar que no haya vulnerabilidades.
+  - **Trivy no ve CPython** en ninguna de las dos imágenes: está compilado en `/usr/local`, no instalado como paquete. Sus vulnerabilidades se siguen con las versiones de la imagen oficial.
+  - **musl difiere de glibc:**
+    - **DNS:** consulta los servidores en paralelo y maneja `search` y `ndots` de otra forma. Con los nombres cortos de k8s (`iam-service.turismo-app.svc`) y `ndots:5`, la resolución puede necesitar más consultas o comportarse distinto si un servidor no responde.
+    - **`malloc`:** es más lento con muchos hilos y reservas pequeñas, lo que explica en parte los 0,2 ms de `verificar`.
+    - **Hilos:** la pila por defecto es mucho menor que en glibc.
+
+    Ninguna de estas diferencias se vio en el smoke ni en las mediciones, pero estas no sustituyen una prueba de carga.
+  - **El CI no prueba musl:** el job `calidad` corre las pruebas en glibc; la imagen solo se construye y se escanea. El recorrido en un clúster con la imagen Alpine es el e2e (`e2e_k3d.py`), todavía sin ejecutar con ella.
+  - **La base no está fijada por digest:** `python:3.12-alpine` cambia con cada versión de la imagen oficial, como antes `python:3.12-slim`.
+- **Estado:** ✅ commit de la imagen Alpine. ⏸ e2e con la imagen nueva.
+
 ---
 
 ## Pendiente de reflejar en los documentos del equipo

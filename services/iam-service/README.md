@@ -531,6 +531,30 @@ uv run python -m scripts.exportar_openapi
 
 Una prueba falla si quedó desactualizado: después de cambiar una ruta, un esquema o un error, hay que volver a generarlo. `/internal`, `/health`, `/health/live` y `/metrics` no aparecen.
 
+## Integración continua
+
+[`.github/workflows/iam-service.yml`](../../.github/workflows/iam-service.yml) corre en cada PR a `develop` o `main` y en cada push a `develop` que toque este servicio, `contracts/` o el propio workflow. También se puede lanzar a mano; en ese caso no publica nada.
+
+| Job | Cuándo | Qué hace |
+|---|---|---|
+| `calidad` | Siempre | `ruff check`, `ruff format --check`, migraciones y toda la suite con cobertura de `app/domain` y `app/application` (mínimo 70 %) |
+| `imagen` | Si pasa `calidad` | Construye la imagen y la escanea con Trivy: falla con una vulnerabilidad `CRITICAL` que tenga parche |
+| `publicar` | Si pasa `imagen`, solo en push a `develop` | Publica en GHCR con dos etiquetas: el SHA completo del commit y `develop`. Nunca `latest` |
+
+* **Integración sin omisiones:** PostgreSQL 16 y Valkey 8 corren como services, SeaweedFS con `docker run` y RabbitMQ con testcontainers. Estas pruebas se omiten solas si su servicio no responde, así que **el job falla si queda cualquier prueba omitida**: una integración caída no pasa en verde. Una omisión legítima en el futuro también lo pondría en rojo, y habría que cambiar esa regla a propósito.
+* **Sin secretos nuevos:** las llaves JWT de las pruebas son temporales (`tests/conftest.py`) y la publicación usa `GITHUB_TOKEN`.
+* **Permisos por job:** solo `publicar` tiene `packages: write`. Por eso reconstruye desde la caché de capas (`type=gha`) en lugar de publicar el mismo artefacto escaneado (C-61).
+* **Trivy puede bloquear un PR que no lo causó:** una vulnerabilidad `CRITICAL` nueva con parche en la imagen base o en una dependencia. Se corrige actualizando esa base o dependencia. `trivy-action` va fijado por commit porque ese repositorio no tiene etiqueta mayor.
+
+### Publicación y despliegue
+
+Decidido por Luis Fernando el 1 de noviembre (C-61):
+
+* **Nombre de la imagen:** `ghcr.io/luifdo/<servicio>`; para este, `ghcr.io/luifdo/iam-service`. Las kustomizations del IAM (`k8s/base`, `k8s/overlays/local` y `e2e/overlay`) toman ese nombre en el PR de la imagen Alpine (C-62), no en el de este workflow.
+* **Visibilidad del paquete:** pública. La cambia Luis Fernando después de la primera publicación, porque solo el dueño del repositorio puede hacerlo. La imagen no lleva secretos, que llegan por Secrets de Kubernetes, y Trivy la revisa en cada corrida.
+* **Despliegue:** lo hace Luis Fernando. El CI solo publica `<sha>` y `develop`, sin hacer commits, porque `develop` está protegida. Al desplegar, Luis fija el SHA con `kustomize edit set image` en un PR `deploy(iam-service): <sha>`; volver atrás es revertir ese commit. La etiqueta `develop` queda para pruebas rápidas.
+* **Plantilla:** Luis Fernando copiará este workflow a `templates/` como plantilla para los demás servicios.
+
 ## Despliegue
 
 ### Imagen

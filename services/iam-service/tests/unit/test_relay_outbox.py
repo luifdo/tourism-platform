@@ -1,8 +1,10 @@
 """Bucle del relay: espera creciente, lote lleno, métricas y limpieza diaria (C-09)."""
 
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
+import pytest
 from prometheus_client import REGISTRY
 
 from app.application.dto.estado_outbox import EstadoOutbox
@@ -40,7 +42,7 @@ class PublicadorNulo:
         pass
 
 
-def relay(outbox: OutboxFalso, lote: int = 2) -> RelayOutbox:
+def relay(outbox: OutboxFalso, lote: int = 2, retenidos: tuple[str, ...] = ()) -> RelayOutbox:
     def reloj() -> datetime:
         return AHORA
 
@@ -52,6 +54,7 @@ def relay(outbox: OutboxFalso, lote: int = 2) -> RelayOutbox:
         intervalo_segundos=1.0,
         espera_maxima_segundos=8.0,
         retencion=timedelta(days=7),
+        retenidos=retenidos,
     )
 
 
@@ -96,3 +99,37 @@ async def test_limpia_una_vez_al_dia() -> None:
     await r.una_vuelta(1.0)
 
     assert outbox.limpiezas == [AHORA - timedelta(days=7)]
+
+
+def retenidos(event_type: str) -> float | None:
+    return REGISTRY.get_sample_value("iam_outbox_retenidos", {"event_type": event_type})
+
+
+async def test_metrica_y_log_de_los_retenidos(caplog: pytest.LogCaptureFixture) -> None:
+    outbox = OutboxFalso([ResultadoLote(), ResultadoLote()])
+    outbox.pendientes = EstadoOutbox(
+        pendientes=0, mas_antiguo=None, retenidos={"usuario.suprimido": 3}
+    )
+    r = relay(outbox, retenidos=("usuario.suprimido", "prestador.aprobado"))
+
+    with caplog.at_level(logging.INFO):
+        await r.una_vuelta(1.0)
+        await r.una_vuelta(1.0)
+
+    assert retenidos("usuario.suprimido") == 3
+    # Un tipo configurado sin eventos se publica en 0, no se omite.
+    assert retenidos("prestador.aprobado") == 0
+    # La alerta de relay atascado (C-40) no los ve.
+    assert REGISTRY.get_sample_value("iam_outbox_pendientes") == 0
+    assert REGISTRY.get_sample_value("iam_outbox_antiguedad_segundos") == 0
+    lineas = [m for m in caplog.messages if "tipos retenidos" in m]
+    assert lineas == ["Outbox: tipos retenidos {'usuario.suprimido': 3, 'prestador.aprobado': 0}"]
+
+
+async def test_sin_retenidos_el_log_lo_dice(caplog: pytest.LogCaptureFixture) -> None:
+    r = relay(OutboxFalso([ResultadoLote()]))
+
+    with caplog.at_level(logging.INFO):
+        await r.una_vuelta(1.0)
+
+    assert "Outbox: tipos retenidos ninguno" in caplog.messages

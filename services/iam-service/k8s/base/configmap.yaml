@@ -31,3 +31,6 @@ data:
   # Base del enlace de recuperación (C-28). POR CONFIRMAR el dominio con Juan Francisco.
   PWA_URL: https://turismo-santamarta.gov.co
   WORKER_METRICS_PORT: "9101"
+  # El relay no publica usuario.suprimido (C-63): quitar cuando catalog esté desplegado con la cola
+  # catalog.prestadores (Luis Fernando).
+  OUTBOX_EVENTOS_RETENIDOS: usuario.suprimido

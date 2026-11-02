@@ -54,6 +54,7 @@ def construir_relay(
         intervalo_segundos=settings.outbox_intervalo_segundos,
         espera_maxima_segundos=settings.outbox_espera_maxima_segundos,
         retencion=timedelta(days=settings.outbox_retencion_dias),
+        retenidos=settings.outbox_eventos_retenidos,
     )
 
 
@@ -119,7 +120,8 @@ async def correr(settings: Settings) -> None:
     publicador = PublicadorRabbitMQ(
         settings.rabbitmq_url, settings.events_exchange, settings.rabbitmq_timeout_seconds
     )
-    relay = construir_relay(settings, SqlAlchemyOutboxPendiente(sesiones), publicador)
+    outbox = SqlAlchemyOutboxPendiente(sesiones, settings.outbox_eventos_retenidos)
+    relay = construir_relay(settings, outbox, publicador)
     consumidores = construir_consumidores(settings, sesiones)
     logger.info("Worker iniciado: relay del outbox hacia %s", settings.events_exchange)
     try:

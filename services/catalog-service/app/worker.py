@@ -5,7 +5,8 @@ Así la publicación de eventos y los consumidores no compiten con las peticione
 turistas, y los reinicios o el escalado de la API no los interrumpen.
 
 * Relay del outbox → `turismo.eventos`.
-* Consumidor `catalog.prestadores` (`prestador.aprobado`, `prestador.suspendido`).
+* Consumidor `catalog.prestadores` (`prestador.aprobado`, `prestador.suspendido`,
+  `usuario.suprimido`).
 * Consumidor `catalog.demanda` (`reserva.*` → proyección de reservas).
 * Consumidor `catalog.calificaciones` (`resena.publicada`, `resena.ocultada` → promedio).
 * Consumidor `catalog.disponibilidad` (`disponibilidad.actualizada` → cupos por día).
@@ -34,6 +35,7 @@ from app.application.use_cases.aplicar_prestador_aprobado import AplicarPrestado
 from app.application.use_cases.aplicar_prestador_suspendido import (
     AplicarPrestadorSuspendido,
 )
+from app.application.use_cases.aplicar_usuario_suprimido import AplicarUsuarioSuprimido
 from app.application.use_cases.limpiar_disponibilidad_pasada import LimpiarDisponibilidadPasada
 from app.application.use_cases.notificar_reserva import NotificarReserva
 from app.application.use_cases.publicar_eventos_pendientes import PublicarEventosPendientes
@@ -101,6 +103,7 @@ def construir_consumidores(
             ManejadorPrestadores(
                 AplicarPrestadorAprobado(uow, invalidador, reloj),
                 AplicarPrestadorSuspendido(uow, invalidador, reloj),
+                AplicarUsuarioSuprimido(uow),
             ),
         ),
         (

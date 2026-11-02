@@ -1,0 +1,108 @@
+# Plan §7.4: por defecto se niega la entrada en turismo-app y turismo-datos. La salida no se
+# restringe. En turismo-app cada servicio trae su propia NetworkPolicy con lo que deja entrar.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: negar-entrada
+  namespace: turismo-app
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: negar-entrada
+  namespace: turismo-datos
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+# PostgreSQL: los servicios, el operador y las propias instancias (también las de una restauración).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres
+  namespace: turismo-datos
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: cnpg.io/cluster, operator: Exists }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: turismo-app }
+      ports: [{ port: 5432 }]
+    - from: # el operador consulta el estado de cada instancia
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: cnpg-system }
+    - from: # entre instancias y con sus Jobs
+        - podSelector:
+            matchExpressions:
+              - { key: cnpg.io/cluster, operator: Exists }
+    - from: # Prometheus lee las métricas del exportador
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 9187 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq
+  namespace: turismo-datos
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: rabbitmq }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: turismo-app }
+      ports: [{ port: 5672 }]
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 15692 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: valkey
+  namespace: turismo-datos
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: valkey }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: turismo-app }
+      ports: [{ port: 6379 }]
+---
+# SeaweedFS: los servicios, Traefik (el navegador llega por las URL firmadas), los respaldos de
+# PostgreSQL y el Job que crea los buckets, que también usa los puertos internos.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: seaweedfs
+  namespace: turismo-datos
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: seaweedfs }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: turismo-app }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: traefik }
+      ports: [{ port: 8333 }]
+    - from:
+        - podSelector: {}

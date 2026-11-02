@@ -18,6 +18,7 @@ from valkey.asyncio import Valkey
 from app.application.dto.resultado_consumo import ResultadoConsumo
 from app.application.use_cases.aplicar_prestador_aprobado import AplicarPrestadorAprobado
 from app.application.use_cases.aplicar_prestador_suspendido import AplicarPrestadorSuspendido
+from app.application.use_cases.aplicar_usuario_suprimido import AplicarUsuarioSuprimido
 from app.domain.entities.atractivo_servicio import AtractivoServicio, DatosServicio
 from app.domain.entities.prestador_perfil import PrestadorPerfil
 from app.domain.value_objects.atributos.atributos_servicio import AtributosServicio
@@ -67,7 +68,9 @@ def manejador_real(sesiones: Sesiones, valkey: Valkey) -> ManejadorPrestadores:
 
     cache, reloj = CacheVersionada(valkey), RelojSistema()
     return ManejadorPrestadores(
-        AplicarPrestadorAprobado(uow, cache, reloj), AplicarPrestadorSuspendido(uow, cache, reloj)
+        AplicarPrestadorAprobado(uow, cache, reloj),
+        AplicarPrestadorSuspendido(uow, cache, reloj),
+        AplicarUsuarioSuprimido(uow),
     )
 
 
@@ -173,6 +176,52 @@ async def test_suspendido_apaga_los_servicios_publica_e_invalida_la_cache(
     assert publicado["payload"]["activo"] is False
     assert publicado["correlation_id"] == "corr-iam"  # la correlación sigue de iam a booking
     assert int(await valkey.get(CLAVE_GENERACION) or 0) == generacion + 1
+
+
+async def test_suprimido_borra_los_datos_y_un_aprobado_viejo_no_los_devuelve(
+    sesiones: Sesiones, valkey: Valkey, bus: Any, consumir: Any
+) -> None:
+    p = PrestadorPerfil.aprobar(uuid4(), uuid4(), "Minca Viva")
+    p.editar(p.version, "3001234567", "Minca", None)
+    async with SqlUnidadDeTrabajo(sesiones) as uow:
+        await uow.prestadores.guardar(p)
+        await uow.confirmar()
+
+    await consumir(CLAVES, manejador_real(sesiones, valkey))
+    await bus.publicar(
+        sobre(
+            "usuario.suprimido",
+            {"usuario_id": str(p.usuario_id), "rol": "Prestador"},
+            occurred_at=(AHORA + timedelta(hours=1)).isoformat(),
+        )
+    )
+
+    async def borrado() -> bool:
+        return (await perfil(sesiones, p.id)).razon_social is None
+
+    await esperar(borrado)
+    await bus.publicar(aprobado(p.id, p.usuario_id))
+
+    async def procesados() -> bool:
+        return await contar(sesiones, "SELECT count(*) FROM evento_procesado") == 2
+
+    await esperar(procesados)
+    fila = await perfil(sesiones, p.id)
+    assert (fila.razon_social, fila.telefono, fila.direccion) == (None, None, None)
+    assert fila.activo and fila.estado_iam_en == AHORA + timedelta(hours=1)
+
+
+async def test_suprimido_de_quien_no_tiene_perfil_se_ignora(
+    sesiones: Sesiones, valkey: Valkey, bus: Any, consumir: Any
+) -> None:
+    await consumir(CLAVES, manejador_real(sesiones, valkey))
+    await bus.publicar(sobre("usuario.suprimido", {"usuario_id": str(uuid4()), "rol": "Turista"}))
+
+    async def procesado() -> bool:
+        return await contar(sesiones, "SELECT count(*) FROM evento_procesado") == 1
+
+    await esperar(procesado)
+    assert await contar(sesiones, "SELECT count(*) FROM prestador_perfil") == 0
 
 
 async def test_fallo_transitorio_se_reintenta_y_se_aplica(

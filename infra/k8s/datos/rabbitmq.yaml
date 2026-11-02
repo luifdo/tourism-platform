@@ -1,0 +1,84 @@
+# Bus de eventos (ADR-008). StatefulSet con volumen: las colas durables sobreviven a un reinicio y
+# el nombre del nodo no cambia. Los servicios declaran sus colas al arrancar.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: turismo-datos
+  labels:
+    app.kubernetes.io/name: rabbitmq
+spec:
+  serviceName: rabbitmq
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rabbitmq
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15692"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext:
+        # Con el usuario de RabbitMQ: un `exec` como root crearía una cookie que el servidor no lee.
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        # Sin esto, cada montaje deja .erlang.cookie legible por el grupo y Erlang no arranca: el
+        # broker no sobreviviría a su primer reinicio.
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4-management
+          envFrom:
+            - secretRef: { name: rabbitmq-credenciales } # RABBITMQ_DEFAULT_USER y _PASS
+          env:
+            # Sin esto Erlang hace espera activa y gasta CPU sin trabajo.
+            - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
+              value: "+sbwt none +sbwtdcpu none +sbwtdio none"
+          ports:
+            - { name: amqp, containerPort: 5672 }
+            - { name: gestion, containerPort: 15672 }
+            - { name: metricas, containerPort: 15692 }
+          # Por puerto y no con rabbitmq-diagnostics: ese comando arranca una VM de Erlang en cada
+          # sonda y, con el nodo cargado, se pasa del tiempo y hace reiniciar al broker.
+          startupProbe:
+            tcpSocket: { port: amqp }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket: { port: amqp }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: amqp }
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          volumeMounts:
+            - { name: datos, mountPath: /var/lib/rabbitmq }
+  volumeClaimTemplates:
+    - metadata:
+        name: datos
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 5Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: turismo-datos
+  labels:
+    app.kubernetes.io/name: rabbitmq
+spec:
+  selector:
+    app.kubernetes.io/name: rabbitmq
+  ports:
+    - { name: amqp, port: 5672 }
+    - { name: gestion, port: 15672 }

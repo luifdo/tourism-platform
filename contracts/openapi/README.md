@@ -4,7 +4,7 @@ Un archivo por servicio, escrito por su responsable **antes** de implementar los
 
 | Archivo | Servicio | Responsable |
 |---|---|---|
-| `iam.yaml` | iam-service | @nievesita |
+| `iam.yaml` | iam-service (OpenAPI 3.1, generado desde la app con `scripts/exportar_openapi.py`; una prueba falla si queda desactualizado) | @nievesita |
 | `catalog.yaml` | catalog-service (incluye analítica, alertas y reportes) | @luifdo |
 | `booking.yaml` | booking-service | @AFGamero |
 | `review.yaml` | review-service | @luifdo |

@@ -16,7 +16,7 @@ resources:
   - ../../base
 
 images:
-  - name: ghcr.io/turismo-santa-marta/catalog-service # nombre que deja la base
+  - name: ghcr.io/luifdo/catalog-service # nombre que deja la base
     newName: catalog-service
     newTag: local # la imagen construida en tu Docker; con una etiqueta fija no se descarga
 

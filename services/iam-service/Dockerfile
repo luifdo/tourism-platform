@@ -1,5 +1,7 @@
 # ---------- Etapa 1: instalar dependencias con uv ----------
-FROM python:3.12-slim AS builder
+# Alpine (musl) y no Debian: la base trae muchos menos paquetes del sistema y, con ellos, menos
+# vulnerabilidades sin parche (F-07, C-62). uv instala los wheels musllinux del uv.lock.
+FROM python:3.12-alpine AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /bin/uv
 
@@ -11,21 +13,24 @@ WORKDIR /build
 
 # Primero solo las dependencias, para que esta capa se reutilice mientras no cambie el lockfile.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+# --no-build: si una dependencia no tiene wheel para musl, el build falla aquí en lugar de
+# intentar compilarla (la imagen no lleva compilador).
+RUN uv sync --frozen --no-dev --no-install-project --no-build
 
 COPY README.md ./
 COPY app ./app
 RUN uv sync --frozen --no-dev --no-editable
 
 # ---------- Etapa 2: imagen de ejecución ----------
-FROM python:3.12-slim AS runtime
+FROM python:3.12-alpine AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
     FORWARDED_ALLOW_IPS=127.0.0.1
 
-RUN useradd --create-home --uid 1000 iam
+# UID y GID 1000: k8s/base fija runAsUser, runAsGroup y fsGroup en 1000.
+RUN addgroup -g 1000 iam && adduser -D -u 1000 -G iam -s /sbin/nologin iam
 
 # Nada de esto se usa al ejecutar: la app corre desde /opt/venv, que no trae pip, y nadie instala
 # paquetes dentro del contenedor. Quitarlo también quita sus vulnerabilidades del escaneo.

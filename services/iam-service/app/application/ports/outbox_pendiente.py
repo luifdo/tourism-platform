@@ -16,7 +16,8 @@ class OutboxPendiente(Protocol):
         publicar: Callable[[EventoPendiente], Awaitable[None]],
         ahora: datetime,
     ) -> ResultadoLote:
-        """Toma hasta `limite` eventos pendientes, en orden de creación, sin que otro relay
+        """Toma hasta `limite` eventos pendientes, en orden de creación, sin los de tipos
+        retenidos (C-63) y sin que otro relay
         pueda tomar los mismos (`FOR UPDATE SKIP LOCKED`); llama `publicar` con cada uno y
         marca `publicado_en` a los confirmados, en la misma transacción.
 
@@ -25,7 +26,9 @@ class OutboxPendiente(Protocol):
         """
         ...
 
-    async def estado(self) -> EstadoOutbox: ...
+    async def estado(self) -> EstadoOutbox:
+        """Pendientes publicables y, por tipo, los retenidos que siguen sin publicar."""
+        ...
 
     async def limpiar_publicados(self, antes_de: datetime) -> int:
         """Borra los eventos ya publicados antes de esa fecha; devuelve cuántos."""

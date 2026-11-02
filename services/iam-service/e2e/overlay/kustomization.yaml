@@ -13,7 +13,7 @@ resources:
   - gateway.yaml
 
 images:
-  - name: ghcr.io/turismo-santa-marta/iam-service
+  - name: ghcr.io/luifdo/iam-service
     newName: iam-service
     newTag: e2e
 

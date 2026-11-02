@@ -6,9 +6,10 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.application.dto.evento_pendiente import EventoPendiente
 from app.application.use_cases.cambiar_estado_usuario import (
@@ -17,7 +18,9 @@ from app.application.use_cases.cambiar_estado_usuario import (
 )
 from app.config import get_settings
 from app.domain.entities.usuario import Usuario
+from app.domain.events.evento_dominio import EventoDominio
 from app.domain.events.prestador_suspendido import PrestadorSuspendido
+from app.domain.events.usuario_suprimido import UsuarioSuprimido
 from app.domain.exceptions import ServicioNoDisponibleError
 from app.domain.value_objects.enums import Rol
 from app.infrastructure.persistence.database import build_engine, build_session_factory
@@ -59,7 +62,15 @@ def suspension(minutos: int = 0) -> PrestadorSuspendido:
     )
 
 
-async def agregar(session_factory: Sesiones, *eventos: PrestadorSuspendido) -> None:
+def supresion(minutos: int = 0) -> UsuarioSuprimido:
+    return UsuarioSuprimido(
+        ocurrido_en=datetime(2026, 10, 30, 10, minutos, tzinfo=UTC),
+        usuario_id=uuid.uuid4(),
+        rol=Rol.PRESTADOR,
+    )
+
+
+async def agregar(session_factory: Sesiones, *eventos: EventoDominio) -> None:
     async with session_factory() as session:
         for evento in eventos:
             await SqlAlchemyOutbox(session).agregar(evento)
@@ -233,3 +244,94 @@ async def test_dos_relays_no_toman_el_mismo_evento(engine: AsyncEngine) -> None:
                     Outbox.sobre["payload"]["usuario_id"].astext == str(evento.usuario_id)
                 )
             )
+
+
+# ---------- Retención (C-63) ----------
+
+RETENIDOS = ["usuario.suprimido"]
+
+
+def usuario_de(evento: EventoPendiente) -> str:
+    return evento.sobre["payload"]["usuario_id"]
+
+
+@pytest.mark.usefixtures("sin_pendientes_ajenos")
+async def test_los_retenidos_no_ocupan_el_lote_aunque_sean_los_mas_antiguos(
+    session_factory: Sesiones,
+) -> None:
+    retenido, detras = supresion(0), suspension(1)
+    await agregar(session_factory, retenido, detras)
+    recibidos: list[EventoPendiente] = []
+
+    async def publicar(evento: EventoPendiente) -> None:
+        recibidos.append(evento)
+
+    outbox = SqlAlchemyOutboxPendiente(session_factory, RETENIDOS)
+    # Lote de 1: si el retenido lo ocupara, el de detrás nunca saldría.
+    resultado = await outbox.procesar_lote(1, publicar, datetime.now(UTC))
+    otra_vuelta = await outbox.procesar_lote(10, publicar, datetime.now(UTC))
+
+    assert resultado.publicados == ("prestador.suspendido",)
+    assert otra_vuelta.publicados == ()
+    assert [usuario_de(e) for e in recibidos] == [str(detras.usuario_id)]
+    async with session_factory() as session:
+        fila = await session.scalar(
+            select(Outbox).where(
+                Outbox.sobre["payload"]["usuario_id"].astext == str(retenido.usuario_id)
+            )
+        )
+    assert fila is not None
+    assert (fila.publicado_en, fila.intentos) == (None, 0)
+
+
+@pytest.mark.usefixtures("sin_pendientes_ajenos")
+async def test_estado_no_cuenta_los_retenidos(session_factory: Sesiones) -> None:
+    await agregar(session_factory, supresion(0), suspension(5))
+
+    con_retencion = await SqlAlchemyOutboxPendiente(session_factory, RETENIDOS).estado()
+    sin_retencion = await SqlAlchemyOutboxPendiente(session_factory, []).estado()
+
+    # La alerta de relay atascado (C-40) no debe dispararse por una supresión retenida.
+    assert (con_retencion.pendientes, con_retencion.mas_antiguo) == (1, suspension(5).ocurrido_en)
+    assert con_retencion.retenidos == {"usuario.suprimido": 1}
+    assert (sin_retencion.pendientes, sin_retencion.mas_antiguo) == (2, supresion(0).ocurrido_en)
+    assert sin_retencion.retenidos == {}
+
+
+@pytest.mark.usefixtures("sin_pendientes_ajenos")
+async def test_con_la_lista_vacia_salen_en_orden_de_creado_en(session_factory: Sesiones) -> None:
+    primero, segundo, tercero = supresion(0), suspension(1), supresion(2)
+    # Se agregan desordenados: el orden de salida es el de creado_en, no el de inserción.
+    await agregar(session_factory, tercero, primero, segundo)
+    recibidos: list[EventoPendiente] = []
+
+    async def publicar(evento: EventoPendiente) -> None:
+        recibidos.append(evento)
+
+    resultado = await SqlAlchemyOutboxPendiente(session_factory, []).procesar_lote(
+        10, publicar, datetime.now(UTC)
+    )
+
+    assert [usuario_de(e) for e in recibidos] == [
+        str(primero.usuario_id),
+        str(segundo.usuario_id),
+        str(tercero.usuario_id),
+    ]
+    assert resultado.publicados == (
+        "usuario.suprimido",
+        "prestador.suspendido",
+        "usuario.suprimido",
+    )
+
+
+async def test_la_busqueda_del_lote_sigue_usando_el_indice_parcial(
+    connection: AsyncConnection,
+) -> None:
+    # Sin secuencial, el planificador muestra si el índice le sirve a esta consulta.
+    await connection.execute(text("SET LOCAL enable_seqscan = off"))
+    consulta = SqlAlchemyOutboxPendiente(None, RETENIDOS).consulta_lote(100)  # type: ignore[arg-type]
+    sql = consulta.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+
+    plan = "\n".join(fila[0] for fila in await connection.execute(text(f"EXPLAIN {sql}")))
+
+    assert "ix_outbox_pendientes" in plan, plan

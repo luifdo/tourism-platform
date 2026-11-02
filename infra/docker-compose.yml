@@ -24,6 +24,7 @@ x-iam-entorno: &iam-entorno
   SMTP_HOST: mailpit
   SMTP_PORT: "1025"
   PWA_URL: http://localhost:5173
+  OUTBOX_EVENTOS_RETENIDOS: usuario.suprimido # quitar cuando catalog esté desplegado con la cola catalog.prestadores (Luis Fernando)
 
 # Variables comunes de catalog-service (API, worker y migraciones). Los hosts son los nombres
 # de los contenedores de este archivo; las credenciales salen de infra/.env.

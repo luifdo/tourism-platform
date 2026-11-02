@@ -12,6 +12,8 @@ from jsonschema import Draft202012Validator
 from app.domain.events.evento_dominio import EventoDominio
 from app.domain.events.prestador_aprobado import PrestadorAprobado
 from app.domain.events.prestador_suspendido import PrestadorSuspendido
+from app.domain.events.usuario_suprimido import UsuarioSuprimido
+from app.domain.value_objects.enums import Rol
 from app.infrastructure.observabilidad.contexto_correlacion import fijar_correlation_id
 from app.infrastructure.persistence.models import Outbox
 from app.infrastructure.persistence.outbox_repository import SqlAlchemyOutbox
@@ -111,3 +113,32 @@ async def test_prestador_aprobado_cumple_el_contrato(razon_social: str | None) -
     assert sobre["payload"]["prestador_id"] == sobre["payload"]["usuario_id"]  # C-08
     # razon_social es opcional en el contrato: se omite si no se conoce (C-07).
     assert sobre["payload"].get("razon_social") == razon_social
+
+
+@pytest.mark.parametrize("rol", list(Rol), ids=[r.value for r in Rol])
+async def test_usuario_suprimido_cumple_el_contrato(rol: Rol) -> None:
+    fijar_correlation_id("corr-supresion")
+    evento = UsuarioSuprimido(ocurrido_en=AHORA, usuario_id=uuid.uuid4(), rol=rol)
+
+    fila = await guardar(evento)
+
+    sobre = fila.sobre
+    validador("envelope.v1.json").validate(sobre)
+    validador("usuario.suprimido.v1.json").validate(sobre["payload"])
+    assert (sobre["event_type"], sobre["version"], sobre["producer"]) == (
+        "usuario.suprimido",
+        1,
+        "iam-service",
+    )
+    assert datetime.fromisoformat(sobre["occurred_at"]) == AHORA
+    # additionalProperties false: exactamente estas dos claves.
+    assert sobre["payload"] == {"usuario_id": str(evento.usuario_id), "rol": rol.value}
+    assert (fila.event_type, fila.creado_en) == ("usuario.suprimido", AHORA)
+
+
+def test_el_validador_de_usuario_suprimido_rechaza_claves_de_mas() -> None:
+    extra = {"usuario_id": str(uuid.uuid4()), "rol": "Turista", "email": "x@example.com"}
+
+    errores = list(validador("usuario.suprimido.v1.json").iter_errors(extra))
+
+    assert {e.validator for e in errores} == {"additionalProperties"}

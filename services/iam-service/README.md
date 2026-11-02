@@ -52,6 +52,9 @@ Métricas en `http://localhost:9101/metrics` (`WORKER_METRICS_PORT`), que tambi�
 
 * `iam_eventos_consumidos_total{cola, event_type, resultado}`, con `resultado` igual a `aplicado`, `duplicado`, `reintento` o `dlq`.
 * `iam_eventos_publicados_total{event_type}`, `iam_eventos_fallos_publicacion_total`, `iam_outbox_pendientes` e `iam_outbox_antiguedad_segundos`.
+* `iam_outbox_retenidos{event_type}`: eventos que el relay no publica porque su tipo está en `OUTBOX_EVENTOS_RETENIDOS`. No cuentan en `iam_outbox_pendientes` ni en la antigüedad, así que no disparan la alerta de relay atascado.
+
+**Retención (C-63):** `OUTBOX_EVENTOS_RETENIDOS` es la lista de tipos que el relay no publica, separados por comas. Por defecto, y en el ConfigMap, `.env.example` y el compose del monorepo, es `usuario.suprimido`: se retiene hasta que catalog esté desplegado con la cola `catalog.prestadores`. Vacía, no retiene nada. Un tipo que el IAM no publica impide arrancar, para que un error de tipeo no libere nada. Los retenidos quedan en el outbox sin `publicado_en` y nunca se borran. Al arrancar, el worker deja en el log los tipos retenidos y cuántos hay de cada uno. **Para liberarlos:** quitar el tipo de la variable y reiniciar el worker; salen en el orden en que se crearon. Antes, la cola de catalog debe existir: si no, el broker los descarta y se pierden.
 
 ## Integración con otros módulos
 
@@ -64,13 +67,14 @@ Estado comprobado el 2026-10-30 con `infra/docker-compose.yml` (arranque desde v
 | `X-Correlation-ID` al pedir el contacto | catalog | Cruzar el log con el evento (C-15) | ✅ |
 | Cola `catalog.prestadores` | catalog | Recibir `prestador.aprobado` y `prestador.suspendido` | ✅ |
 | Rutas, ForwardAuth y borrado de `X-Usuario-*` | Traefik (Juan Francisco) | ForwardAuth y borrado de identidad (C-13) | ⏳ `gateway/config` no existe; sin él no hay acceso desde fuera del clúster |
-| Borrar el perfil en `catalog_db` al suprimir datos | catalog | Ley 1581 (C-27) | ⏳ falta acordar el evento |
+| Borrar el perfil en `catalog_db` al suprimir datos | catalog | Ley 1581 (C-27) | ✅ catalog consume `usuario.suprimido` en `catalog.prestadores` (`6076a78`); ⏳ el IAM lo retiene hasta que catalog esté desplegado con esa cola (C-63) |
 | Rol, bucket, identidad S3 y llaves JWT en local | `infra/` | Levantar el servicio | ✅ ver "Con el compose del monorepo" |
 | Lo mismo en k3s | `infra/k8s/` | Desplegar | ⏳ `infra/k8s/` no existe |
 
 | Ofrece | A | Estado |
 |---|---|---|
 | `prestador.aprobado` y `prestador.suspendido` | catalog | ✅ incluida la rehabilitación |
+| `usuario.suprimido` | catalog | ✅ se guarda en el outbox con cada supresión; ⏳ retenido hasta el despliegue de catalog (C-63) |
 | `GET /internal/usuarios/{id}/contacto` | worker de catalog | ✅ los correos llegan a Mailpit |
 | `GET /api/iam/auth/verificar` | Traefik | ✅ devuelve la identidad; ⏳ falta conectarlo a Traefik |
 
@@ -526,6 +530,30 @@ uv run python -m scripts.exportar_openapi
 ```
 
 Una prueba falla si quedó desactualizado: después de cambiar una ruta, un esquema o un error, hay que volver a generarlo. `/internal`, `/health`, `/health/live` y `/metrics` no aparecen.
+
+## Integración continua
+
+[`.github/workflows/iam-service.yml`](../../.github/workflows/iam-service.yml) corre en cada PR a `develop` o `main` y en cada push a `develop` que toque este servicio, `contracts/` o el propio workflow. También se puede lanzar a mano; en ese caso no publica nada.
+
+| Job | Cuándo | Qué hace |
+|---|---|---|
+| `calidad` | Siempre | `ruff check`, `ruff format --check`, migraciones y toda la suite con cobertura de `app/domain` y `app/application` (mínimo 70 %) |
+| `imagen` | Si pasa `calidad` | Construye la imagen y la escanea con Trivy: falla con una vulnerabilidad `CRITICAL` que tenga parche |
+| `publicar` | Si pasa `imagen`, solo en push a `develop` | Publica en GHCR con dos etiquetas: el SHA completo del commit y `develop`. Nunca `latest` |
+
+* **Integración sin omisiones:** PostgreSQL 16 y Valkey 8 corren como services, SeaweedFS con `docker run` y RabbitMQ con testcontainers. Estas pruebas se omiten solas si su servicio no responde, así que **el job falla si queda cualquier prueba omitida**: una integración caída no pasa en verde. Una omisión legítima en el futuro también lo pondría en rojo, y habría que cambiar esa regla a propósito.
+* **Sin secretos nuevos:** las llaves JWT de las pruebas son temporales (`tests/conftest.py`) y la publicación usa `GITHUB_TOKEN`.
+* **Permisos por job:** solo `publicar` tiene `packages: write`. Por eso reconstruye desde la caché de capas (`type=gha`) en lugar de publicar el mismo artefacto escaneado (C-61).
+* **Trivy puede bloquear un PR que no lo causó:** una vulnerabilidad `CRITICAL` nueva con parche en la imagen base o en una dependencia. Se corrige actualizando esa base o dependencia. `trivy-action` va fijado por commit porque ese repositorio no tiene etiqueta mayor.
+
+### Publicación y despliegue
+
+Decidido por Luis Fernando el 1 de noviembre (C-61):
+
+* **Nombre de la imagen:** `ghcr.io/luifdo/<servicio>`; para este, `ghcr.io/luifdo/iam-service`. Las kustomizations del IAM (`k8s/base`, `k8s/overlays/local` y `e2e/overlay`) toman ese nombre en el PR de la imagen Alpine (C-62), no en el de este workflow.
+* **Visibilidad del paquete:** pública. La cambia Luis Fernando después de la primera publicación, porque solo el dueño del repositorio puede hacerlo. La imagen no lleva secretos, que llegan por Secrets de Kubernetes, y Trivy la revisa en cada corrida.
+* **Despliegue:** lo hace Luis Fernando. El CI solo publica `<sha>` y `develop`, sin hacer commits, porque `develop` está protegida. Al desplegar, Luis fija el SHA con `kustomize edit set image` en un PR `deploy(iam-service): <sha>`; volver atrás es revertir ese commit. La etiqueta `develop` queda para pruebas rápidas.
+* **Plantilla:** Luis Fernando copiará este workflow a `templates/` como plantilla para los demás servicios.
 
 ## Despliegue
 

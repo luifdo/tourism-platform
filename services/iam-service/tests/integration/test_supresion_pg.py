@@ -207,3 +207,62 @@ async def test_la_version_empieza_en_1_y_sube_con_cada_edicion(session_factory: 
         modelo = await session.get(UsuarioModel, u.id)
     assert modelo is not None
     assert modelo.version == 2
+
+
+async def eventos_de(session_factory: Sesiones, usuario_id: uuid.UUID) -> dict[str, Outbox]:
+    async with session_factory() as session:
+        filas = (
+            await session.scalars(
+                select(Outbox).where(
+                    Outbox.sobre["payload"]["usuario_id"].astext == str(usuario_id)
+                )
+            )
+        ).all()
+    return {fila.event_type: fila for fila in filas}
+
+
+async def test_usuario_suprimido_queda_en_el_outbox_sin_publicar(
+    session_factory: Sesiones,
+) -> None:
+    u = await sembrar(session_factory)
+    assert u.id is not None
+
+    await suprimir(session_factory).execute(
+        SuprimirDatosCommand(usuario_id=u.id, password=CLAVE, ip_origen=None)
+    )
+
+    eventos = await eventos_de(session_factory, u.id)
+    assert set(eventos) == {"prestador.suspendido", "usuario.suprimido"}
+    supresion = eventos["usuario.suprimido"]
+    assert supresion.publicado_en is None
+    assert supresion.sobre["payload"] == {"usuario_id": str(u.id), "rol": "Prestador"}
+    # El mismo instante que la suspensión (catalog compara con <).
+    assert supresion.creado_en == eventos["prestador.suspendido"].creado_en
+    assert supresion.sobre["occurred_at"] == eventos["prestador.suspendido"].sobre["occurred_at"]
+
+
+class UowQueFallaAlConfirmar(SqlAlchemyUnitOfWork):
+    async def commit(self) -> None:
+        raise RuntimeError("PostgreSQL no confirmó")
+
+
+async def test_si_la_transaccion_se_deshace_no_queda_ningun_evento(
+    session_factory: Sesiones,
+) -> None:
+    u = await sembrar(session_factory)
+    assert u.id is not None
+    caso = SuprimirDatos(
+        uow=UowQueFallaAlConfirmar(session_factory),
+        hasher=FakePasswordHasher(),
+        almacen=FakeAlmacenDocumentos(),
+        revocacion=FakeRevocacion(),
+        reloj=ahora,
+    )
+
+    with pytest.raises(RuntimeError):
+        await caso.execute(SuprimirDatosCommand(usuario_id=u.id, password=CLAVE, ip_origen=None))
+
+    assert await eventos_de(session_factory, u.id) == {}
+    async with session_factory() as session:
+        sigue = await session.get(UsuarioModel, u.id)
+    assert sigue is not None and sigue.datos_suprimidos_en is None

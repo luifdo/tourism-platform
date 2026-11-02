@@ -6,12 +6,14 @@ Adaptado de catalog:
 * Si RabbitMQ o PostgreSQL fallan, espera el doble cada vez, hasta `espera_maxima`; al
   primer lote bueno vuelve al intervalo normal.
 * Una vez al día borra los eventos ya publicados con más de `retencion` de antigüedad.
+* Los tipos retenidos (C-63) no se publican: tienen su propia métrica, y la primera lectura
+  del estado deja en el log cuáles son y cuántos hay de cada uno.
 """
 
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 
 from app.application.ports.outbox_pendiente import OutboxPendiente
@@ -33,6 +35,7 @@ class RelayOutbox:
         intervalo_segundos: float,
         espera_maxima_segundos: float,
         retencion: timedelta,
+        retenidos: Sequence[str] = (),
     ) -> None:
         self._publicar = publicar
         self._outbox = outbox
@@ -42,6 +45,8 @@ class RelayOutbox:
         self._espera_maxima = espera_maxima_segundos
         self._retencion = retencion
         self._ultima_limpieza: datetime | None = None
+        self._retenidos = tuple(retenidos)
+        self._retenidos_informados = False
 
     async def ejecutar(self, detener: asyncio.Event) -> None:
         espera = self._intervalo
@@ -82,6 +87,17 @@ class RelayOutbox:
             (self._reloj() - estado.mas_antiguo).total_seconds() if estado.mas_antiguo else 0
         )
         metricas.ANTIGUEDAD.set(max(antiguedad, 0))
+        for event_type in self._retenidos:
+            metricas.RETENIDOS.labels(event_type=event_type).set(
+                estado.retenidos.get(event_type, 0)
+            )
+        if not self._retenidos_informados:
+            self._retenidos_informados = True
+            # En la primera lectura buena, no al arrancar: un PostgreSQL caído no tumba al worker.
+            logger.info(
+                "Outbox: tipos retenidos %s",
+                {t: estado.retenidos.get(t, 0) for t in self._retenidos} or "ninguno",
+            )
 
     async def _limpiar_si_toca(self) -> None:
         ahora = self._reloj()

@@ -7,6 +7,7 @@ from datetime import datetime
 from app.application.use_cases.revocacion_doble import RevocacionDoble
 from app.domain.entities.usuario import Usuario
 from app.domain.events.prestador_suspendido import PrestadorSuspendido
+from app.domain.events.usuario_suprimido import UsuarioSuprimido
 from app.domain.exceptions import CredencialesInvalidasError, UltimoAdminError
 from app.domain.ports.almacen_documentos import AlmacenDocumentos
 from app.domain.ports.password_hasher import PasswordHasher
@@ -32,8 +33,8 @@ class SuprimirDatos:
     2. Primera revocación; si Valkey falla, 503 sin haber borrado nada.
     3. Borra en SeaweedFS todo el prefijo `{usuario_id}/`, incluidos los documentos no vigentes
        y los huérfanos. Si falla, 503.
-    4. En la transacción: datos neutros, motivos de rechazo vacíos, `DATA_SUPPRESSION` y
-       `prestador.suspendido` si era un Prestador visible.
+    4. En la transacción: datos neutros, motivos de rechazo vacíos, `DATA_SUPPRESSION`,
+       `prestador.suspendido` si era un Prestador visible y `usuario.suprimido` siempre.
     5. Commit y segunda revocación.
 
     El orden es deliberado: lo único irreversible fuera de la transacción es el paso 3, así que
@@ -93,6 +94,12 @@ class SuprimirDatos:
                         suspendido_por=cmd.usuario_id,
                     )
                 )
+            # Para todos los roles, con el mismo instante que la suspensión: catalog solo descarta
+            # un evento anterior (<) al último que aplicó, así que este se aplica aunque llegue
+            # después. Lo retiene el relay hasta que catalog tenga su cola (C-63).
+            await uow.outbox.agregar(
+                UsuarioSuprimido(ocurrido_en=ahora, usuario_id=cmd.usuario_id, rol=usuario.rol)
+            )
             await uow.commit()
         await self._revocacion.despues_del_commit(cmd.usuario_id)
 

@@ -1,8 +1,11 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated, Any
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from app.domain.events.catalogo import TIPOS_PUBLICADOS
 
 
 class Settings(BaseSettings):
@@ -35,6 +38,12 @@ class Settings(BaseSettings):
     outbox_intervalo_segundos: float = 1.0
     outbox_espera_maxima_segundos: float = 30.0
     outbox_retencion_dias: int = 7
+    # Tipos de evento que el relay no publica (C-63). Por defecto se retiene usuario.suprimido
+    # hasta que alguien lo libere a propósito. En el entorno, separados por comas; vacía = no
+    # retiene nada. NoDecode: sin esto, pydantic-settings esperaría JSON.
+    outbox_eventos_retenidos: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["usuario.suprimido"]
+    )
 
     # Worker (python -m app.worker): /metrics, que también sirve de sonda de vida.
     worker_metrics_port: int = 9101
@@ -79,6 +88,25 @@ class Settings(BaseSettings):
     argon2_concurrencia_maxima: int = Field(default=4, ge=1)
     # Tope de la espera por un cupo; si se pasa, 503 SERVICIO_OCUPADO.
     argon2_espera_maxima_segundos: float = Field(default=10.0, gt=0)
+
+    @field_validator("outbox_eventos_retenidos", mode="before")
+    @classmethod
+    def _separar_por_comas(cls, valor: Any) -> Any:
+        if isinstance(valor, str):
+            return [parte.strip() for parte in valor.split(",") if parte.strip()]
+        return valor
+
+    @field_validator("outbox_eventos_retenidos")
+    @classmethod
+    def _solo_tipos_del_iam(cls, valor: list[str]) -> list[str]:
+        # Un error de tipeo no debe liberar en silencio el tipo que se quería retener.
+        desconocidos = sorted(set(valor) - TIPOS_PUBLICADOS)
+        if desconocidos:
+            raise ValueError(
+                f"OUTBOX_EVENTOS_RETENIDOS nombra tipos que el IAM no publica: {desconocidos}. "
+                f"Válidos: {sorted(TIPOS_PUBLICADOS)}"
+            )
+        return list(dict.fromkeys(valor))
 
 
 @lru_cache

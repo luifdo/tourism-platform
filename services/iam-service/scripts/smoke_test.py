@@ -60,6 +60,24 @@ def filas_de_bitacora(accion: str, usuario_id: str) -> list[str]:
     return asyncio.run(_filas_de_bitacora(accion, usuario_id))
 
 
+async def _publicado_en_del_outbox(event_type: str, usuario_id: str) -> list[object]:
+    conexion = await asyncpg.connect(BASE_DE_DATOS)
+    try:
+        filas = await conexion.fetch(
+            "SELECT publicado_en FROM outbox "
+            "WHERE event_type = $1 AND sobre->'payload'->>'usuario_id' = $2",
+            event_type,
+            usuario_id,
+        )
+    finally:
+        await conexion.close()
+    return [fila["publicado_en"] for fila in filas]
+
+
+def publicado_en_del_outbox(event_type: str, usuario_id: str) -> list[object]:
+    return asyncio.run(_publicado_en_del_outbox(event_type, usuario_id))
+
+
 with httpx.Client(base_url=BASE, timeout=10) as c:
     # Operación
     r = c.get("/health")
@@ -343,6 +361,13 @@ with httpx.Client(base_url=BASE, timeout=10) as c:
     ]
     r = c.get(f"/internal/usuarios/{id_p}/contacto")
     check("Contacto interno del suprimido -> 404", r.status_code == 404, r.text)
+    # El relay lo retiene hasta que catalog esté desplegado con su cola (C-63).
+    publicado = publicado_en_del_outbox("usuario.suprimido", id_p)
+    check(
+        "usuario.suprimido queda en el outbox con publicado_en NULL",
+        publicado == [None],
+        str(publicado),
+    )
 
     # Logout y revocación
     r = c.post("/api/iam/logout", headers=auth)

@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.domain.events.prestador_suspendido import PrestadorSuspendido
+from app.domain.events.usuario_suprimido import UsuarioSuprimido
 from app.domain.value_objects.enums import EstadoDocumento, ResultadoAuditoria, Rol, TipoDocumento
 from tests.api.conftest import CLAVE, IP_CLIENTE, cuenta_con_sesion, esperar_tareas
 from tests.fakes import (
@@ -69,9 +70,12 @@ def test_suprime_los_datos_y_borra_los_objetos(
     assert (registro.usuario_id, registro.ip_origen) == (u.id, IP_CLIENTE)
     assert registro.detalles == {"rol": "Prestador", "objetos_borrados": 2}
     assert len(revocacion.revocaciones_usuario) == 2
-    [evento] = uow.outbox.eventos
+    evento, supresion = uow.outbox.eventos
     assert isinstance(evento, PrestadorSuspendido)
     assert (evento.usuario_id, evento.suspendido_por) == (u.id, u.id)
+    assert isinstance(supresion, UsuarioSuprimido)
+    assert (supresion.usuario_id, supresion.rol) == (u.id, Rol.PRESTADOR)
+    assert supresion.ocurrido_en == evento.ocurrido_en
 
 
 def test_orden_revoca_luego_borra_y_al_final_confirma(
@@ -208,19 +212,21 @@ def test_prestador_ya_inactivo_no_publica_otra_suspension(
     headers, _ = cuenta_con_sesion(client, uow, hasher, Rol.PRESTADOR, activo=False)
 
     assert suprimir(client, headers).status_code == 204
-    assert uow.outbox.eventos == []
+    assert [type(e) for e in uow.outbox.eventos] == [UsuarioSuprimido]
 
 
-def test_turista_no_publica(
+def test_turista_solo_publica_usuario_suprimido(
     client: TestClient,
     uow: FakeUnitOfWork,
     hasher: FakePasswordHasher,
     almacen: FakeAlmacenDocumentos,
 ) -> None:
-    headers, _ = cuenta_con_sesion(client, uow, hasher)
+    headers, u = cuenta_con_sesion(client, uow, hasher)
 
     assert suprimir(client, headers).status_code == 204
-    assert uow.outbox.eventos == []
+    [evento] = uow.outbox.eventos
+    assert isinstance(evento, UsuarioSuprimido)
+    assert (evento.usuario_id, evento.rol) == (u.id, Rol.TURISTA)
 
 
 # ---------- Efectos posteriores ----------
@@ -337,8 +343,8 @@ def test_admin_no_puede_reactivar_ni_cambiar_el_rol(
     assert response.status_code == 409
     assert response.json()["code"] == "CUENTA_SUPRIMIDA"
     assert uow.auditoria.registros == []
-    # Solo la suspensión de la propia supresión.
-    assert len(uow.outbox.eventos) == 1
+    # Solo los dos de la propia supresión: la suspensión y usuario.suprimido.
+    assert len(uow.outbox.eventos) == 2
 
 
 def test_admin_no_puede_aprobar_ni_rechazar(

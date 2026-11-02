@@ -52,6 +52,9 @@ Métricas en `http://localhost:9101/metrics` (`WORKER_METRICS_PORT`), que tambi�
 
 * `iam_eventos_consumidos_total{cola, event_type, resultado}`, con `resultado` igual a `aplicado`, `duplicado`, `reintento` o `dlq`.
 * `iam_eventos_publicados_total{event_type}`, `iam_eventos_fallos_publicacion_total`, `iam_outbox_pendientes` e `iam_outbox_antiguedad_segundos`.
+* `iam_outbox_retenidos{event_type}`: eventos que el relay no publica porque su tipo está en `OUTBOX_EVENTOS_RETENIDOS`. No cuentan en `iam_outbox_pendientes` ni en la antigüedad, así que no disparan la alerta de relay atascado.
+
+**Retención (C-63):** `OUTBOX_EVENTOS_RETENIDOS` es la lista de tipos que el relay no publica, separados por comas. Por defecto, y en el ConfigMap, `.env.example` y el compose del monorepo, es `usuario.suprimido`: se retiene hasta que catalog esté desplegado con la cola `catalog.prestadores`. Vacía, no retiene nada. Un tipo que el IAM no publica impide arrancar, para que un error de tipeo no libere nada. Los retenidos quedan en el outbox sin `publicado_en` y nunca se borran. Al arrancar, el worker deja en el log los tipos retenidos y cuántos hay de cada uno. **Para liberarlos:** quitar el tipo de la variable y reiniciar el worker; salen en el orden en que se crearon. Antes, la cola de catalog debe existir: si no, el broker los descarta y se pierden.
 
 ## Integración con otros módulos
 
@@ -64,13 +67,14 @@ Estado comprobado el 2026-10-30 con `infra/docker-compose.yml` (arranque desde v
 | `X-Correlation-ID` al pedir el contacto | catalog | Cruzar el log con el evento (C-15) | ✅ |
 | Cola `catalog.prestadores` | catalog | Recibir `prestador.aprobado` y `prestador.suspendido` | ✅ |
 | Rutas, ForwardAuth y borrado de `X-Usuario-*` | Traefik (Juan Francisco) | ForwardAuth y borrado de identidad (C-13) | ⏳ `gateway/config` no existe; sin él no hay acceso desde fuera del clúster |
-| Borrar el perfil en `catalog_db` al suprimir datos | catalog | Ley 1581 (C-27) | ⏳ falta acordar el evento |
+| Borrar el perfil en `catalog_db` al suprimir datos | catalog | Ley 1581 (C-27) | ✅ catalog consume `usuario.suprimido` en `catalog.prestadores` (`6076a78`); ⏳ el IAM lo retiene hasta que catalog esté desplegado con esa cola (C-63) |
 | Rol, bucket, identidad S3 y llaves JWT en local | `infra/` | Levantar el servicio | ✅ ver "Con el compose del monorepo" |
 | Lo mismo en k3s | `infra/k8s/` | Desplegar | ⏳ `infra/k8s/` no existe |
 
 | Ofrece | A | Estado |
 |---|---|---|
 | `prestador.aprobado` y `prestador.suspendido` | catalog | ✅ incluida la rehabilitación |
+| `usuario.suprimido` | catalog | ✅ se guarda en el outbox con cada supresión; ⏳ retenido hasta el despliegue de catalog (C-63) |
 | `GET /internal/usuarios/{id}/contacto` | worker de catalog | ✅ los correos llegan a Mailpit |
 | `GET /api/iam/auth/verificar` | Traefik | ✅ devuelve la identidad; ⏳ falta conectarlo a Traefik |
 

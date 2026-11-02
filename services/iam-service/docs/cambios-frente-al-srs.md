@@ -134,8 +134,8 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Por qué:** los eventos solo llevan identificadores, de modo que los datos personales no viajan por el bus (Ley 1581). Aun así, catálogo necesita el correo para enviar UC36.
 - **Para qué:** que catálogo pida el correo en el momento del envío y no lo guarde. Así el único lugar con el dato sigue siendo `iam_db`.
 - **Por qué basta con el log y no va a la bitácora:** por volumen, porque hay una consulta por cada correo de reserva: la bitácora (de solo inserción, UC33) crecería con filas de rutina que no son acciones de un usuario. Y por trazabilidad: si el worker de catalog envía como `X-Correlation-ID` el `correlation_id` del evento que originó el correo, la línea del log se cruza en Loki con ese evento y con la fila de la bitácora que haya generado. La métrica permite alertar ante un pico de `no_encontrado` o ante cualquier `rechazado_proxy`.
-- **Riesgo:** hoy `DirectorioUsuariosIam` de catalog (`develop`) no envía `X-Correlation-ID`: el IAM genera un UUID nuevo por consulta y la línea del log no se cruza con el evento. Hace falta que catalog agregue el encabezado con su `correlation_id_actual()`. Se coordina con Luis Fernando.
-- **Estado:** ✅ `dcf6496`. Propuesto por Luis Fernando. El envío del encabezado desde catalog queda ⏸ pendiente, por coordinar con él.
+- **Lado de catalog:** `DirectorioUsuariosIam` envía `X-Correlation-ID` con el `correlation_id` del evento, así que la línea del log se cruza con él, y trata el 404 como "el usuario no existe", sin reintentar.
+- **Estado:** ✅ `dcf6496`. Propuesto por Luis Fernando. ✅ `7897865` (Luis Fernando): el `X-Correlation-ID` y el trato del 404 en catalog.
 
 ### C-16 · El gateway valida con `verificar` y no con el JWKS
 - **Referencia:** SRS §3.3.3 y ESC-04; Plan §2.3 y §6.1; Lab §4.1, Figura 12; ADR-007.
@@ -291,10 +291,10 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - **`ip_origen` de las filas de la bitácora,** ligada a un `usuario_id` que ya no identifica a nadie por sí solo.
   - **`razon_social` en el `sobre` de `prestador.aprobado` en el outbox,** hasta su purga a los 7 días de publicado (C-09).
 - **Revisión de `detalles`:** ninguna fila del IAM ni de catalog, booking o review guarda correos, nombres o razón social como campo; solo identificadores, rutas, códigos y el texto libre anterior. El consumidor guarda `detalles` tal como llega (`auditoria.registrada.v1` no restringe su contenido), así que esto depende de que los productores mantengan esa regla.
-- **Límite:** la supresión solo alcanza a `iam_db` y al bucket del IAM. `prestador.suspendido` oculta el perfil en catalog, pero `PRESTADOR_PERFIL` conserva su `razon_social`, `telefono` y `direccion` en `catalog_db`. Para cumplir la Ley 1581 de punta a punta, catalog debe borrarlos, y hoy no recibe ninguna señal que distinga una supresión de una suspensión reversible. Se coordina con Luis Fernando.
+- **Fuera de `iam_db`: `usuario.suprimido`.** `prestador.suspendido` oculta el perfil en catalog, pero no borra nada, porque una suspensión es reversible. Para eso existe `usuario.suprimido` (`contracts/events/usuario.suprimido.v1.json`, #13): `{usuario_id, rol}`. Con él, catalog borra `razon_social`, `telefono` y `direccion` de `PRESTADOR_PERFIL` (`6076a78`). La supresión lo guarda en el outbox **en la misma transacción**, para todos los roles, con el mismo `occurred_at` que `prestador.suspendido`. Catalog descarta solo los eventos anteriores (`<`) al último que aplicó, así que se aplica aunque llegue después de la suspensión. **El relay lo retiene** hasta que catalog esté desplegado con la cola `catalog.prestadores` (C-63).
 - **Por qué:** la bitácora inmutable (RNF-10) referencia al usuario con una llave foránea `RESTRICT`, y borrar la fila rompería la trazabilidad exigida por ESC-04.
 - **Para qué:** cumplir la supresión de datos personales conservando la auditoría sin datos que identifiquen a la persona.
-- **Estado:** ✅ `47308f4`. ⏸ El borrado del perfil en `catalog_db`, por coordinar con Luis Fernando.
+- **Estado:** ✅ `47308f4`. ✅ commit de `usuario.suprimido`: el evento en el outbox, retenido. ⏸ Liberarlo cuando catalog esté desplegado con `catalog.prestadores` (C-63, Luis Fernando).
 
 ### C-28 · Detalle del flujo de recuperación (UC3)
 - **Referencia:** SRS UC3 ("verificación vía correo"), sin más detalle.
@@ -376,7 +376,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   1. Bloquea los Admins activos y la cuenta; si es el último Admin activo, 409 `ULTIMO_ADMIN`.
   2. Primera revocación; si Valkey falla, 503 sin haber borrado nada.
   3. Borra en SeaweedFS el prefijo `{usuario_id}/`. Si falla, también si `delete_objects` informa un error en un objeto, 503.
-  4. En una transacción: datos neutros (C-27), `motivo_rechazo` vacío, `DATA_SUPPRESSION` / `Exito` con `{rol, objetos_borrados}` y `prestador.suspendido` si era un Prestador visible, con `suspendido_por` = el propio usuario.
+  4. En una transacción: datos neutros (C-27), `motivo_rechazo` vacío, `DATA_SUPPRESSION` / `Exito` con `{rol, objetos_borrados}`, `prestador.suspendido` si era un Prestador visible, con `suspendido_por` = el propio usuario, y después `usuario.suprimido` para cualquier rol, con el mismo instante (C-27, C-63).
   5. Commit y segunda revocación (si falla, solo un log). 204.
 - **Si algo falla a la mitad:** desde el paso 2 los tokens ya están revocados, aunque la respuesta sea 503. Para repetir, el usuario debe **iniciar sesión otra vez**: su contraseña sigue sirviendo porque nada se confirmó. Si la base falló después del paso 3, sus documentos ya no existen pero la cuenta sigue activa hasta que repita la petición; el borrado es idempotente. Los refresh tokens también quedan revocados desde el paso 2 (C-21): el usuario no puede renovar y debe usar su contraseña.
 - **El 401 de la contraseña:** es `CREDENCIALES_INVALIDAS`, y la PWA debe distinguirlo por el `code` del 401 `TOKEN_INVALIDO`, que sí significa sesión vencida.
@@ -384,7 +384,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Por qué:** lo único irreversible fuera de la transacción es el borrado del paso 3. Va después de la primera revocación para que un Valkey caído no deje documentos borrados sin efecto alguno. Va antes del commit para que un fallo de SeaweedFS no deje una cuenta marcada como suprimida con sus documentos todavía en el bucket. Se hace con la cuenta bloqueada para que una carga simultánea no se cuele (C-27). Bloquear los Admins en el mismo orden que UC27 evita interbloqueos y que dos Admins se supriman a la vez y dejen la plataforma sin ninguno.
 - **Para qué:** que un fallo nunca deje a la persona creyendo que sus datos se borraron cuando no fue así, sin una tabla ni un proceso más para reintentar.
 - **Costo:** el bloqueo de los Admins se mantiene durante la llamada a SeaweedFS (hasta 9 s si no responde, C-59), y sin SeaweedFS nadie puede suprimir sus datos, ni siquiera quien nunca subió un documento.
-- **Estado:** ✅ `47308f4`.
+- **Estado:** ✅ `47308f4`. ✅ commit de `usuario.suprimido`: el paso 4 agrega el evento.
 
 ### C-49 · RNF-13 en el perfil: `If-Match` sin `Idempotency-Key`
 - **Referencia:** SRS RNF-13 y §3.6 (formularios diferidos: "cada envío lleva una clave de idempotencia" y "las ediciones llevan la versión del registro"); ADR de operación sin conexión; UC4.

@@ -720,9 +720,9 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
     - **Hilos:** la pila por defecto es mucho menor que en glibc.
 
     Ninguna de estas diferencias se vio en el smoke ni en las mediciones, pero estas no sustituyen una prueba de carga.
-  - **El CI no prueba musl:** el job `calidad` corre las pruebas en glibc; la imagen solo se construye y se escanea. El recorrido en un clúster con la imagen Alpine es el e2e (`e2e_k3d.py`), todavía sin ejecutar con ella.
+  - **El CI no prueba musl:** el job `calidad` corre las pruebas en glibc; la imagen solo se construye y se escanea. El recorrido en un clúster con la imagen Alpine es el e2e (`e2e_k3d.py`), que se ejecutó el 2026-11-02 con 12 de 12 escenarios OK (`docs/evidencias/e2e-k3d.txt`).
   - **La base no está fijada por digest:** `python:3.12-alpine` cambia con cada versión de la imagen oficial, como antes `python:3.12-slim`.
-- **Estado:** ✅ commit de la imagen Alpine. ⏸ e2e con la imagen nueva.
+- **Estado:** ✅ commit de la imagen Alpine. ✅ e2e en k3d con la imagen nueva, 12 de 12.
 
 ### C-63 · Retención de `usuario.suprimido` en el relay
 - **Referencia:** C-09 (outbox y relay), C-27 y C-40; `contracts/events/usuario.suprimido.v1.json`.
@@ -740,7 +740,7 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - **Liberar antes de tiempo pierde los eventos:** si alguien quita la variable antes de que exista la cola, el broker los descarta y el relay los marca como publicados. Para recuperarlos hay que volver a dejar `publicado_en` en `NULL` a mano, en esas filas.
   - **Crecen sin borrarse:** los retenidos solo llevan `usuario_id` y `rol`, que no identifican a nadie por sí solos, pero el outbox suma uno por supresión mientras dure la retención.
   - **Liberar exige reiniciar el worker:** la lista se lee al arrancar.
-- **Estado:** ✅ commit de `usuario.suprimido`. ⏸ Liberar `usuario.suprimido` cuando catalog esté desplegado con `catalog.prestadores` (Luis Fernando).
+- **Estado:** ✅ commit de `usuario.suprimido`. ⏸ Compose: liberado en `cbdce57` de Luis Fernando (`OUTBOX_EVENTOS_RETENIDOS: ""` en `infra/docker-compose.yml`, rama `feature/integracion-infra-gateway`, pendiente de integrar). ⏸ k8s: sigue retenido; liberarlo cuando catalog esté desplegado con `catalog.prestadores` (Luis Fernando).
 
 ---
 

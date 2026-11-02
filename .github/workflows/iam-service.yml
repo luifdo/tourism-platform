@@ -195,10 +195,9 @@ jobs:
             echo ""
             echo "Construida y escaneada (CRITICAL con parche disponible)."
             echo ""
-            echo "\`newName\` propuesto para la kustomization, por acordar con Luis:" \
-              "\`ghcr.io/${OWNER,,}/iam-service\`."
-            echo "Hoy dice \`ghcr.io/turismo-santa-marta/iam-service\`, donde GITHUB_TOKEN no" \
-              "puede publicar."
+            echo "En push a \`develop\`, el job \`publicar\` la sube como" \
+              "\`ghcr.io/${OWNER,,}/iam-service\` con dos etiquetas: el SHA del commit y \`develop\`."
+            echo "Para desplegar se fija el SHA en un PR \`deploy(iam-service): <sha>\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
   publicar:

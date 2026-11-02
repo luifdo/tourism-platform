@@ -542,11 +542,14 @@ Una prueba falla si quedó desactualizado: después de cambiar una ruta, un esqu
 * **Permisos por job:** solo `publicar` tiene `packages: write`. Por eso reconstruye desde la caché de capas (`type=gha`) en lugar de publicar el mismo artefacto escaneado (C-61).
 * **Trivy puede bloquear un PR que no lo causó:** una vulnerabilidad `CRITICAL` nueva con parche en la imagen base o en una dependencia. Se corrige actualizando esa base o dependencia. `trivy-action` va fijado por commit porque ese repositorio no tiene etiqueta mayor.
 
-### Por acordar con Luis Fernando
+### Publicación y despliegue
 
-* **Nombre de la imagen:** el workflow publica en `ghcr.io/<dueño del repositorio en minúsculas>/iam-service`, hoy `ghcr.io/luifdo/iam-service`, porque `GITHUB_TOKEN` no puede publicar en `ghcr.io/turismo-santa-marta`, que es lo que dicen `k8s/base/kustomization.yaml` y las de los demás servicios. **Cambiar el `newName` de la base exige cambiar también `k8s/overlays/local/kustomization.yaml` y `e2e/overlay/kustomization.yaml`**, que buscan la imagen por ese nombre.
-* **Visibilidad del paquete:** es privado por defecto. El clúster necesitaría un `imagePullSecret`, o hay que hacerlo público.
-* **Quién cambia la etiqueta en la kustomization al desplegar:** hoy dice `newTag: latest`, una etiqueta que este workflow nunca publica, y su comentario dice que la cambia CI. Este workflow no lo hace.
+Decidido por Luis Fernando el 1 de noviembre (C-61):
+
+* **Nombre de la imagen:** `ghcr.io/luifdo/<servicio>`; para este, `ghcr.io/luifdo/iam-service`. Las kustomizations del IAM (`k8s/base`, `k8s/overlays/local` y `e2e/overlay`) toman ese nombre en el PR de la imagen Alpine (C-62), no en el de este workflow.
+* **Visibilidad del paquete:** pública. La cambia Luis Fernando después de la primera publicación, porque solo el dueño del repositorio puede hacerlo. La imagen no lleva secretos, que llegan por Secrets de Kubernetes, y Trivy la revisa en cada corrida.
+* **Despliegue:** lo hace Luis Fernando. El CI solo publica `<sha>` y `develop`, sin hacer commits, porque `develop` está protegida. Al desplegar, Luis fija el SHA con `kustomize edit set image` en un PR `deploy(iam-service): <sha>`; volver atrás es revertir ese commit. La etiqueta `develop` queda para pruebas rápidas.
+* **Plantilla:** Luis Fernando copiará este workflow a `templates/` como plantilla para los demás servicios.
 
 ## Despliegue
 

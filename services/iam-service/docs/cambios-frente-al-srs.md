@@ -684,6 +684,64 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
 - **Límite:** el workflow se validó con `actionlint`, y sus pruebas con una simulación en Linux desde un clon limpio. La primera corrida real será la del PR, y la de `publicar`, el primer push a `develop`.
 - **Estado:** ✅ commit del workflow; ✅ nombre, visibilidad y despliegue acordados con Luis Fernando el 1 de noviembre.
 
+### C-62 · Imagen sobre Alpine (musl) en lugar de Debian
+- **Referencia:** SRS Tabla XVI (Python 3.12); `docs/verificacion-fase4.md`, F-07.
+- **El documento fija:** Python 3.12. Ningún documento fija la distribución de la imagen base.
+- **Se hizo:**
+  - **Base:** `python:3.12-alpine` en las dos etapas del `Dockerfile`, en lugar de `python:3.12-slim` (Debian 13).
+  - **Dependencias:** uv instala los wheels musllinux del `uv.lock`; las 16 dependencias de producción compiladas tienen uno. El primer `uv sync` usa `--no-build`: si una dependencia pierde su wheel, el build falla ahí y no intenta compilar, porque la imagen no lleva compilador. No hizo falta ningún paquete de Alpine: `ca-certificates` y `tzdata` ya vienen en la base.
+  - **Sin cambios:** usuario y grupo 1000 (`addgroup` y `adduser` en lugar de `useradd`), sin `pip`, `ensurepip`, `idle`, `pydoc` ni `2to3`, `compileall` de la biblioteca estándar, `HEALTHCHECK` con `python`, el mismo `CMD` y la misma imagen para la API, el worker y las migraciones.
+  - **Kustomizations:** `k8s/base` publica como `ghcr.io/luifdo/iam-service` con `newTag: develop`, como catalog y review (`dc3f635`). Los overlays `local` y `e2e` buscan ese nombre para seguir usando sus imágenes locales.
+- **Medición** (2026-11-02, las dos imágenes con `docker build --pull` y la misma base de datos de `aquasec/trivy:0.69.3`):
+
+  | | Debian (`python:3.12-slim`, 13.7) | Alpine (`python:3.12-alpine`, 3.24.3) |
+  |---|---|---|
+  | Vulnerabilidades del sistema | 185 sin parche (45 altas, 71 medias, 61 bajas y 8 desconocidas) | 0 |
+  | Paquetes de Python con vulnerabilidades y secretos | 0 y 0 | 0 y 0 |
+  | Tamaño | 416 MB | 308 MB |
+  | Paquetes del sistema | 87 (dpkg) | 38 (apk) |
+  | Argon2 (t=3, m=65536, p=4; 20 hashes, `--cpus=1 --memory=1g`; dos tandas de dos rondas) | Mediana 187-192 ms | Mediana 188-193 ms |
+  | `verificar` (500 peticiones seguidas, mismo límite) | Mediana 2,39 y 2,48 ms; p95 3,44 y 3,68 ms | Mediana 2,57 y 2,70 ms; p95 3,26 y 4,16 ms |
+  | Memoria de la API, en reposo y tras la carga | 85-86 MiB y 88-89 MiB | 86 MiB y 89-90 MiB |
+
+  Las salidas completas están en `docs/evidencias/f07-trivy-debian.txt` y `f07-trivy-alpine.txt`, con el digest de cada base. Con Argon2 no hubo diferencia fuera del ruido: en la primera tanda Alpine fue un 1,5 % más rápido, en la segunda un 1-3 % más lento. Por eso el semáforo de 1 cupo y el tope de 10 s de C-53 siguen valiendo.
+- **Verificado con la imagen nueva:**
+  - **Restricciones de k8s:** `--read-only`, `/tmp` en tmpfs, usuario 1000:1000, sin capacidades y con `no-new-privileges`, en la red de `docker-compose.dev.yml` y con las llaves montadas en `/srv/keys`.
+  - **Resultados:** `smoke_test.py` completo (63 comprobaciones), `HEALTHCHECK` en `healthy`, el worker consumiendo `iam.auditoria` con sus métricas en `:9101` y `alembic upgrade head`, tanto sobre una base vacía (6 migraciones) como sobre la de desarrollo.
+  - **Kustomize:** `kubectl kustomize` sobre `base`, `local` y `e2e` da la imagen esperada en `migraciones`, `api` y `worker`.
+- **Por qué:** las 44 altas de F-07 venían de paquetes de Debian sin parche (util-linux, ncurses, systemd, perl y acl) que la app no usa. Alpine trae menos de la mitad de paquetes del sistema, y no hubo que dejar Python 3.12 ni compilar nada.
+- **Para qué:** que el escaneo de la imagen (el gate de Trivy del CI) refleje lo que el servicio usa, con una superficie menor y una imagen más liviana.
+- **Riesgos:**
+  - **El cero de Alpine no es comparable con Debian:** la base de seguridad de Alpine registra sobre todo vulnerabilidades que ya tienen parche, mientras que el rastreador de Debian también lista las que no lo tienen. Parte de la diferencia es que hay menos paquetes y parte, que se registra menos. No se puede afirmar que no haya vulnerabilidades.
+  - **Trivy no ve CPython** en ninguna de las dos imágenes: está compilado en `/usr/local`, no instalado como paquete. Sus vulnerabilidades se siguen con las versiones de la imagen oficial.
+  - **musl difiere de glibc:**
+    - **DNS:** consulta los servidores en paralelo y maneja `search` y `ndots` de otra forma. Con los nombres cortos de k8s (`iam-service.turismo-app.svc`) y `ndots:5`, la resolución puede necesitar más consultas o comportarse distinto si un servidor no responde.
+    - **`malloc`:** es más lento con muchos hilos y reservas pequeñas, lo que explica en parte los 0,2 ms de `verificar`.
+    - **Hilos:** la pila por defecto es mucho menor que en glibc.
+
+    Ninguna de estas diferencias se vio en el smoke ni en las mediciones, pero estas no sustituyen una prueba de carga.
+  - **El CI no prueba musl:** el job `calidad` corre las pruebas en glibc; la imagen solo se construye y se escanea. El recorrido en un clúster con la imagen Alpine es el e2e (`e2e_k3d.py`), todavía sin ejecutar con ella.
+  - **La base no está fijada por digest:** `python:3.12-alpine` cambia con cada versión de la imagen oficial, como antes `python:3.12-slim`.
+- **Estado:** ✅ commit de la imagen Alpine. ⏸ e2e con la imagen nueva.
+
+### C-63 · Retención de `usuario.suprimido` en el relay
+- **Referencia:** C-09 (outbox y relay), C-27 y C-40; `contracts/events/usuario.suprimido.v1.json`.
+- **El documento fija:** que el relay publique todo lo pendiente del outbox. Nada sobre retener un tipo de evento.
+- **Se hizo:**
+  - **Variable:** `OUTBOX_EVENTOS_RETENIDOS` (`outbox_eventos_retenidos`) es la lista de tipos que el relay no publica, separados por comas. Vale `usuario.suprimido` por defecto, en el código, y también de forma explícita en `k8s/base/configmap.yaml`, `.env.example` y `infra/docker-compose.yml`, con el comentario "quitar cuando catalog esté desplegado con la cola catalog.prestadores". Vacía, no retiene nada. Un tipo que el IAM no publica impide arrancar: con un error de tipeo (`usuario.suprimdo`), el tipo real dejaría de retenerse sin que nadie lo note.
+  - **Relay:** `procesar_lote` excluye los retenidos en el `WHERE`, no en Python. Así nunca ocupan el lote ni bloquean a los que vienen detrás, aunque sean los más antiguos. La búsqueda sigue usando el índice parcial `ix_outbox_pendientes`, con el filtro de tipo después; lo comprueba una prueba con `EXPLAIN`, así que no hizo falta migración.
+  - **Métricas:** `estado()` no los cuenta en `iam_outbox_pendientes` ni en `iam_outbox_antiguedad_segundos`, para que una supresión retenida no dispare la alerta de un relay atascado (C-40). Van aparte en `iam_outbox_retenidos{event_type}`, con 0 para un tipo configurado sin eventos.
+  - **Log y limpieza:** la primera lectura buena del estado deja un log INFO con los tipos retenidos y cuántos hay de cada uno; es la primera y no la del arranque, para que un PostgreSQL caído al arrancar no tumbe el worker. `limpiar_publicados` no cambió: los retenidos no tienen `publicado_en` y nunca se borran.
+  - **Cómo se libera:** se quita el tipo de la variable y se reinicia el worker. Los retenidos salen en orden de `creado_en`.
+- **Por qué:** es la condición de Luis Fernando. El publicador usa `mandatory=False` (C-09): si ninguna cola está enlazada a la clave, RabbitMQ confirma el mensaje y lo descarta. Catalog ya consume `usuario.suprimido` en código (`6076a78`), pero mientras no esté desplegado con la cola `catalog.prestadores` enlazada a esa clave, publicarlo sería perderlo, y con él la supresión de esos datos en `catalog_db`.
+- **Para qué:** guardar la supresión en el mismo commit que la anonimización, sin perder el evento, y publicarla cuando haya quien la reciba.
+- **Orden y fechas:** `prestador.suspendido` se agrega antes que `usuario.suprimido`, pero los dos tienen el mismo `creado_en` y el relay desempata por `event_id`, que es aleatorio: el orden de agregado no fija el de publicación. Para catalog no importa, porque compara con `<` y acepta los dos con el mismo instante. Liberado semanas después, el evento conserva su `occurred_at`, y una cuenta suprimida ya no genera eventos nuevos que lo hagan parecer viejo.
+- **Riesgos:**
+  - **Liberar antes de tiempo pierde los eventos:** si alguien quita la variable antes de que exista la cola, el broker los descarta y el relay los marca como publicados. Para recuperarlos hay que volver a dejar `publicado_en` en `NULL` a mano, en esas filas.
+  - **Crecen sin borrarse:** los retenidos solo llevan `usuario_id` y `rol`, que no identifican a nadie por sí solos, pero el outbox suma uno por supresión mientras dure la retención.
+  - **Liberar exige reiniciar el worker:** la lista se lee al arrancar.
+- **Estado:** ✅ commit de `usuario.suprimido`. ⏸ Liberar `usuario.suprimido` cuando catalog esté desplegado con `catalog.prestadores` (Luis Fernando).
+
 ---
 
 ## Pendiente de reflejar en los documentos del equipo
@@ -696,7 +754,5 @@ Coordinar con Luis Fernando, que es el responsable de la arquitectura y de los c
 - **Gateway (`gateway/`, Juan Francisco):** `authResponseHeaders` con `X-Usuario-Id` y `X-Usuario-Rol`, y eliminación de esos encabezados en toda petición entrante (C-13). Límite del cuerpo (`buffering.maxRequestBodyBytes`, unos 6 MB) en `POST /api/iam/prestador/documentos` (C-30). `/api/iam/auth/recuperar` y `/restablecer` públicas, con rate limiting (C-26, C-50); `/api/iam/auth/refresh` pública, sin ForwardAuth, en su propia regla con el middleware `iam-rate-limit-refresh` (`average: 20`, `period: 1m`, `burst: 10`; C-26, C-60); `/api/iam/perfil` con ForwardAuth; el query string de `/restablecer-contrasena` fuera de los logs de acceso (C-28). Solo `PathPrefix(/api/iam)` y sin `trustForwardHeader` en el ForwardAuth. Confirmar el rango de pods y `externalTrafficPolicy` (C-56), la etiqueta de Blackbox (C-54), y los dominios de `PWA_URL` y `S3_ENDPOINT_PUBLICO`, que debe llegar a SeaweedFS desde el navegador del Admin. Ejemplos en el README del servicio, sección "Despliegue".
 - **Frontend (`frontend/`, Juan Francisco):** usar `POST /perfil/contrasena` y `PASSWORD_ACTUAL_INCORRECTA`, y volver a iniciar sesión tras el 204 (C-52). Distinguir `CREDENCIALES_INVALIDAS` en la supresión (C-48). No encolar sin conexión el cambio de contraseña ni la supresión (C-49). Ante un 503 `SERVICIO_OCUPADO`, reintentar según `Retry-After` y no mostrarlo como credenciales inválidas; aplica a login, registro, restablecimiento, cambio de contraseña y supresión (C-53). El 400 `TOKEN_INVALIDO` y los cuerpos de recuperar y restablecer ya coinciden. Usar `POST /auth/refresh` y guardar el `refresh_token` fuera del alcance de scripts de terceros; renovar una sola vez a la vez, también entre pestañas y con la cola sin conexión, porque dos renovaciones con el mismo token revocan la sesión. Tras un 401 `TOKEN_INVALIDO` del refresh, pedir el login (C-20, C-60).
 - **Imagen en GHCR (Luis Fernando, C-61):** hacer público el paquete `ghcr.io/luifdo/iam-service` después de la primera publicación y copiar el workflow a `templates/`. En el Plan §7.2, que `develop` es la rama que publica.
-- **Infra (`infra/`, Luis Fernando):** **limitar `anonymous` a `Read:catalogo-imagenes`, o los documentos quedan legibles sin firma (C-46).** **Fijar `--maxmemory-policy noeviction` en `infra/k8s/datos/valkey.yaml` y en el compose (C-60).** Decidir la propuesta de cifrado en reposo y TLS (C-58). Identidad `iam` con `Read`, `Write` y `List` sobre `documentos-verificacion`, crear ese bucket y el Secret con sus llaves. El rol `iam_user` en `iam_db`, que hoy existe sin ese usuario, con un script que corre solo en un volumen nuevo (C-55). Los servicios `iam-migraciones`, `iam-service` e `iam-worker` en el compose y los jobs de Prometheus (C-31). Las alertas de `fallo_smtp` y de la DLQ (C-40, C-50). El nombre del Service de SeaweedFS en `turismo-datos`. Bloques listos en el README del servicio, sección "Despliegue".
-- **Contratos (`contracts/`, Luis Fernando):** en `prestador.suspendido.v1.json`, aclarar que el IAM no envía `motivo` (C-41), o quitarlo del esquema, y que `suspendido_por` es el propio usuario en una supresión (C-48). En `openapi/README.md`, que `iam.yaml` se genera desde la app y está en OpenAPI 3.1 (C-57).
-- **Catalog (`services/catalog-service/`, Luis Fernando):** que `DirectorioUsuariosIam` envíe `X-Correlation-ID` con el `correlation_id` del evento al pedir el contacto (C-15). Borrar `razon_social`, `telefono` y `direccion` de `PRESTADOR_PERFIL` cuando un prestador suprime sus datos, lo que requiere una señal distinta de `prestador.suspendido` (C-27). Tratar el 404 del contacto de un usuario suprimido sin reintentar (C-15).
+- **Infra (`infra/`, Luis Fernando):** ✅ en el #15: `anonymous` solo en `Read:catalogo-imagenes` (C-46), la identidad `iam` y el bucket `documentos-verificacion`, el rol `iam_user` (C-55), el IAM en el compose, los jobs de Prometheus (C-31), `-volume.max=30` (F-10) e `infra/k8s/` con `iam-secretos`; ✅ `0c1c290`: Valkey con `--maxmemory 384mb --maxmemory-policy noeviction` (C-60). Falta: el ADR-012 de cifrado en reposo y TLS (C-58), las alertas de `fallo_smtp` y de la DLQ (C-40, C-50) y, cuando catalog esté desplegado con la cola `catalog.prestadores`, liberar `usuario.suprimido`: `OUTBOX_EVENTOS_RETENIDOS` vacía en el ConfigMap del IAM y en el compose, `rollout restart` de `iam-worker` y comprobar que `iam_outbox_retenidos` baja a 0 (C-63).
 - **Registro de decisiones:** proponer un ADR del IAM que reúna C-04, C-16, C-21, C-27 y C-34.

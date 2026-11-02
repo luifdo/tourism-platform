@@ -130,7 +130,7 @@ Las migraciones, el `seed_admin` y el `downgrade` no se tocaron en los arreglos 
 | bandit | B105 `iam:reset:` en `valkey_tokens_recuperacion.py` | Baja | Falso positivo: prefijo de llave |
 | bandit | B101 `assert` (10), en repositorios, UoW, consumidor y casos de uso | Baja | Real sin impacto: comprueban invariantes internas, ninguno decide acceso, y la imagen no usa `-O` |
 | pip-audit | Dependencias de producción de `uv.lock` | — | Sin vulnerabilidades |
-| trivy | Debian 13: 44 altas, 58 medias, 61 bajas, 1 desconocida; 0 críticas; ninguna con parche | Alta (nominal) | Reales en la imagen base, sin parche. No se identificó una ruta de ataque directa: util-linux, ncurses, systemd, perl y acl son binarios locales, y el contenedor corre sin privilegios, sin capacidades y en solo lectura. Ver F-07 |
+| trivy | Debian 13: 44 altas, 58 medias, 61 bajas, 1 desconocida; 0 críticas; ninguna con parche. Con la base más reciente (13.7) y la base de datos del 2026-11-02: 45 altas, 71 medias, 61 bajas y 8 desconocidas | Alta (nominal) | **Resuelto con la base Alpine (C-62):** 0 vulnerabilidades y 0 secretos en Alpine 3.24.3, con la misma base de datos de Trivy; la imagen pasa de 416 MB a 308 MB y de 87 paquetes del sistema a 38 (`f07-trivy-debian.txt`, `f07-trivy-alpine.txt`). El cero no equivale a que no haya vulnerabilidades: la base de seguridad de Alpine registra sobre todo las que ya tienen parche. Ver F-07 |
 | trivy | `pip` 25.0.1 de la imagen base: 5 medias y 1 baja, con parche | Media | **Resuelto:** la imagen final ya no trae `pip` y trivy no reporta paquetes de Python (`f07-trivy-sin-pip.txt`). `b3-trivy.txt` conserva el análisis anterior |
 | trivy | Secretos en la imagen | — | Ninguno |
 
@@ -160,7 +160,7 @@ Sin hallazgos (`b4-secretos.txt`): ningún PEM, `.env` ni `secretos.env` version
 
 ## 5. Hallazgos
 
-Cerrados: F-04, F-06 y F-11. En F-07 se resolvió `pip`, no la imagen base. Los demás siguen abiertos.
+Cerrados: F-04, F-06, F-07 y F-11. F-07 se cerró en dos pasos: primero `pip` y después la imagen base, con Alpine (C-62). Los demás siguen abiertos.
 
 | ID | Hallazgo | Severidad | Bloquea el PR | Propuesta o resultado |
 |---|---|---|---|---|
@@ -173,5 +173,5 @@ Cerrados: F-04, F-06 y F-11. En F-07 se resolvió `pip`, no la imagen base. Los 
 | F-06 | C-57 contradice RNF-03, y no está en la línea "SRS v1.2" de "Pendiente de reflejar" | Baja | **Cerrado** | Agregada |
 | F-02 | `nombre_completo` y `tipo_documento` difieren del prompt | Baja | No | Ninguna en el código; son el contrato actual y están en `iam.yaml` |
 | F-03 | El smoke test no cubre la aprobación del Admin | Baja | No | Cubierto en e2e a; agregarlo al smoke si se quiere |
-| F-07 | Imagen base con 44 altas sin parche y `pip` vulnerable | Baja | No | `pip` y otras partes sin uso, fuera de la imagen. **Las vulnerabilidades de Debian siguen igual:** 44 altas, 58 medias, 61 bajas y 1 desconocida, sin parche; hay que revisar la base en cada versión |
+| F-07 | Imagen base con 44 altas sin parche y `pip` vulnerable | Baja | **Cerrado, con las reservas de C-62** | `pip` y otras partes sin uso, fuera de la imagen. Después, **base `python:3.12-alpine` en las dos etapas (C-62):** trivy pasa de 185 vulnerabilidades sin parche en Debian 13.7 (45 altas, 71 medias, 61 bajas y 8 desconocidas) a 0, y la imagen de 416 MB a 308 MB, sin dejar Python 3.12. Medido el 2026-11-02, las dos con `docker build --pull` y la misma base de datos de Trivy (`f07-trivy-debian.txt` y `f07-trivy-alpine.txt`, con el digest de cada base). Argon2 no cambia (diferencia dentro del ruido), y `verificar` tarda unos 0,2 ms más en la mediana. **Límites:** el cero de Alpine no es comparable uno a uno con Debian, porque su base de seguridad registra sobre todo vulnerabilidades con parche; trivy no ve CPython en ninguna de las dos, porque está compilado en `/usr/local` y no instalado como paquete. Hay que revisar la base en cada versión |
 | F-05 | Firma interna de `VerificarAcceso` distinta del prompt | Informativa | No | Ninguna |

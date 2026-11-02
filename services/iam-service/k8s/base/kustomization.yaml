@@ -22,5 +22,5 @@ resources:
 
 images:
   - name: iam-service
-    newName: ghcr.io/turismo-santa-marta/iam-service
-    newTag: latest # CI la cambia por el commit: kustomize edit set image iam-service=...:<sha>
+    newName: ghcr.io/luifdo/iam-service
+    newTag: develop # Al desplegar se fija el sha del commit con kustomize edit set image en un PR deploy(iam-service): <sha>.

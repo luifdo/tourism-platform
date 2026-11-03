@@ -1,0 +1,23 @@
+# booking-service · /api/bookings → booking-service:8003, sin quitar el prefijo. Contrato: contracts/openapi/booking.yaml
+# Solo la disponibilidad es pública. POST /api/bookings y POST /api/bookings/ entran por el mismo prefijo.
+http:
+  routers:
+    booking-publicas:
+      rule: "Method(`GET`) && Path(`/api/bookings/disponibilidad`)"
+      priority: 100
+      entryPoints: [web]
+      middlewares: [quitar-identidad]
+      service: booking-service
+
+    booking-protegidas:
+      rule: "PathPrefix(`/api/bookings`)"
+      priority: 10
+      entryPoints: [web]
+      middlewares: [protegida]
+      service: booking-service
+
+  services:
+    booking-service:
+      loadBalancer:
+        servers:
+          - url: http://booking-service:8003

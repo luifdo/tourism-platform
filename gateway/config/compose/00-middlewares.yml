@@ -1,0 +1,64 @@
+# Middlewares comunes del gateway (Traefik, proveedor de archivos). Traefik recarga esta carpeta solo.
+# Las mismas piezas, como recursos de Kubernetes, están en ../k3s/.
+http:
+  middlewares:
+    # En TODAS las rutas, también en las públicas: los servicios confían en X-Usuario-Id y X-Usuario-Rol,
+    # así que un valor que mande el cliente no puede llegar nunca (C-13 del IAM).
+    quitar-identidad:
+      headers:
+        customRequestHeaders:
+          X-Usuario-Id: ""
+          X-Usuario-Rol: ""
+
+    # Valida el token con iam-service. Sin trustForwardHeader: Traefik fija él mismo X-Forwarded-Method
+    # y X-Forwarded-Uri, que el IAM guarda en la bitácora. Si responde 200, Traefik copia estos dos
+    # encabezados a la petición; con cualquier otro estado devuelve esa respuesta al cliente (401, 403, 503).
+    iam-forward-auth:
+      forwardAuth:
+        address: http://iam-service:8001/api/iam/auth/verificar
+        authResponseHeaders:
+          - X-Usuario-Id
+          - X-Usuario-Rol
+
+    # Ruta protegida = primero se borra lo que traiga el cliente y después se valida el token.
+    protegida:
+      chain:
+        middlewares:
+          - quitar-identidad
+          - iam-forward-auth
+
+    # Login y recuperación (UC32): 5 intentos por minuto por IP, en un solo cupo compartido.
+    iam-rate-limit:
+      rateLimit:
+        average: 5
+        period: 1m
+        burst: 5
+
+    # El refresh es tráfico legítimo (una vez cada 15 min por usuario y varios usuarios pueden salir por la misma IP):
+    # su propio límite y su propio contador, para que no gaste el cupo del login.
+    iam-rate-limit-refresh:
+      rateLimit:
+        average: 20
+        period: 1m
+        burst: 10
+
+    # El IAM rechaza documentos de más de 5 MB; aquí se corta antes de que lleguen enteros al servicio.
+    iam-limite-documentos:
+      buffering:
+        maxRequestBodyBytes: 6291456 # 6 MB
+
+    # Subida directa del navegador a SeaweedFS (URL firmada). Origen = la PWA; sin comodines.
+    almacenamiento-cors:
+      headers:
+        accessControlAllowOriginList:
+          - http://localhost
+          - http://localhost:5173
+        accessControlAllowMethods: [GET, PUT, HEAD, OPTIONS]
+        accessControlAllowHeaders: [Content-Type, Content-Length]
+        accessControlMaxAge: 600
+
+  serversTransports:
+    # El chat puede tardar hasta 45 s (el servicio corta a los 45 s con un 503): se espera hasta 60 s.
+    respuesta-larga:
+      forwardingTimeouts:
+        responseHeaderTimeout: 60s

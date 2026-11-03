@@ -1,0 +1,8 @@
+# Gateway en k3s (o k3d). Desde la raíz del repositorio:
+#   kubectl apply -k gateway/config/k3s
+# Equivale a ../compose/ (mismas rutas y middlewares) escrito como recursos de Traefik. Las pruebas de
+# gateway/pruebas/ ejercen la versión de compose; estas se comprueban contra los CRD de Traefik (ver README).
+resources:
+  - app        # rutas y middlewares de la plataforma, en turismo-app
+  - datos      # SeaweedFS publicado (URLs firmadas), en turismo-datos
+  - sistema    # ajustes del Traefik de k3s, en kube-system

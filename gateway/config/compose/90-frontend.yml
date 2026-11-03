@@ -1,0 +1,18 @@
+# Frontend (PWA) · cualquier ruta que no sea de un servicio. Prioridad mínima.
+# El compose todavía no tiene el contenedor del frontend: mientras tanto se apunta al servidor de desarrollo
+# (npm run dev, puerto 5173) del equipo anfitrión. En Linux, el servicio traefik necesita
+#   extra_hosts: ["host.docker.internal:host-gateway"]
+http:
+  routers:
+    frontend:
+      rule: "PathPrefix(`/`)"
+      priority: 1
+      entryPoints: [web]
+      middlewares: [quitar-identidad]
+      service: frontend
+
+  services:
+    frontend:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:5173

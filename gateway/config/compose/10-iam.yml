@@ -1,0 +1,47 @@
+# iam-service · /api/iam → iam-service:8001, sin quitar el prefijo. Contrato: contracts/openapi/iam.yaml
+# Solo PathPrefix(/api/iam): /internal, /health y /metrics nunca se enrutan.
+http:
+  routers:
+    iam-login:
+      rule: "Path(`/api/iam/login`) || Path(`/api/iam/auth/recuperar`)"
+      priority: 100
+      entryPoints: [web]
+      middlewares: [quitar-identidad, iam-rate-limit]
+      service: iam-service
+
+    # Sin ForwardAuth: el access token puede haber vencido (para eso se pide uno nuevo).
+    iam-refresh:
+      rule: "Path(`/api/iam/auth/refresh`)"
+      priority: 100
+      entryPoints: [web]
+      middlewares: [quitar-identidad, iam-rate-limit-refresh]
+      service: iam-service
+
+    iam-publicas:
+      rule: "Path(`/api/iam/register`) || Path(`/api/iam/auth/restablecer`) || Path(`/api/iam/.well-known/jwks.json`)"
+      priority: 100
+      entryPoints: [web]
+      middlewares: [quitar-identidad]
+      service: iam-service
+
+    # Primero se valida el token y después se limita el cuerpo: así un anónimo no hace que se almacene 6 MB.
+    iam-documentos:
+      rule: "Method(`POST`) && Path(`/api/iam/prestador/documentos`)"
+      priority: 100
+      entryPoints: [web]
+      middlewares: [quitar-identidad, iam-forward-auth, iam-limite-documentos]
+      service: iam-service
+
+    # Todo lo demás del IAM exige sesión (perfil, administración, prestador, logout).
+    iam-protegidas:
+      rule: "PathPrefix(`/api/iam`)"
+      priority: 10
+      entryPoints: [web]
+      middlewares: [protegida]
+      service: iam-service
+
+  services:
+    iam-service:
+      loadBalancer:
+        servers:
+          - url: http://iam-service:8001

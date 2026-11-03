@@ -1,0 +1,35 @@
+# iam-service · /api/iam → iam-service:8001 sin quitar el prefijo. Solo PathPrefix(/api/iam): /internal,
+# /health y /metrics no se enrutan. Equivale a ../../compose/10-iam.yml.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata: { name: iam-service }
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Path(`/api/iam/login`) || Path(`/api/iam/auth/recuperar`)
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }, { name: iam-rate-limit }]
+      services: [{ name: iam-service, port: 8001 }]
+    # Sin ForwardAuth: el access token puede haber vencido.
+    - match: Path(`/api/iam/auth/refresh`)
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }, { name: iam-rate-limit-refresh }]
+      services: [{ name: iam-service, port: 8001 }]
+    - match: Path(`/api/iam/register`) || Path(`/api/iam/auth/restablecer`) || Path(`/api/iam/.well-known/jwks.json`)
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }]
+      services: [{ name: iam-service, port: 8001 }]
+    # Primero el token y después el tope de 6 MB: un anónimo no hace que se almacene un cuerpo grande.
+    - match: Method(`POST`) && Path(`/api/iam/prestador/documentos`)
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }, { name: iam-forward-auth }, { name: iam-limite-documentos }]
+      services: [{ name: iam-service, port: 8001 }]
+    - match: PathPrefix(`/api/iam`)
+      kind: Rule
+      priority: 10
+      middlewares: [{ name: protegida }]
+      services: [{ name: iam-service, port: 8001 }]

@@ -1,0 +1,247 @@
+name: recommendation-service
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "services/recommendation-service/**"
+      # test_contrato lee contracts/openapi/recommendation.yaml.
+      - "contracts/**"
+      - ".github/workflows/recommendation-service.yml"
+  push:
+    branches: [develop]
+    paths:
+      - "services/recommendation-service/**"
+      - "contracts/**"
+      - ".github/workflows/recommendation-service.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: recommendation-service-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+env:
+  IMAGEN_LOCAL: recommendation-service:ci
+
+jobs:
+  calidad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: services/recommendation-service
+    env:
+      UV_FROZEN: "1"
+      # Los puertos son los que usan por defecto las pruebas de integración (docker-compose.yml del servicio).
+      PGPASSWORD: turismo
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: recommendation_db
+          POSTGRES_USER: turismo
+          POSTGRES_PASSWORD: turismo
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U turismo -d recommendation_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv (misma versión que el Dockerfile)
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.1"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: services/recommendation-service/uv.lock
+
+      - name: Instalar dependencias
+        run: uv sync --frozen
+
+      - name: Ruff
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      # En el compose, PostgreSQL ejecuta db/ al crear el volumen; un service de GitHub Actions no puede montar esa carpeta.
+      - name: Crear la tabla recomendacion_log
+        run: psql -h localhost -p 5434 -U turismo -d recommendation_db -v ON_ERROR_STOP=1 -f db/01-recomendacion-log.sql
+
+      # Simula catalog, booking y review para las pruebas de las tools (el mismo mock del compose).
+      - name: Levantar el mock de la plataforma
+        run: |
+          nohup uv run uvicorn mocks.app:app --port 9000 > mock-plataforma.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:9000/health > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat mock-plataforma.log
+          exit 1
+
+      # Las pruebas `groq` quedan fuera (pyproject): llaman al proveedor real y gastan cuota.
+      - name: Pruebas con cobertura
+        run: >-
+          uv run pytest -q -rs
+          --cov=src
+          --cov-report=term
+          --junitxml=reporte-pruebas.xml
+
+      - name: Exigir cero pruebas omitidas
+        if: ${{ !cancelled() }}
+        run: |
+          uv run python - <<'PY'
+          import os
+          import subprocess
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          reporte = Path("reporte-pruebas.xml")
+          if not reporte.is_file():
+              sys.exit("pytest no generó el reporte: no se puede comprobar qué se omitió.")
+
+          casos = list(ET.parse(reporte).getroot().iter("testcase"))
+          omitidas = [c for c in casos if c.find("skipped") is not None]
+          fallidas = [c for c in casos if c.find("failure") is not None or c.find("error") is not None]
+          cobertura = subprocess.run(
+              ["coverage", "report", "--format=total"], capture_output=True, text=True
+          ).stdout.strip()
+
+          lineas = [
+              "### recommendation-service: pruebas",
+              "",
+              f"- Ejecutadas: {len(casos)}",
+              f"- Fallidas: {len(fallidas)}",
+              f"- Omitidas: {len(omitidas)}",
+              f"- Cobertura de src: {cobertura or 'sin dato'} %",
+              "",
+          ]
+          for caso in omitidas:
+              motivo = caso.find("skipped").get("message", "sin motivo")
+              lineas.append(f"- Omitida: `{caso.get('classname')}.{caso.get('name')}`: {motivo}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as resumen:
+              resumen.write("\n".join(lineas) + "\n")
+
+          if not casos:
+              sys.exit("El reporte no tiene pruebas.")
+          if omitidas:
+              # Una integración caída se omite sola: sin esto, el job pasaría en verde.
+              sys.exit(f"{len(omitidas)} pruebas omitidas: la regla es cero omisiones.")
+          PY
+
+  imagen:
+    needs: calidad
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Construir la imagen
+        uses: docker/build-push-action@v7
+        with:
+          context: services/recommendation-service
+          push: false
+          load: true
+          tags: ${{ env.IMAGEN_LOCAL }}
+          cache-from: type=gha,scope=recommendation-service
+          cache-to: type=gha,mode=max,scope=recommendation-service
+
+      - name: Escanear con Trivy
+        # Sin etiqueta mayor en este repositorio: se fija por el commit de la etiqueta.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGEN_LOCAL }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          # Guarda la base de vulnerabilidades con actions/cache, para no descargarla cada vez.
+          cache: "true"
+
+      - name: Resumen
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          {
+            echo "### recommendation-service: imagen"
+            echo ""
+            echo "Construida y escaneada (CRITICAL con parche disponible)."
+            echo ""
+            echo "En push a \`develop\`, el job \`publicar\` la sube como" \
+              "\`ghcr.io/${OWNER,,}/recommendation-service\` con dos etiquetas: el SHA del commit y \`develop\`."
+            echo "Para desplegar se fija el SHA en un PR \`deploy(recommendation-service): <sha>\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publicar:
+    needs: imagen
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Entrar a GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calcular el nombre de la imagen
+        id: nombre
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "imagen=ghcr.io/${OWNER,,}/recommendation-service" >> "$GITHUB_OUTPUT"
+
+      # Reutiliza de la caché las capas que escaneó el job imagen.
+      - name: Publicar con la etiqueta del commit y develop
+        uses: docker/build-push-action@v7
+        with:
+          context: services/recommendation-service
+          push: true
+          tags: |
+            ${{ steps.nombre.outputs.imagen }}:${{ github.sha }}
+            ${{ steps.nombre.outputs.imagen }}:develop
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=recommendation-service
+
+      - name: Resumen
+        env:
+          IMAGEN: ${{ steps.nombre.outputs.imagen }}
+        run: |
+          {
+            echo "### recommendation-service: imagen publicada"
+            echo ""
+            echo "- \`${IMAGEN}:${GITHUB_SHA}\`"
+            echo "- \`${IMAGEN}:develop\`"
+          } >> "$GITHUB_STEP_SUMMARY"

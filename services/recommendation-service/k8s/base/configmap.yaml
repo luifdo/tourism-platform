@@ -1,0 +1,21 @@
+# Configuración que no es secreta. Las credenciales (DB_URL, VALKEY_URL, LLM_API_KEY) van en el
+# Secret `recommendation-secretos`, que crea infra/k8s/generar_secretos.py (y el overlay local).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recommendation-service-config
+data:
+  LOG_LEVEL: INFO
+  TZ: America/Bogota
+  # Las tools llaman a los servicios por su Service, sin pasar por Traefik. catalog solo acepta
+  # llamadas de pods con la etiqueta app.kubernetes.io/name: recommendation-service.
+  CATALOG_URL: http://catalog-service:8002/api/catalog
+  BOOKING_URL: http://booking-service:8003/api/bookings
+  REVIEW_URL: http://review-service:8004/api/reviews
+  LLM_PROVIDER: groq # ADR-011
+  LLM_MODEL: openai/gpt-oss-120b
+  # El gateway espera 60 s; el servicio corta a los 45 s con un 503.
+  CHAT_TIMEOUT_SEGUNDOS: "45"
+  # Por turista. El límite se guarda en Valkey, así que vale para todas las réplicas.
+  CHAT_LIMITE_MENSAJES: "10"
+  CHAT_LIMITE_VENTANA_SEGUNDOS: "300"

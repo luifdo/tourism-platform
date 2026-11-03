@@ -1,0 +1,11 @@
+# Al drenar un nodo siempre queda al menos una réplica atendiendo.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: recommendation-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recommendation-service
+      app.kubernetes.io/component: api

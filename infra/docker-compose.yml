@@ -354,9 +354,17 @@ services:
       - --providers.file.watch=true
       - --entrypoints.web.address=:80
       - --ping=true
+      # Registro de acceso en JSON. Se omiten la ruta y la línea de la petición porque incluyen el query string, y
+      # el enlace de /restablecer-contrasena lleva el token de recuperación ahí (gateway/README.md).
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.fields.names.RequestPath=drop
+      - --accesslog.fields.names.RequestLine=drop
     ports: ["80:80"]
     volumes:
       - ../gateway/config/compose:/etc/traefik/dinamica:ro
+    # Para llegar al servidor de desarrollo del frontend (npm run dev) desde el contenedor; en Linux hace falta.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 10s

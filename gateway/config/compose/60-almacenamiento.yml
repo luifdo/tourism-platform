@@ -1,0 +1,18 @@
+# SeaweedFS (S3) publicado por el gateway: el navegador sube y baja archivos con URLs firmadas, y la firma
+# incluye el host, así que se enruta por nombre de host (nunca por prefijo). En compose, S3_ENDPOINT_PUBLICO
+# puede seguir siendo http://localhost:8333; esta ruta sirve para probar el mismo camino que en k3s.
+# La autenticación es la firma de la URL: no lleva ForwardAuth.
+http:
+  routers:
+    almacenamiento:
+      rule: "Host(`s3.localhost`)"
+      priority: 100
+      entryPoints: [web]
+      middlewares: [almacenamiento-cors]
+      service: seaweedfs
+
+  services:
+    seaweedfs:
+      loadBalancer:
+        servers:
+          - url: http://seaweedfs:8333

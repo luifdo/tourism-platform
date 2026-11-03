@@ -1,0 +1,13 @@
+# Frontend (PWA): cualquier ruta que no sea de un servicio. Prioridad mínima. Falta el Service "frontend"
+# (puerto 80) y su NetworkPolicy, que irán con el Dockerfile y los manifiestos del frontend.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata: { name: frontend }
+spec:
+  entryPoints: [web]
+  routes:
+    - match: PathPrefix(`/`)
+      kind: Rule
+      priority: 1
+      middlewares: [{ name: quitar-identidad }]
+      services: [{ name: frontend, port: 80 }]

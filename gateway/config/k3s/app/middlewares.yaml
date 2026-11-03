@@ -1,0 +1,52 @@
+# Middlewares comunes (ver comentarios en ../../compose/00-middlewares.yml: son los mismos).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: quitar-identidad }
+spec:
+  headers:
+    customRequestHeaders:
+      X-Usuario-Id: ""
+      X-Usuario-Rol: ""
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: iam-forward-auth }
+spec:
+  forwardAuth:
+    address: http://iam-service.turismo-app.svc:8001/api/iam/auth/verificar
+    authResponseHeaders: [X-Usuario-Id, X-Usuario-Rol]
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: protegida }
+spec:
+  chain:
+    middlewares:
+      - name: quitar-identidad
+      - name: iam-forward-auth
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: iam-rate-limit }
+spec:
+  rateLimit: { average: 5, period: 1m, burst: 5 }
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: iam-rate-limit-refresh }
+spec:
+  rateLimit: { average: 20, period: 1m, burst: 10 }
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: iam-limite-documentos }
+spec:
+  buffering: { maxRequestBodyBytes: 6291456 } # 6 MB
+---
+# El chat puede tardar hasta 45 s: se espera hasta 60 s.
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata: { name: respuesta-larga }
+spec:
+  forwardingTimeouts:
+    responseHeaderTimeout: 60s

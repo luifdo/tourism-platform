@@ -1,0 +1,30 @@
+# catalog-service · /api/catalog → catalog-service:8002, sin quitar el prefijo. Contrato: contracts/openapi/catalog.yaml
+# Públicas = las operaciones con `security: []` del contrato. Todo lo demás (prestador, Entidad, analítica) con sesión.
+http:
+  routers:
+    catalog-publicas:
+      rule: >-
+        (Method(`GET`) && (Path(`/api/catalog/servicios`)
+        || PathRegexp(`^/api/catalog/servicios/[^/]+$`)
+        || Path(`/api/catalog/buscar`)
+        || Path(`/api/catalog/zonas`)
+        || Path(`/api/catalog/alertas`)
+        || PathPrefix(`/api/catalog/mapa/`)))
+        || (Method(`POST`) && PathRegexp(`^/api/catalog/servicios/[^/]+/intencion-visita$`))
+      priority: 100
+      entryPoints: [web]
+      middlewares: [quitar-identidad]
+      service: catalog-service
+
+    catalog-protegidas:
+      rule: "PathPrefix(`/api/catalog`)"
+      priority: 10
+      entryPoints: [web]
+      middlewares: [protegida]
+      service: catalog-service
+
+  services:
+    catalog-service:
+      loadBalancer:
+        servers:
+          - url: http://catalog-service:8002

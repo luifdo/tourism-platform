@@ -46,6 +46,7 @@ kubectl apply -k services/iam-service/k8s/base
 kubectl apply -k services/review-service/k8s/base
 kubectl apply -k services/catalog-service/k8s/base
 kubectl apply -k services/booking-service/k8s/base
+kubectl apply -k services/recommendation-service/k8s/base # al final: sus tools llaman a catalog, booking y review
 
 # 6. Primer Admin de iam (el script no va en la imagen)
 kubectl -n turismo-app exec -i deploy/iam-service -c api -- \
@@ -58,7 +59,7 @@ Las imágenes van en `ghcr.io/luifdo/<servicio>` con la etiqueta `develop`; al d
 
 `generar_secretos.py` crea en `turismo-app` los Secrets `iam-secretos`, `catalog-secretos`, `booking-service-secretos`, `review-secretos` y `recommendation-secretos`, con las URL ya armadas. Si el archivo ya existe no lo cambia: otras contraseñas dejarían a los servicios sin acceso a sus bases.
 
-recommendation-service aún no tiene `k8s/`. Cuando la tenga, debe crear `recomendacion_log` con su propio usuario: el script está en `services/recommendation-service/db/` y el servicio no tiene migraciones.
+recommendation-service no tiene migraciones: su initContainer `esquema` crea la tabla `recomendacion_log` con el usuario `recommendation_user` si falta (la misma lógica que `postgres-preparar` en el compose). Su script vive en `services/recommendation-service/k8s/base/01-recomendacion-log.sql`, una copia de `db/` porque Kustomize no lee fuera de su carpeta: si cambia uno, cambia el otro. `LLM_API_KEY` va vacía en el Secret; hay que ponerla antes de aplicarlo o el chat responde 503.
 
 ## Red
 

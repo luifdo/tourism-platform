@@ -88,6 +88,26 @@ def middlewares_de_compose():
     return todos
 
 
+def servicios_de_k8s():
+    """{(namespace, nombre): {puertos}} de los Service que declaran los manifiestos de cada servicio y de infra/k8s."""
+    encontrados = {}
+    for carpeta in sorted(RAIZ.glob("services/*/k8s/base")) + [RAIZ / "infra/k8s"]:
+        r = subprocess.run(["kustomize", "build", str(carpeta)], capture_output=True, text=True)
+        if r.returncode:
+            continue
+        for doc in (d for d in yaml.safe_load_all(r.stdout) if d and d["kind"] == "Service"):
+            meta = doc["metadata"]
+            encontrados[(meta.get("namespace", "default"), meta["name"])] = {p["port"] for p in doc["spec"]["ports"]}
+    return encontrados
+
+
+def destinos_de_k3s(documentos):
+    """(namespace, servicio, puerto) a los que apunta cada ruta."""
+    return sorted({(doc["metadata"]["namespace"], srv["name"], srv["port"])
+                   for doc in documentos if doc["kind"] == "IngressRoute"
+                   for ruta in doc["spec"]["routes"] for srv in ruta["services"]})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--crd", help="archivo con los CRD de Traefik (si no, se descargan)")
@@ -134,6 +154,16 @@ def main():
         if "forwardAuth" in spec:  # solo cambia el nombre del host (compose: iam-service:8001; k3s: iam-service.turismo-app.svc:8001)
             spec["forwardAuth"]["address"] = spec["forwardAuth"]["address"].replace("iam-service.turismo-app.svc", "iam-service")
         verificar(f"middleware {nombre} igual en compose y k3s", spec == original, f"k3s={spec} compose={original}")
+
+    print("\nCada ruta apunta a un Service que existe")
+    existentes = servicios_de_k8s()
+    for ns, nombre, puerto in destinos_de_k3s(documentos):
+        if nombre == "frontend":
+            print(f"  – {nombre}:{puerto}: todavía no tiene manifiestos (ver gateway/README.md)")
+            continue
+        puertos = existentes.get((ns, nombre))
+        verificar(f"{ns}/{nombre}:{puerto}", puertos is not None and puerto in puertos,
+                  "no hay ningún Service con ese nombre" if puertos is None else f"el Service expone {sorted(puertos)}")
 
     print(f"\n{'sin problemas' if not fallos else str(len(fallos)) + ' con problemas'}")
     sys.exit(1 if fallos else 0)

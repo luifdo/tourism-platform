@@ -1,5 +1,5 @@
 # recommendation-service · /api/recommendations → recommendation-service:8005 sin quitar el prefijo.
-# Equivale a ../../compose/50-recommendation.yml. Este servicio aún no tiene manifiestos (services/recommendation-service/k8s).
+# Equivale a ../../compose/50-recommendation.yml. El Service está en services/recommendation-service/k8s/base.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata: { name: recommendation-service }

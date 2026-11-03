@@ -61,7 +61,7 @@ python validar_k3s.py                   # kustomize + CRD de Traefik + igualdad 
 * **TLS** (cert-manager, ACME) y los **dominios**: faltan hasta que exista la VM (`sslip.io`). El host de SeaweedFS (`s3.localhost`) y el origen de CORS de la PWA se cambian entonces, y deben coincidir con `S3_ENDPOINT_PUBLICO` e `IMAGENES_URL_PUBLICA` de los servicios.
 * **`X-Correlation-ID`:** Traefik lo reenvía pero no lo genera (haría falta un plugin). Los servicios generan uno si falta (catalog lo hace; confirmar los demás).
 * **SeaweedFS expuesto:** el gateway publica todo el S3. Antes de abrirlo hay que limitar el acceso anónimo a `Read:catalogo-imagenes` (C-46, `infra/seaweedfs/s3.json`) o los documentos de verificación quedan legibles sin firma.
-* **Frontend en k3s:** falta el Service `frontend` (puerto 80), su Dockerfile y su NetworkPolicy. **recommendation-service** todavía no tiene `k8s/`: su Service debe llamarse `recommendation-service` y usar el puerto 8005.
+* **Frontend en k3s:** falta el Service `frontend` (puerto 80), su Dockerfile y su NetworkPolicy.
 * Una ruta `/api/...` que no existe cae en el frontend y devuelve su HTML con 200, no un 404 en JSON.
 * `GET /api/iam/auth/verificar` es alcanzable desde fuera (con token válido); solo devuelve la identidad que ya tiene el usuario.
 * No hay CORS en la API: la PWA entra por el mismo origen (en desarrollo, el proxy de Vite envía `/api` al puerto 80).

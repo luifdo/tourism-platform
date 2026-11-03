@@ -39,6 +39,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("DROP INDEX ix_calificacion_servicio")
     op.execute("CREATE INDEX ix_calificacion_servicio ON calificacion_resena (servicio_id)")
-    op.execute(
-        "ALTER TABLE calificacion_resena DROP COLUMN ultimo_evento_en, DROP COLUMN visible"
-    )
+    op.execute("ALTER TABLE calificacion_resena DROP COLUMN ultimo_evento_en, DROP COLUMN visible")

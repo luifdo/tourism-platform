@@ -46,6 +46,7 @@ from app.application.use_cases.listar_intenciones_visita import ListarIntencione
 from app.application.use_cases.listar_servicios_prestador import ListarServiciosPrestador
 from app.application.use_cases.listar_zonas import ListarZonas
 from app.application.use_cases.obtener_metricas_prestador import ObtenerMetricasPrestador
+from app.application.use_cases.obtener_nombres_servicios import ObtenerNombresServicios
 from app.application.use_cases.obtener_perfil import ObtenerPerfil
 from app.application.use_cases.obtener_servicio import ObtenerServicio
 from app.application.use_cases.obtener_zona import ObtenerZona
@@ -131,6 +132,12 @@ def get_obtener_servicio(
     reloj: Annotated[Reloj, Depends(get_reloj)],
 ) -> ObtenerServicio:
     return ObtenerServicio(consulta, reloj)
+
+
+def get_obtener_nombres_servicios(
+    consulta: Annotated[ConsultaServicios, Depends(get_consulta_servicios)],
+) -> ObtenerNombresServicios:
+    return ObtenerNombresServicios(consulta)
 
 
 def get_listar_zonas(

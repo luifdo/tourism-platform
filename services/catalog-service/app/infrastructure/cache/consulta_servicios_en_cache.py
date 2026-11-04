@@ -5,10 +5,12 @@
   el resumen) cuenta como fallo de caché.
 * Una búsqueda con `fecha` no se cachea: los cupos cambian con cada reserva.
 * El detalle de un servicio no se cachea: lleva alertas vigentes que deben verse al instante.
+* Los nombres por id tampoco: es una lectura por clave primaria.
 """
 
 import hashlib
 import logging
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -16,6 +18,7 @@ from pydantic import TypeAdapter, ValidationError
 from valkey.asyncio import Valkey
 
 from app.application.dto.criterios_busqueda import CriteriosBusqueda
+from app.application.dto.nombre_servicio import NombreServicio
 from app.application.dto.pagina_servicios import PaginaServicios
 from app.application.dto.servicio_detalle import ServicioDetalle
 from app.application.ports.consulta_servicios import ConsultaServicios
@@ -51,6 +54,10 @@ class ConsultaServiciosEnCache:
 
     async def detalle(self, servicio_id: UUID, ahora: datetime) -> ServicioDetalle | None:
         return await self._origen.detalle(servicio_id, ahora)
+
+    async def nombres(self, ids: Sequence[UUID]) -> list[NombreServicio]:
+        # Sin caché: una consulta por clave primaria, y activo debe verse al instante.
+        return await self._origen.nombres(ids)
 
     async def invalidar(self) -> None:
         """Se llama después de confirmar un cambio del catálogo (servicio, zona, perfil)."""

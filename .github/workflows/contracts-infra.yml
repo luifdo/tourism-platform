@@ -5,17 +5,31 @@ on:
     paths:
       - "contracts/**"
       - "infra/**"
+      - "gateway/**"
+      - ".github/workflows/contracts-infra.yml"
   push:
-    branches: [main]
+    branches: [develop, main]
     paths:
       - "contracts/**"
       - "infra/**"
+      - "gateway/**"
+      - ".github/workflows/contracts-infra.yml"
+
+permissions:
+  contents: read
+
+env:
+  # El último parche de la etiqueta traefik:v3.3 que usa infra/docker-compose.yml.
+  TRAEFIK_VERSION: v3.3.7
+  # Solo para promtool: el compose aún usa prom/prometheus:latest.
+  PROMETHEUS_VERSION: v3.5.0
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validar que los esquemas de eventos son JSON válido
         run: |
@@ -28,3 +42,35 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config -q
+
+      # Configuración de Prometheus y pruebas de las alertas (C-40, C-50) con el promtool de la imagen.
+      - name: Validar Prometheus y probar las alertas
+        working-directory: infra/prometheus
+        run: |
+          docker run --rm -v "$PWD:/etc/prometheus" --entrypoint promtool "prom/prometheus:${PROMETHEUS_VERSION}" \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm -v "$PWD:/etc/prometheus" --entrypoint promtool "prom/prometheus:${PROMETHEUS_VERSION}" \
+            test rules /etc/prometheus/pruebas/alertas_test.yml
+
+      # probar_gateway.py arranca un Traefik real con gateway/config/compose y servicios falsos:
+      # cada operación de contracts/openapi/ queda pública o protegida tal como lo declara su
+      # contrato, la identidad del cliente nunca llega a un servicio y los límites se cumplen.
+      - name: Instalar Traefik (binario oficial, con su checksum)
+        run: |
+          base="https://github.com/traefik/traefik/releases/download/${TRAEFIK_VERSION}"
+          archivo="traefik_${TRAEFIK_VERSION}_linux_amd64.tar.gz"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "${base}/${archivo}"
+          curl -fsSLO "${base}/traefik_${TRAEFIK_VERSION}_checksums.txt"
+          grep " ${archivo}\$" "traefik_${TRAEFIK_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "${archivo}" traefik
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Probar el gateway
+        working-directory: gateway/pruebas
+        # En un venv: el Python del sistema no admite pip install (PEP 668).
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet -r requirements.txt
+          traefik version
+          "$RUNNER_TEMP/venv/bin/python" probar_gateway.py

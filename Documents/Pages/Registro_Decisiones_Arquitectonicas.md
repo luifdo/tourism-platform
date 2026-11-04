@@ -24,6 +24,7 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 | [ADR-009](#adr-009-observabilidad) | Observabilidad: Prometheus, Grafana y Loki | No | Aceptada |
 | [ADR-010](#adr-010-componente-de-inteligencia-artificial) | IA: chatbot sobre la API de Gemini con herramientas de solo lectura | No | Aceptada |
 | [ADR-011](#adr-011-proveedor-del-modelo-de-lenguaje-groq-en-lugar-de-gemini) | Proveedor del modelo de lenguaje: Groq en lugar de Gemini | No | Propuesta |
+| [ADR-012](#adr-012-cifrado-en-reposo-y-en-tránsito) | Cifrado en reposo y en tránsito: en la infraestructura, con lo interno declarado como limitación | No | Aceptada |
 
 ---
 
@@ -186,3 +187,40 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
   * **Impacto en otros módulos:** ninguno. El contrato `recommendation.yaml` no cambia y ningún otro servicio depende del proveedor.
   * **Documentos a actualizar al aceptarse:** el ADR-010 (estado "Reemplazada parcialmente por ADR-011"), el SRS, el Plan de Implementación (§4 y flujo 6), la Comparación de Alternativas, el README raíz y los diagramas que mencionan Gemini. La Guía Técnica del Módulo 5 y `docs/modulo-ia/` se actualizan en la rama del módulo.
 * **Trazabilidad:** RF-06, RNF-08, UC14, ESC-01, ESC-05, R-04, ADR-010, [Guía Técnica del Módulo 5](./Guia_Tecnica_Modulo_IA.md).
+
+---
+
+## ADR-012: Cifrado en reposo y en tránsito
+
+* **Estado:** Aceptada el 4 de noviembre de 2026 por Luis Fernando Barraza, responsable de la arquitectura y de `infra/`. Responde a C-58 de `services/iam-service/docs/cambios-frente-al-srs.md`.
+* **Contexto:** El SRS (§2.4.5, Ley 1581) pide "almacenamiento cifrado de datos sensibles", pero no dice en qué capa. Hoy:
+  * Las contraseñas usan Argon2id y los tokens de recuperación se guardan en Valkey como SHA-256.
+  * Los documentos de los prestadores (RUT y RNT) se guardan sin cifrar en SeaweedFS. Los correos y nombres de `iam_db`, las reservas y las reseñas se guardan sin cifrar en PostgreSQL. Los respaldos de PostgreSQL (`respaldos-postgres`) tampoco van cifrados.
+  * Dentro del clúster, los servicios hablan sin TLS con PostgreSQL, RabbitMQ, Valkey y SeaweedFS. Las NetworkPolicy limitan quién llega a cada uno.
+  * El documento no puede cifrarse en el servicio: el navegador del Admin lo descarga directamente de SeaweedFS con una URL firmada, así que esa URL entregaría el contenido cifrado.
+* **Decisión:** se divide en dos:
+  * **Se implementa (A-mínima):**
+    1. **TLS en el borde:** Traefik termina HTTPS con certificados de cert-manager (ya está en el Plan §7). Todo lo que sale del clúster, incluidas las URL firmadas de SeaweedFS, va por HTTPS.
+    2. **Cifrado de los volúmenes de SeaweedFS** con `-filer.encryptVolumeData` (disponible en la 3.80 en modo `server`). Cubre documentos, imágenes y respaldos de PostgreSQL. Se activa antes de cargar datos reales, porque no cifra lo que ya está escrito.
+    3. **Disco cifrado en la VM del clúster**, si el proveedor lo ofrece (cifrado en reposo del disco o LUKS). Cubre PostgreSQL, RabbitMQ y Valkey sin tocar los servicios.
+  * **Se declara como limitación del prototipo en el SRS v1.2 (B):** TLS entre los servicios y PostgreSQL, RabbitMQ y Valkey dentro del clúster, y cifrado por columna de los datos personales en PostgreSQL. Ambos quedan como trabajo futuro con sus condiciones.
+* **Alternativas consideradas:**
+  * *A completa, todo en la infraestructura:* TLS interno con certificados propios para PostgreSQL (CloudNativePG lo trae), RabbitMQ y Valkey, más todo lo de A-mínima. Descartada por ahora:
+    * Exige rotar certificados y cambiar las URL de conexión de los 5 servicios.
+    * Las 5 bases de pruebas (testcontainers, compose) tendrían que replicarlo.
+    * En un solo nodo, el tráfico interno no sale de la máquina y las NetworkPolicy ya lo restringen.
+    * El costo es alto para un equipo de cinco personas con una sola VM de 8 GB.
+  * *B pura, solo declararlo como limitación:* descartada:
+    * Deja sin cubrir lo más visible para la SIC: documentos de identidad tributaria en un disco y respaldos sin cifrar.
+    * Lo más barato (dos flags y una opción del proveedor) resuelve la mayor parte del riesgo.
+  * *Cifrar en cada servicio:* descartada por la URL firmada del contexto y porque repartiría llaves entre cinco servicios.
+* **Consecuencias:**
+  * **Protege** frente a un disco, un volumen o un respaldo robados, y frente a quien escucha el tráfico entre el usuario y la plataforma.
+  * **No protege** frente a quien entra al sistema encendido con credenciales válidas. Eso lo cubren las credenciales por servicio, las NetworkPolicy, el bucket privado (C-46) y la bitácora.
+  * La llave de `encryptVolumeData` la guarda el filer de SeaweedFS en su propio almacenamiento. Si se pierde ese volumen, los datos no se recuperan. El respaldo del filer pasa a ser obligatorio.
+  * **Pendiente para cumplirla:**
+    * Probar `-filer.encryptVolumeData` con el despliegue de `infra/` en la VM: subir, leer con URL firmada, respaldar y restaurar.
+    * Confirmar el cifrado de disco del proveedor elegido.
+    * Escribir en el SRS v1.2 (§2.4.5) qué se cifra, dónde y qué queda como limitación.
+    * Marcar C-58 como resuelta en la documentación del IAM.
+* **Trazabilidad:** SRS §2.4.5, RNF-09, Ley 1581, C-46, C-58, ADR-003, ADR-005, ADR-007, Plan §7.

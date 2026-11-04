@@ -8,6 +8,7 @@
   asyncpg no tiene que adivinar el tipo de parámetros nulos.
 """
 
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -17,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.dto.criterios_busqueda import CriteriosBusqueda, OrdenBusqueda
+from app.application.dto.nombre_servicio import NombreServicio
 from app.application.dto.pagina_servicios import PaginaServicios
 from app.application.dto.prestador_publico import PrestadorPublico
 from app.application.dto.servicio_detalle import ServicioDetalle
@@ -182,3 +184,13 @@ class SqlConsultaServicios:
             alertas=tuple(alertas),
             atributos=AtributosServicio.desde_json(fila.atributos),
         )
+
+    async def nombres(self, ids: Sequence[UUID]) -> list[NombreServicio]:
+        # Sin filtrar por activo: el historial de reservas y reseñas necesita también los inactivos.
+        sql = "SELECT id, nombre, activo FROM atractivo_servicio WHERE id = ANY(:ids)"
+        async with self._sesiones() as session:
+            filas = (await session.execute(text(sql), {"ids": list(ids)})).all()
+        return [
+            NombreServicio(id=f.id, nombre=TextoTraducido(**f.nombre), activo=f.activo)
+            for f in filas
+        ]

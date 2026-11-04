@@ -3,14 +3,20 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.dependencies import get_buscar_servicios, get_obtener_servicio
+from app.api.dependencies import (
+    get_buscar_servicios,
+    get_obtener_nombres_servicios,
+    get_obtener_servicio,
+)
 from app.api.i18n.idioma_peticion import idioma_peticion
 from app.api.routers.parametros import Pagina
 from app.api.schemas.error_respuesta import ErrorRespuesta
+from app.api.schemas.nombres_servicios_respuesta import NombresServiciosRespuesta
 from app.api.schemas.pagina_servicios_respuesta import PaginaServiciosRespuesta
 from app.api.schemas.servicio_detalle_respuesta import ServicioDetalleRespuesta
 from app.application.dto.criterios_busqueda import CriteriosBusqueda
 from app.application.use_cases.buscar_servicios import BuscarServicios
+from app.application.use_cases.obtener_nombres_servicios import ObtenerNombresServicios
 from app.application.use_cases.obtener_servicio import ObtenerServicio
 from app.domain.value_objects.catalogos import Categoria
 from app.domain.value_objects.idioma import Idioma
@@ -40,6 +46,21 @@ async def listar_servicios(
         zona=zona,
     )
     return PaginaServiciosRespuesta.desde(await buscar.execute(criterios), idioma)
+
+
+# Antes de /servicios/{servicio_id}: si no, "nombres" se leería como un id.
+@router.get(
+    "/servicios/nombres",
+    summary="Nombres de varios servicios por id",
+    response_model=NombresServiciosRespuesta,
+    responses={400: {"model": ErrorRespuesta}},
+)
+async def nombres_servicios(
+    idioma: Annotated[Idioma, Depends(idioma_peticion)],
+    obtener: Annotated[ObtenerNombresServicios, Depends(get_obtener_nombres_servicios)],
+    ids: Annotated[list[UUID], Query(min_length=1, max_length=100)],
+) -> NombresServiciosRespuesta:
+    return NombresServiciosRespuesta.desde(await obtener.execute(ids), idioma)
 
 
 @router.get(

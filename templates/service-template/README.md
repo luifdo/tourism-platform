@@ -50,6 +50,17 @@ Pendiente (Fase 4): agregar `Dockerfile`, dependencias y comandos de ejecución 
 docker compose up service-template
 ```
 
+## Integración continua
+
+[`ci-workflow.yml`](ci-workflow.yml) es la plantilla del workflow, copiada del de iam-service (C-61). Fuera de `.github/workflows/` GitHub no la ejecuta. Para usarla:
+
+```bash
+cp templates/service-template/ci-workflow.yml .github/workflows/<servicio>.yml
+sed -i 's/service-template/<servicio>/g' .github/workflows/<servicio>.yml
+```
+
+Luego se ajusta lo marcado con `AJUSTAR`: los services y variables que piden las pruebas, el paso de migraciones y las carpetas de cobertura. Corre ruff, pytest con cobertura mínima del 70 % y cero pruebas omitidas, construye la imagen y la escanea con Trivy. En push a `develop` la publica como `ghcr.io/<dueño del repositorio>/<servicio>` con las etiquetas `<sha>` y `develop`. Ejemplos reales: [`catalog-service.yml`](../../.github/workflows/catalog-service.yml) (todo con testcontainers) e [`iam-service.yml`](../../.github/workflows/iam-service.yml) (con services).
+
 ## Kubernetes
 
 `k8s/` trae los manifiestos base (Deployment, Service, HPA, PodDisruptionBudget, NetworkPolicy y ConfigMap, Plan §7.2-7.4) y un overlay `local` para el Kubernetes de Docker Desktop. Al copiarlos, reemplaza `service-template` por el nombre del servicio y `8000` por su puerto, y ajusta réplicas y HPA según el Plan §7.3. La guía paso a paso (encender el clúster, desplegar, ver logs, actualizar) está en el [README de catalog-service](../../services/catalog-service/README.md#kubernetes-k8s).

@@ -2,7 +2,9 @@
 
 Responsable: Luis Fernando Barraza Sanchez (@luifdo). Lo que todos los servicios necesitan en el clúster (Plan §7.2, §7.4 y §7.6): namespaces, PostgreSQL con CloudNativePG, RabbitMQ, Valkey, SeaweedFS, políticas de red y respaldos.
 
-Cada servicio trae sus propios manifiestos en `services/<servicio>/k8s/`. **Aquí no están** Traefik con sus rutas (`gateway/`), Prometheus, Grafana y Loki (`infra/observabilidad/`, de Juan Francisco) ni cert-manager.
+Cada servicio trae sus propios manifiestos en `services/<servicio>/k8s/`. **Aquí no están** Traefik con sus rutas (`gateway/`), Prometheus, Grafana y Loki (`infra/observabilidad/`, de Juan Francisco) ni cert-manager. El Prometheus del clúster debe cargar las alertas de `infra/prometheus/alertas.yml` y leer también `/metrics/detailed?family=queue_coarse_metrics` de RabbitMQ (`:15692`), que es de donde sale el conteo de la DLQ; en el compose ya está así.
+
+**Versión del clúster: k3s `v1.32.9+k3s1`**, que trae **Traefik 3.3.6**, la misma línea que el compose (`traefik:v3.3`) y que `gateway/pruebas/probar_gateway.py` (3.3.7). Las k3s v1.32.10 y posteriores traen Traefik 3.5 o 3.6, y las v1.31 traen 2.11, donde las rutas no funcionan (`PathRegexp` no existe en v2). Para cambiarla hay que subir también el Traefik del compose y de la prueba del gateway, y volver a probar las rutas. Kubernetes 1.32 ya no recibe parches upstream; se acepta para el Escenario A.
 
 | Componente | Service en `turismo-datos` | Notas |
 |---|---|---|
@@ -53,7 +55,21 @@ kubectl -n turismo-app exec -i deploy/iam-service -c api -- \
   env ADMIN_EMAIL=... ADMIN_PASSWORD=... ADMIN_NOMBRE=... python - < services/iam-service/scripts/seed_admin.py
 ```
 
-Las imágenes van en `ghcr.io/luifdo/<servicio>` con la etiqueta `develop`; al desplegar se fija el sha del commit con `kustomize edit set image` en un PR `deploy(<servicio>): <sha>`. Los manifiestos de iam y booking siguen con `ghcr.io/turismo-santa-marta/` hasta que sus responsables los cambien, y faltan los flujos de GitHub Actions que publican las imágenes (Plan §7.2). Los dominios de producción de cada ConfigMap hay que confirmarlos antes de desplegar.
+Las imágenes van en `ghcr.io/luifdo/<servicio>` con la etiqueta `develop`; al desplegar se fija el sha del commit con `kustomize edit set image` en un PR `deploy(<servicio>): <sha>`. Las publican los workflows de `.github/workflows/<servicio>.yml` (Plan §7.2, C-61) en cada push a `develop`, con las etiquetas `<sha>` y `develop`; la plantilla para un servicio nuevo está en `templates/service-template/ci-workflow.yml`. Los dominios de producción de cada ConfigMap hay que confirmarlos antes de desplegar.
+
+## Probar en un portátil (k3s en Docker)
+
+`k3s_local.py` crea un k3s de la versión fijada dentro de Docker. Expone el gateway en `http://localhost:8081` y SeaweedFS público en `http://s3.localhost:8081`, y monta el repositorio en `/repo` del contenedor. Las kustomizaciones de `local/` usan la base de cada servicio sin cambiarla: imagen `<servicio>:local`, una réplica, sin HPA y Mailpit como correo.
+
+```bash
+python infra/k8s/k3s_local.py subir
+python infra/k8s/k3s_local.py imagenes todos         # construye e importa las 5 imágenes
+python infra/k8s/k3s_local.py republicar catalog     # tras cambiar código: reconstruye y reinicia
+python infra/k8s/k3s_local.py kubectl get pods -A    # kubectl de la versión del clúster
+python infra/k8s/k3s_local.py bajar
+```
+
+En un portátil de 8 GB no alcanza: construir las imágenes mientras arrancan los pods dejó la VM sin memoria y la CPU al 100 %. Ahí solo se alcanzó a comprobar (2026-11-04) la infraestructura de datos, iam, catalog y el gateway con Traefik 3.3.6 (login, búsqueda pública y 401 sin token por `localhost:8081`). **Pendiente para la VM del equipo:** el flujo completo (`gateway/pruebas/flujo_completo.py --entorno k3s`), la supresión de datos de punta a punta (luego liberar `usuario.suprimido` en el ConfigMap de iam), los CronJobs y los HPA.
 
 ## Secrets que espera cada servicio
 
@@ -102,7 +118,7 @@ En un k3s v1.31.5 dentro de un contenedor, en una VM de 4 GB, con los servicios 
 
 **Falta probar en un nodo de 8 GB:** el flujo completo, los HPA y los CronJobs con carga real. También queda sin probar el acceso real desde fuera del clúster.
 
-**Traefik:** el k3s v1.31.5 usado trae Traefik **2.11.18**, y el Plan dice v3. Las reglas no son iguales en las dos versiones: `PathRegexp` no existe en v2. Hay que fijar la versión de k3s del clúster y escribir las rutas para la que traiga.
+**Traefik:** el k3s v1.31.5 usado trae Traefik **2.11.18**, y el Plan dice v3. Por eso se fijó k3s `v1.32.9+k3s1` (ver arriba).
 
 ## Dimensionamiento
 

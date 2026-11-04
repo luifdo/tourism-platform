@@ -1,0 +1,84 @@
+# Pruebas de infra/prometheus/alertas.yml. Desde la raíz del repositorio:
+#   docker run --rm -v "$PWD/infra/prometheus:/p" --entrypoint promtool prom/prometheus:v3.5.0 \
+#     test rules /p/pruebas/alertas_test.yml
+# El CI (contracts-infra.yml) las corre en cada cambio de infra/.
+rule_files:
+  - ../alertas.yml
+
+evaluation_interval: 1m
+
+tests:
+  # La DLQ con mensajes durante más de 5 minutos dispara; vacía, no.
+  - interval: 1m
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages{queue="turismo.dead-letter"}'
+        values: "0 0 2 2 2 2 2 2 2 2"
+      - series: 'rabbitmq_detailed_queue_messages{queue="catalog.reservas"}'
+        values: "9 9 9 9 9 9 9 9 9 9"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: MensajesEnDLQ
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: MensajesEnDLQ
+        exp_alerts:
+          - exp_labels: { severidad: advertencia }
+            exp_annotations:
+              resumen: "Hay 2 mensajes en la DLQ turismo.dead-letter"
+              descripcion: >-
+                Revisarlos en la consola de RabbitMQ (puerto 15672): las cabeceras x-cola, x-intentos y x-error
+                dicen de dónde vienen y por qué fallaron. Si el problema se corrigió, volver a publicarlos con su
+                clave de enrutamiento; los consumidores descartan los event_id repetidos.
+
+  # El primer mensaje a la DLQ crea la serie ya en 1: también tiene que disparar.
+  - interval: 1m
+    input_series:
+      - series: 'booking_eventos_consumidos_total{job="booking-service",cola="booking.servicios",event_type="servicio.publicado",resultado="aplicado"}'
+        values: "5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29"
+      - series: 'booking_eventos_consumidos_total{job="booking-service",cola="booking.servicios",event_type="servicio.publicado",resultado="dlq"}'
+        values: "_ _ _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: EventoEnviadoADLQ
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: EventoEnviadoADLQ
+        exp_alerts:
+          - exp_labels:
+              severidad: advertencia
+              job: booking-service
+              cola: booking.servicios
+              event_type: servicio.publicado
+            exp_annotations:
+              resumen: "booking-service mandó servicio.publicado de la cola booking.servicios a la DLQ"
+              descripcion: >-
+                El evento no cumple el contrato o falló tres veces. Ver el registro del servicio con el
+                correlation_id del mensaje y la alerta MensajesEnDLQ.
+      # Pasada la ventana sin mensajes nuevos, se apaga (la DLQ la sigue avisando MensajesEnDLQ).
+      - eval_time: 20m
+        alertname: EventoEnviadoADLQ
+        exp_alerts: []
+
+  # Un fallo del SMTP en la recuperación dispara aunque la serie sea nueva; los demás resultados no.
+  - interval: 1m
+    input_series:
+      - series: 'iam_recuperacion_solicitudes_total{job="iam-service",resultado="enviado"}'
+        values: "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30"
+      - series: 'iam_recuperacion_solicitudes_total{job="iam-service",resultado="fallo_smtp"}'
+        values: "_ _ _ _ _ _ _ _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: RecuperacionSinCorreo
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: RecuperacionSinCorreo
+        exp_alerts:
+          - exp_labels: { severidad: critica }
+            exp_annotations:
+              resumen: "iam no pudo enviar correos de recuperación de contraseña"
+              descripcion: >-
+                El SMTP rechazó o no respondió. Los usuarios reciben 202 y el correo nunca llega; pueden volver a
+                pedirlo, pero fallará igual hasta que se corrija el SMTP (SMTP_* en iam-secretos e iam-config).
+      - eval_time: 29m
+        alertname: RecuperacionSinCorreo
+        exp_alerts: []

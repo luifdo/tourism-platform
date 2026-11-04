@@ -15,7 +15,7 @@ resources:
   - ../../base
 
 images:
-  - name: ghcr.io/turismo-santa-marta/booking-service # nombre que deja la base
+  - name: ghcr.io/luifdo/booking-service # nombre que deja la base
     newName: booking-service
     newTag: local # la imagen construida en tu Docker; con una etiqueta fija no se descarga
 

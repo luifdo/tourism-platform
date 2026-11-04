@@ -1,0 +1,27 @@
+# catalog-service en el k3s local (infra/k8s/k3s_local.py). Ver iam/kustomization.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: turismo-app
+
+resources:
+  - ../../../../services/catalog-service/k8s/base
+
+images:
+  - name: ghcr.io/luifdo/catalog-service
+    newName: catalog-service
+    newTag: local
+
+components:
+  - ../comun
+
+patches:
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata: { name: catalog-config }
+      data:
+        SMTP_HOST: mailpit.turismo-datos.svc
+        SMTP_PORT: "1025"
+        SMTP_STARTTLS: "false"
+        S3_ENDPOINT_PUBLICO: http://s3.localhost:8081
+        IMAGENES_URL_PUBLICA: http://s3.localhost:8081/catalogo-imagenes

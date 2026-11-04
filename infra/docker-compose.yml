@@ -2,9 +2,10 @@
 #   cp .env.example .env
 #   docker compose up -d --build
 #
-# Levanta la infraestructura compartida, los cinco microservicios y Traefik en el puerto 80. Hasta
-# que existan las rutas en gateway/config/compose/, la identidad se envía a mano (X-Usuario-Id y
-# X-Usuario-Rol) a los puertos de cada servicio.
+# Levanta la infraestructura compartida, los cinco microservicios y Traefik en el puerto 80, con las
+# rutas de gateway/config/compose/: ahí la identidad la pone ForwardAuth (iam) a partir del JWT. Los
+# puertos de cada servicio (8001-8005) siguen abiertos para probarlos directo; en ellos la identidad
+# se envía a mano (X-Usuario-Id y X-Usuario-Rol).
 
 name: tourism-platform
 

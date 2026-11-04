@@ -21,6 +21,8 @@ permissions:
 env:
   # El último parche de la etiqueta traefik:v3.3 que usa infra/docker-compose.yml.
   TRAEFIK_VERSION: v3.3.7
+  # Solo para promtool: el compose aún usa prom/prometheus:latest.
+  PROMETHEUS_VERSION: v3.5.0
 
 jobs:
   validate:
@@ -40,6 +42,15 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config -q
+
+      # Configuración de Prometheus y pruebas de las alertas (C-40, C-50) con el promtool de la imagen.
+      - name: Validar Prometheus y probar las alertas
+        working-directory: infra/prometheus
+        run: |
+          docker run --rm -v "$PWD:/etc/prometheus" --entrypoint promtool "prom/prometheus:${PROMETHEUS_VERSION}" \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm -v "$PWD:/etc/prometheus" --entrypoint promtool "prom/prometheus:${PROMETHEUS_VERSION}" \
+            test rules /etc/prometheus/pruebas/alertas_test.yml
 
       # probar_gateway.py arranca un Traefik real con gateway/config/compose y servicios falsos:
       # cada operación de contracts/openapi/ queda pública o protegida tal como lo declara su

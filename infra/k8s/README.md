@@ -2,7 +2,7 @@
 
 Responsable: Luis Fernando Barraza Sanchez (@luifdo). Lo que todos los servicios necesitan en el clúster (Plan §7.2, §7.4 y §7.6): namespaces, PostgreSQL con CloudNativePG, RabbitMQ, Valkey, SeaweedFS, políticas de red y respaldos.
 
-Cada servicio trae sus propios manifiestos en `services/<servicio>/k8s/`. **Aquí no están** Traefik con sus rutas (`gateway/`), Prometheus, Grafana y Loki (`infra/observabilidad/`, de Juan Francisco) ni cert-manager.
+Cada servicio trae sus propios manifiestos en `services/<servicio>/k8s/`. **Aquí no están** Traefik con sus rutas (`gateway/`), Prometheus, Grafana y Loki (`infra/observabilidad/`, de Juan Francisco) ni cert-manager. El Prometheus del clúster debe cargar las alertas de `infra/prometheus/alertas.yml` y leer también `/metrics/detailed?family=queue_coarse_metrics` de RabbitMQ (`:15692`), que es de donde sale el conteo de la DLQ; en el compose ya está así.
 
 **Versión del clúster: k3s `v1.32.9+k3s1`**, que trae **Traefik 3.3.6**, la misma línea que el compose (`traefik:v3.3`) y que `gateway/pruebas/probar_gateway.py` (3.3.7). Las k3s v1.32.10 y posteriores traen Traefik 3.5 o 3.6, y las v1.31 traen 2.11, donde las rutas no funcionan (`PathRegexp` no existe en v2). Para cambiarla hay que subir también el Traefik del compose y de la prueba del gateway, y volver a probar las rutas. Kubernetes 1.32 ya no recibe parches upstream; se acepta para el Escenario A.
 

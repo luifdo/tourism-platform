@@ -20,7 +20,7 @@ class AlmacenIdempotenciaMemoria:
 
     def _vigente(self, clave: str) -> tuple[float, RespuestaGuardada | None] | None:
         guardado = self._datos.get(clave)
-        if guardado is not None and guardado[0] < time.monotonic():
+        if guardado is not None and guardado[0] <= time.monotonic():
             del self._datos[clave]
             return None
         return guardado

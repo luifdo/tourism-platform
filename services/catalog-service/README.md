@@ -247,6 +247,7 @@ El servicio atiende bajo `/api/catalog` (el mismo prefijo del Gateway) y `/healt
 |---|---|---|
 | `GET /api/catalog/servicios` | UC7 | Pública, paginada |
 | `GET /api/catalog/servicios/{id}` | UC9 | Pública; incluye alertas vigentes del servicio y de su zona, `atributos` en el idioma pedido con sus `etiquetas`, `aviso_pagos` y `regla_base_cancelacion` (la regla que aplica booking, junto a la política informativa del prestador; texto en `app/api/i18n/textos_plataforma.py`) |
+| `GET /api/catalog/servicios/nombres?ids=…` | Reservas y reseñas | Pública; nombre en el idioma pedido y `activo` de hasta 100 servicios, **también los inactivos** (el historial no pierde el nombre). Los ids que no existen no aparecen. Sin caché. La usa la PWA para las reservas de booking y las reseñas de review, que solo guardan `servicio_id` (booking `INTEGRACION.md` §2.6, opción a) |
 | `GET /api/catalog/buscar` | UC8 | Pública; texto, categorías, tipos, zona, precio y su unidad, cercanía en metros, filtros de atributos y `fecha`/`personas` (ver abajo); caché de 300 s en Valkey, salvo con `fecha` |
 | `GET /api/catalog/zonas` | Filtros | Pública |
 | `GET /api/catalog/alertas` | UC26 | Pública; vigentes, de mayor a menor nivel |

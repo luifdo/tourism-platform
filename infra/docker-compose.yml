@@ -122,7 +122,10 @@ services:
     image: chrislusf/seaweedfs:3.80
     # Cada colección reserva varios volúmenes: con pocos, la primera puede dejar a la otra sin
     # dónde escribir (F-10 en services/iam-service/docs/verificacion-fase4.md).
-    command: server -ip.bind=0.0.0.0 -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -volume.max=30
+    # En Linux cada volumen nuevo reserva en disco su tamaño máximo aunque esté vacío: con el de
+    # 1024 MB que elige `weed server`, 30 volúmenes llenaron un disco de 30 GB y RabbitMQ dejó de
+    # aceptar conexiones. Con 100 MB por volumen caben 15 GB de datos y el disco crece con ellos.
+    command: server -ip.bind=0.0.0.0 -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -volume.max=150 -master.volumeSizeLimitMB=100
     ports: ["8333:8333"]
     volumes:
       - seaweedfs-data:/data

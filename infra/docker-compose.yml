@@ -18,13 +18,15 @@ x-iam-entorno: &iam-entorno
   VALKEY_URL: redis://valkey:6379/2
   RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
   S3_ENDPOINT_URL: http://seaweedfs:8333
-  # El host que ve el navegador del Admin: va dentro de la firma de la URL.
-  S3_ENDPOINT_PUBLICO: http://localhost:8333
+  # El host que ve el navegador del Admin: va dentro de la firma de la URL. En un servidor, el
+  # dominio público de SeaweedFS (infra/.env); debe coincidir con el Host de gateway/config.
+  S3_ENDPOINT_PUBLICO: ${S3_ENDPOINT_PUBLICO:-http://localhost:8333}
   S3_ACCESS_KEY: iam_access_dev
   S3_SECRET_KEY: iam_secret_dev
   SMTP_HOST: mailpit
   SMTP_PORT: "1025"
-  PWA_URL: http://localhost:5173
+  # Base del enlace de recuperación de contraseña: donde el usuario abre la PWA.
+  PWA_URL: ${PWA_URL:-http://localhost:5173}
   # Vacía = no retiene nada: catalog ya consume usuario.suprimido en la cola catalog.prestadores.
   # El valor por defecto del IAM retiene usuario.suprimido, así que no basta con quitar la línea.
   OUTBOX_EVENTOS_RETENIDOS: ""
@@ -41,11 +43,12 @@ x-catalog-entorno: &catalog-entorno
   SMTP_HOST: mailpit
   SMTP_PORT: "1025"
   INTENCION_VISITA_SECRETO: ${CATALOG_INTENCION_VISITA_SECRETO}
-  # El navegador sube las imágenes directo a SeaweedFS: el endpoint es el que ve el host.
-  S3_ENDPOINT_PUBLICO: http://localhost:8333
+  # El navegador sube las imágenes directo a SeaweedFS: el endpoint es el que ve el navegador
+  # (el mismo de iam, en infra/.env).
+  S3_ENDPOINT_PUBLICO: ${S3_ENDPOINT_PUBLICO:-http://localhost:8333}
   S3_ACCESS_KEY: catalog_access_dev
   S3_SECRET_KEY: catalog_secret_dev
-  IMAGENES_URL_PUBLICA: http://localhost:8333/catalogo-imagenes
+  IMAGENES_URL_PUBLICA: ${IMAGENES_URL_PUBLICA:-http://localhost:8333/catalogo-imagenes}
 
 # Variables comunes de booking-service (API y migraciones).
 x-booking-entorno: &booking-entorno

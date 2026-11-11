@@ -6,6 +6,11 @@
 # rutas de gateway/config/compose/: ahí la identidad la pone ForwardAuth (iam) a partir del JWT. Los
 # puertos de cada servicio (8001-8005) siguen abiertos para probarlos directo; en ellos la identidad
 # se envía a mano (X-Usuario-Id y X-Usuario-Rol).
+#
+# Todos los puertos menos el 80 se publican solo en 127.0.0.1: en un servidor no se alcanzan desde
+# fuera (los servicios confían en X-Usuario-*, y Postgres o RabbitMQ no deben quedar expuestos), y en
+# el equipo propio se usan igual por localhost. Para verlos desde otra máquina de la red local,
+# PUERTOS_INTERNOS_IP=0.0.0.0 en infra/.env; en un servidor, por túnel SSH.
 
 name: tourism-platform
 
@@ -89,7 +94,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports: ["5432:5432"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:5432:5432"]
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -128,7 +133,7 @@ services:
   valkey:
     image: valkey/valkey:8
     command: ["valkey-server", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
-    ports: ["6379:6379"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:6379:6379"]
 
   # Imágenes del catálogo y documentos de verificación (API S3). Credenciales de desarrollo en
   # seaweedfs/s3.json; el acceso sin firma solo alcanza a las imágenes.
@@ -140,7 +145,7 @@ services:
     # 1024 MB que elige `weed server`, 30 volúmenes llenaron un disco de 30 GB y RabbitMQ dejó de
     # aceptar conexiones. Con 100 MB por volumen caben 15 GB de datos y el disco crece con ellos.
     command: server -ip.bind=0.0.0.0 -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -volume.max=150 -master.volumeSizeLimitMB=100
-    ports: ["8333:8333"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:8333:8333"]
     volumes:
       - seaweedfs-data:/data
       - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
@@ -166,8 +171,8 @@ services:
       # trabajo, quitándosela al resto del entorno local (se vio al medir ESC-01).
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+sbwt none +sbwtdcpu none +sbwtdio none"
     ports:
-      - "5672:5672"     # AMQP
-      - "15672:15672"   # consola web
+      - "${PUERTOS_INTERNOS_IP:-127.0.0.1}:5672:5672"     # AMQP
+      - "${PUERTOS_INTERNOS_IP:-127.0.0.1}:15672:15672"   # consola web
     healthcheck:
       # Con el usuario del servidor: como root, si se adelanta en un arranque lento, crea
       # .erlang.cookie de root y RabbitMQ termina con eacces al leerla.
@@ -179,8 +184,8 @@ services:
   mailpit:
     image: axllent/mailpit:v1.21
     ports:
-      - "1025:1025"   # SMTP
-      - "8025:8025"   # bandeja web
+      - "${PUERTOS_INTERNOS_IP:-127.0.0.1}:1025:1025"   # SMTP
+      - "${PUERTOS_INTERNOS_IP:-127.0.0.1}:8025:8025"   # bandeja web
 
   # ---------- Observabilidad ----------
   prometheus:
@@ -188,13 +193,13 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alertas.yml:/etc/prometheus/alertas.yml:ro
-    ports: ["9090:9090"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:9090:9090"]
 
   grafana:
     image: grafana/grafana:latest
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
-    ports: ["3000:3000"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:3000:3000"]
     depends_on: [prometheus]
 
   # ---------- Microservicios ----------
@@ -238,7 +243,7 @@ services:
   iam-service:
     image: iam-service:local
     environment: *iam-entorno
-    ports: ["8001:8001"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:8001:8001"]
     volumes:
       - iam-llaves:/srv/keys:ro
     depends_on:
@@ -251,7 +256,7 @@ services:
     image: iam-service:local
     command: ["python", "-m", "app.worker"]
     environment: *iam-entorno
-    ports: ["9101:9101"]   # /metrics
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:9101:9101"]   # /metrics
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9101/metrics')"]
       interval: 30s
@@ -273,7 +278,7 @@ services:
   catalog-service:
     image: catalog-service:local
     environment: *catalog-entorno
-    ports: ["8002:8002"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:8002:8002"]
     depends_on:
       catalog-migraciones: { condition: service_completed_successfully }
       valkey: { condition: service_started }
@@ -284,7 +289,7 @@ services:
     image: catalog-service:local
     command: ["python", "-m", "app.worker"]
     environment: *catalog-entorno
-    ports: ["9102:9102"]   # /metrics
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:9102:9102"]   # /metrics
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9102/metrics')"]
       interval: 30s
@@ -307,7 +312,7 @@ services:
   booking-service:
     image: booking-service:local
     environment: *booking-entorno
-    ports: ["8003:8003"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:8003:8003"]
     depends_on:
       booking-migraciones: { condition: service_completed_successfully }
       rabbitmq: { condition: service_healthy }
@@ -327,7 +332,7 @@ services:
   review-service:
     image: review-service:local
     environment: *review-entorno
-    ports: ["8004:8004"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:8004:8004"]
     depends_on:
       review-migraciones: { condition: service_completed_successfully }
       rabbitmq: { condition: service_healthy }
@@ -336,7 +341,7 @@ services:
     image: review-service:local
     command: ["python", "-m", "app.worker"]
     environment: *review-entorno
-    ports: ["9104:9104"]   # /metrics
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:9104:9104"]   # /metrics
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9104/metrics')"]
       interval: 30s
@@ -360,7 +365,7 @@ services:
       LLM_PROVIDER: groq
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-openai/gpt-oss-120b}
-    ports: ["8005:8005"]
+    ports: ["${PUERTOS_INTERNOS_IP:-127.0.0.1}:8005:8005"]
     depends_on:
       postgres-preparar: { condition: service_completed_successfully }
       valkey: { condition: service_started }

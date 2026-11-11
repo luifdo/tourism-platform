@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 import uuid
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -30,6 +30,14 @@ RAIZ = Path(__file__).resolve().parents[2]
 CLAVE = "Tayrona2026"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@turismo.local")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Cambiar-en-local1")
+# booking decide "hoy" en hora de Bogotá (TZ=America/Bogota). Con date.today(), en un equipo en UTC la
+# prueba fallaba después de las 7 p. m.: su "ayer" era el "hoy" de booking y el cron no finalizaba la
+# reserva. Colombia no cambia de hora, así que basta un desfase fijo (y no hace falta tzdata en Windows).
+BOGOTA = timezone(timedelta(hours=-5), "America/Bogota")
+
+
+def hoy():
+    return datetime.now(BOGOTA).date()
 
 
 # ---------- entornos ----------
@@ -294,7 +302,7 @@ def flujo(e: Compose | K3s) -> None:
         pub = leer_publico(d["url_publica"])
         ok("seaweedfs imagen pública sin firma", pub.status_code == 200, str(pub.status_code))
 
-    v10, v11, v12 = ((date.today() + timedelta(days=n)).isoformat() for n in (10, 11, 12))
+    v10, v11, v12 = ((hoy() + timedelta(days=n)).isoformat() for n in (10, 11, 12))
     abierto = esperar(
         lambda: (
             c.post(
@@ -408,7 +416,7 @@ asyncio.run(main())
     no_elegible = r.status_code == 403 and r.json().get("error") == "NO_ELEGIBLE"
     ok("review rechaza sin visita (NO_ELEGIBLE)", no_elegible, r.text)
     # La reserva confirmada pasa a ayer para que el cron la finalice.
-    ayer = (date.today() - timedelta(days=1)).isoformat()
+    ayer = (hoy() - timedelta(days=1)).isoformat()
     e.psql(
         "booking_db",
         f"create temp table t as select * from disponibilidad_cupo where servicio_id='{sid}' and fecha='{v10}';"

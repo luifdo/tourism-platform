@@ -205,7 +205,7 @@ export default {
     zeroCloses: 'With 0 spots the day is closed and not offered to tourists.',
     dayCreated: 'You opened {fecha}.', daySaved: 'You saved {fecha}.',
     conflictTitle: 'This day changed while you were editing it',
-    yourChange: 'Your change', nowOnServer: 'What is there now', conflictLine: '{cupos} spots · rate {tarifa}',
+    yourChange: 'Your change', nowOnServer: 'What is there now', conflictLine: '{cupos} spots · {tarifa}',
     useMine: 'Use my change', keepServer: 'Keep what is there', keptServer: 'The day was left as it is on the server.',
     openRange: 'Open a range of days', openRangeHelp: 'Creates the days in the range that match the chosen weekdays. Days that already exist are not touched.',
     from: 'From', to: 'To', weekdays: 'Weekdays', openDays: 'Open {n} days', skipExisting: 'Days that already exist are skipped.',

@@ -116,4 +116,23 @@ describe('adaptador HTTP de reservas: panel del prestador', () => {
       expect((await falla(crear(async () => { throw new TypeError('Failed to fetch') }).solicitudesPrestador())).code).toBe('SIN_CONEXION')
     })
   })
+  describe('el servicio real manda `tarifa_dia` como texto ("100000.00"): se convierte a número', () => {
+    it('en la disponibilidad pública y en el calendario del prestador', async () => {
+      const real = { fecha: '2026-12-05', cupos_totales: 12, cupos_disponibles: 12, cupos_reservados: 0, tarifa_dia: '100000.00', version: 1 }
+      const a = await crear(async () => respuesta({ servicio_id: 's1', dias: [{ fecha: '2026-12-05', cupos_disponibles: 12, tarifa_dia: '100000.00' }, { fecha: '2026-12-06', cupos_disponibles: 3, tarifa_dia: null }] })).consultarDisponibilidad('s1', '2026-12-05', '2026-12-06')
+      expect(a.dias.map((d) => d.tarifa_dia)).toEqual([100000, null])
+      const c = await crear(async () => respuesta({ servicio_id: 's1', dias: [real] })).calendarioServicio('s1', '2026-12-05', '2026-12-05')
+      expect(c.dias[0].tarifa_dia).toBe(100000)
+    })
+    it('al guardar un día y en el día `actual` de un 409 VERSION_DISTINTA', async () => {
+      const g = await crear(async () => respuesta({ fecha: '2026-12-05', cupos_totales: 6, cupos_disponibles: 6, cupos_reservados: 0, tarifa_dia: '95000.00', version: 2 }, { status: 200, etag: '"2"' })).guardarDiaCalendario('s1', '2026-12-05', { cupos_totales: 6 }, { version: 1 })
+      expect(g.data.tarifa_dia).toBe(95000)
+      const e = await falla(crear(async () => respuesta({ error: 'VERSION_DISTINTA', message: 'x', correlation_id: 'c', version_actual: 5, actual: { fecha: '2026-12-05', tarifa_dia: '80000.50', version: 5 } }, { status: 409 })).guardarDiaCalendario('s1', '2026-12-05', { cupos_totales: 6 }, { version: 1 }))
+      expect(e.data.actual.tarifa_dia).toBe(80000.5)
+    })
+    it('un día sin tarifa propia sigue en null (usa la tarifa base)', async () => {
+      const c = await crear(async () => respuesta({ servicio_id: 's1', dias: [{ fecha: 'x', tarifa_dia: null }, { fecha: 'y', tarifa_dia: '' }] })).calendarioServicio('s1', 'x', 'y')
+      expect(c.dias.map((d) => d.tarifa_dia)).toEqual([null, null])
+    })
+  })
 })

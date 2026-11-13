@@ -205,7 +205,7 @@ export default {
     zeroCloses: 'Con 0 cupos el día queda cerrado y no se ofrece al turista.',
     dayCreated: 'Abriste el {fecha}.', daySaved: 'Guardaste el {fecha}.',
     conflictTitle: 'Este día cambió mientras lo editabas',
-    yourChange: 'Tu cambio', nowOnServer: 'Lo que hay ahora', conflictLine: '{cupos} cupos · tarifa {tarifa}',
+    yourChange: 'Tu cambio', nowOnServer: 'Lo que hay ahora', conflictLine: '{cupos} cupos · {tarifa}',
     useMine: 'Usar mi cambio', keepServer: 'Dejar lo que hay', keptServer: 'Se dejó el día como estaba en el servidor.',
     openRange: 'Abrir un rango de días', openRangeHelp: 'Crea los días del rango que coincidan con los días de la semana elegidos. Los que ya existen no se tocan.',
     from: 'Desde', to: 'Hasta', weekdays: 'Días de la semana', openDays: 'Abrir {n} días', skipExisting: 'Los días que ya existen se omiten.',

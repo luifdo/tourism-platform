@@ -6,6 +6,14 @@ import { BookingError } from '../../domain/booking/errors.js'
  * BookingGateway y ProviderGateway). Todas sus rutas exigen sesión: `fetchFn` debe ser el fetch
  * autenticado (infrastructure/auth/authorizedFetch), que pone el Bearer y renueva el token.
  */
+/**
+ * El booking-service real serializa `tarifa_dia` como TEXTO ("100000.00": es un decimal), aunque booking.yaml dice number.
+ * Se convierte aquí para que el resto de la aplicación siempre reciba un número (o null si el día usa la tarifa base).
+ */
+const aNumero = (v) => (v == null || v === '' ? null : Number(v))
+const dia = (d) => (d && typeof d === 'object' && 'tarifa_dia' in d ? { ...d, tarifa_dia: aNumero(d.tarifa_dia) } : d)
+const dias = (r) => (Array.isArray(r?.dias) ? { ...r, dias: r.dias.map(dia) } : r)
+
 export function createHttpBookingGateway({ baseUrl = '/api/bookings', fetchFn = (...a) => fetch(...a) } = {}) {
   async function http(method, path, { body, headers = {}, query } = {}) {
     const qs = query ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v != null && v !== '')) : ''
@@ -17,7 +25,9 @@ export function createHttpBookingGateway({ baseUrl = '/api/bookings', fetchFn = 
     catch { throw new BookingError('SIN_CONEXION', 'No hay conexión con el servidor.') }
     const data = await res.json().catch(() => null)
     if (!res.ok)
-      throw new BookingError(data?.error ?? (res.status === 401 ? 'NO_AUTENTICADO' : 'ERROR'), data?.message ?? res.statusText, { status: res.status, correlationId: data?.correlation_id, data })
+      throw new BookingError(data?.error ?? (res.status === 401 ? 'NO_AUTENTICADO' : 'ERROR'), data?.message ?? res.statusText, {
+        status: res.status, correlationId: data?.correlation_id, data: data?.actual ? { ...data, actual: dia(data.actual) } : data,
+      })
     return { data, etag: res.headers.get('ETag'), status: res.status }
   }
 
@@ -26,7 +36,7 @@ export function createHttpBookingGateway({ baseUrl = '/api/bookings', fetchFn = 
 
   return {
     consultarDisponibilidad: (servicioId, desde, hasta) =>
-      http('GET', '/disponibilidad', { query: { servicio_id: servicioId, desde, hasta } }).then((r) => r.data),
+      http('GET', '/disponibilidad', { query: { servicio_id: servicioId, desde, hasta } }).then((r) => dias(r.data)),
     solicitarReserva: (body, idempotencyKey) => conEtag(http('POST', '/', { body, headers: { 'Idempotency-Key': idempotencyKey } })),
     misReservas: (params = {}) => http('GET', '/mis-reservas', { query: params }).then((r) => r.data),
     modificarReserva: (id, version, cambios) => conEtag(http('PATCH', `/${id}`, { body: cambios, headers: { 'If-Match': `"${version}"` } })),
@@ -37,13 +47,13 @@ export function createHttpBookingGateway({ baseUrl = '/api/bookings', fetchFn = 
     confirmarReserva: (id) => conEtag(http('POST', `/${id}/confirmar`)),
     rechazarReserva: (id, motivo) => conEtag(http('POST', `/${id}/rechazar`, { body: { motivo } })),
     calendarioServicio: (servicioId, desde, hasta) =>
-      http('GET', `/prestador/calendario/${encodeURIComponent(servicioId)}`, { query: { desde, hasta } }).then((r) => r.data),
+      http('GET', `/prestador/calendario/${encodeURIComponent(servicioId)}`, { query: { desde, hasta } }).then((r) => dias(r.data)),
     abrirRangoCalendario: (servicioId, body, idempotencyKey) =>
       http('POST', `/prestador/calendario/${encodeURIComponent(servicioId)}/rango`, { body, headers: { 'Idempotency-Key': idempotencyKey } }).then((r) => r.data),
     // Sin If-Match solo crea el día (201); con If-Match edita si la versión coincide (200)
     guardarDiaCalendario: (servicioId, fecha, body, { version = null, idempotencyKey } = {}) =>
       http('PUT', `/prestador/calendario/${encodeURIComponent(servicioId)}/${encodeURIComponent(fecha)}`, {
         body, headers: { 'Idempotency-Key': idempotencyKey, ...(version != null ? { 'If-Match': `"${version}"` } : {}) },
-      }).then((r) => ({ data: r.data, etag: r.etag, creado: r.status === 201 })),
+      }).then((r) => ({ data: dia(r.data), etag: r.etag, creado: r.status === 201 })),
   }
 }

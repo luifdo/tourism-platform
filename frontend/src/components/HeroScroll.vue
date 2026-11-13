@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { TOTAL, conjuntoPara, cuadroMasCercano, indiceDeAvance, ordenDeCarga, recorteCover, rutaDeCuadro } from '../lib/heroFrames'
 
 const { t, tm, rt } = useI18n()
 const router = useRouter()
@@ -12,7 +13,7 @@ const buscar = () => router.push({ name: 'home', query: destino.value.trim() ? {
 
 const base = import.meta.env.BASE_URL
 const story = ref(null)
-const video = ref(null)
+const lienzo = ref(null)
 const p = ref(0) // progreso 0..1 del scroll dentro del hero
 
 const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -24,54 +25,106 @@ const icons = [
   'M3 5h12M9 3v2M5 11c2 4 6 7 10 8M13 11c-1 3-4 6-9 8M14 21l4-9 4 9M15.5 18h5',
 ]
 
-let cur = 0
+/*
+ * La portada se mueve con el scroll dibujando, en un canvas, el fotograma que toca (ver lib/heroFrames.js). No es un <video>: un video
+ * necesita permiso para reproducirse y en iOS con el modo de bajo consumo no se mueve; las imágenes se cargan siempre, en Safari,
+ * Chrome y demás. Los cuadros se piden por capas (inicio y final, de a 16, de a 8...): el scroll ya funciona con pocos y se afina
+ * solo; mientras no hay ninguno, se ve el póster. Con movimiento reducido solo se carga y se muestra el primer cuadro.
+ */
+const cuadros = new Array(TOTAL).fill(null) // Image ya cargadas
+const listo = new Array(TOTAL).fill(false)
+let conjunto = conjuntoPara(window.innerWidth, window.innerHeight)
+let generacion = 0 // un cambio de conjunto (girar el teléfono) descarta las cargas del anterior
+let ctx = null
+let cur = 0 // posición suavizada, en cuadros
 let target = 0
 let raf = 0
+let dibujado = -1
+let vivo = true
+
+function ajustarLienzo() {
+  const c = lienzo.value
+  if (!c) return
+  const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  const w = Math.round(c.clientWidth * dpr)
+  const h = Math.round(c.clientHeight * dpr)
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; dibujado = -1 }
+  ctx = c.getContext('2d')
+}
+
+function dibujar() {
+  const c = lienzo.value
+  if (!c || !ctx) return
+  const i = cuadroMasCercano(Math.round(cur), listo)
+  if (i == null || i === dibujado) return
+  const img = cuadros[i]
+  const r = recorteCover(img.naturalWidth, img.naturalHeight, c.width, c.height)
+  ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, 0, 0, c.width, c.height)
+  dibujado = i
+}
+
+function cargar(i, gen) {
+  return new Promise((resolver) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.onload = () => {
+      if (gen === generacion && vivo) { cuadros[i] = img; listo[i] = true; dibujar() }
+      resolver()
+    }
+    img.onerror = () => resolver() // un cuadro que falta se salta: se dibuja el más cercano
+    img.src = rutaDeCuadro(base, conjunto, i)
+  })
+}
+
+async function cargarTodos() {
+  const gen = ++generacion
+  cuadros.fill(null); listo.fill(false); dibujado = -1
+  const ahorro = !!navigator.connection?.saveData
+  const orden = reduced ? [0] : ordenDeCarga(TOTAL, ahorro ? 3 : 1)
+  let siguiente = 0
+  // Cuatro a la vez: no se compite con el resto de la página, y el orden de las capas se respeta
+  const hilo = async () => { while (vivo && gen === generacion && siguiente < orden.length) await cargar(orden[siguiente++], gen) }
+  await Promise.all([hilo(), hilo(), hilo(), hilo()])
+}
 
 function onScroll() {
   const el = story.value
   if (!el) return
   const max = el.offsetHeight - el.firstElementChild.offsetHeight
-  target = Math.min(1, Math.max(0, -el.getBoundingClientRect().top / max))
+  target = Math.min(1, Math.max(0, -el.getBoundingClientRect().top / (max || 1)))
   p.value = target
   if (!raf && !reduced) raf = requestAnimationFrame(tick)
 }
 
-// El video se "escrubea" con suavizado; el bucle se detiene al converger
+// El cuadro actual alcanza al del scroll con suavizado; el bucle se detiene al converger
 function tick() {
-  cur += (target - cur) * 0.1
-  const v = video.value
-  if (v && v.duration && !v.seeking) {
-    const time = Math.min(v.duration - 0.05, cur * v.duration)
-    if (Math.abs(v.currentTime - time) > 0.02) v.currentTime = time
-  }
-  raf = Math.abs(target - cur) > 0.0005 ? requestAnimationFrame(tick) : 0
+  const meta = indiceDeAvance(target)
+  cur += (meta - cur) * 0.22
+  if (Math.abs(meta - cur) < 0.3) cur = meta
+  dibujar()
+  raf = cur !== meta ? requestAnimationFrame(tick) : 0
 }
 
-// iOS no carga un video que nunca se reprodujo (ignora preload): se "despierta" una vez, en silencio, y se pausa
-let woke = false
-function wake() {
-  const v = video.value
-  if (woke || !v || reduced) return
-  woke = true
-  v.muted = true
-  const pr = v.play()
-  if (pr && pr.then) pr.then(() => { v.pause(); v.currentTime = cur * (v.duration || 0) }).catch(() => { woke = false })
-  else v.pause()
+function onResize() {
+  const nuevo = conjuntoPara(window.innerWidth, window.innerHeight)
+  ajustarLienzo()
+  if (nuevo !== conjunto) { conjunto = nuevo; cargarTodos() } else dibujar()
+  onScroll()
 }
 
 onMounted(() => {
-  wake()
-  window.addEventListener('touchstart', wake, { passive: true, once: true })
-  window.addEventListener('pointerdown', wake, { passive: true, once: true })
+  ajustarLienzo()
+  cargarTodos()
   window.addEventListener('scroll', onScroll, { passive: true })
-  window.addEventListener('resize', onScroll)
+  window.addEventListener('resize', onResize)
   onScroll()
+  cur = indiceDeAvance(target)
 })
 onBeforeUnmount(() => {
+  vivo = false
   cancelAnimationFrame(raf)
   window.removeEventListener('scroll', onScroll)
-  window.removeEventListener('resize', onScroll)
+  window.removeEventListener('resize', onResize)
 })
 </script>
 
@@ -79,10 +132,9 @@ onBeforeUnmount(() => {
   <!-- Con movimiento reducido: sin altura extra, video detenido (WCAG) -->
   <section ref="story" :style="{ height: reduced ? 'auto' : '320vh' }" aria-label="Inicio">
     <div class="hero-pin overflow-hidden bg-cream">
-      <video
-        ref="video" :src="`${base}video/hero.mp4`" :poster="`${base}video/hero-poster.jpg`" muted playsinline preload="auto" aria-hidden="true" tabindex="-1"
-        class="absolute inset-0 size-full object-cover"
-      />
+      <!-- El póster se ve de inmediato; el canvas lo cubre en cuanto llega el primer cuadro -->
+      <div class="absolute inset-0 bg-cover bg-center" :style="{ backgroundImage: `url(${base}video/hero-poster.jpg)` }" aria-hidden="true" />
+      <canvas ref="lienzo" class="absolute inset-0 size-full" aria-hidden="true" />
       <!-- Sin velo sobre el video: solo un degradado azul suave a la izquierda para leer el texto -->
       <div class="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,31,57,.55)_0%,rgba(2,31,57,.25)_40%,rgba(2,31,57,0)_70%),linear-gradient(0deg,rgba(2,31,57,.35)_0%,rgba(2,31,57,0)_35%)]" />
       <!-- Difuminado de los bordes con degradados simples (sin máscara: Safari deja de repintar un video enmascarado) -->

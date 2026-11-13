@@ -161,3 +161,11 @@ Toda la API ya existía (`contracts/openapi/`); estas pantallas la usan. Cada á
 * Los tokens siguen en `localStorage` (limitación conocida: un XSS tomaría la sesión). Lo mitigan la CSP sin scripts en línea y que no haya `v-html`/`innerHTML`/`eval` (se vigila con grep en la revisión); el remedio de fondo es una cookie HttpOnly desde IAM.
 * Errores sin atrapar: `app.config.errorHandler`, `unhandledrejection` y `error` muestran un aviso con una referencia (`lib/errorGlobal.js`); los errores de servicio muestran su `correlation_id` cuando no se saben explicar. Las `Idempotency-Key` usan `nuevaClave()`, que no depende de `crypto.randomUUID` (no existe en HTTP no seguro).
 * Las GitHub Actions de `frontend-ci.yml` y `frontend-pages.yml` van fijadas por hash de commit (con la versión en un comentario); las de los demás servicios siguen por etiqueta.
+
+## Portada con scroll (fotogramas, no video)
+
+La portada se mueve con el scroll dibujando en un `canvas` el fotograma que toca (`src/components/HeroScroll.vue`, `src/lib/heroFrames.js`). Antes movía el `currentTime` de un `<video>`; en **iOS con el modo de bajo consumo** (y en cualquier navegador que no deje reproducir sin gesto) el video no se movía nunca. Las imágenes se cargan siempre, en Safari, Chrome y demás.
+
+* 120 cuadros WebP en `public/hero/d/` (1280×720, 5,4 MB) y `public/hero/m/` (406×720, el centro del cuadro, 2,3 MB). Un teléfono en vertical baja solo `m/`; lo demás, `d/`.
+* Se piden por capas (inicio y final, de a 16, de a 8, de a 4, de a 2 y el resto, de a cuatro a la vez): con pocos cuadros el scroll ya mueve la imagen y se afina solo. Mientras no llega ninguno se ve el póster. Con ahorro de datos (`saveData`) solo se piden uno de cada tres; con movimiento reducido, solo el primero.
+* El video original queda en `media-src/hero.mp4` (no se sirve) con las instrucciones para regenerar los cuadros.

@@ -9,7 +9,7 @@ const respuesta = (cuerpo, { status = 200, retryAfter } = {}) => ({
   headers: { get: (h) => (h.toLowerCase() === 'retry-after' ? retryAfter ?? null : null) },
 })
 const buena = { conversacion_id: 'c-1', respuesta: 'Hola', recomendaciones: [{ servicio_id: 's-1', nombre: 'N', justificacion_explicabilidad: 'J' }] }
-const crear = (fetchFn, extra = {}) => createHttpAssistantGateway({ baseUrl: '/api/recommendations', getToken: () => 'jwt-123', fetchFn, ...extra })
+const crear = (fetchFn, extra = {}) => createHttpAssistantGateway({ baseUrl: '/api/recommendations', fetchFn, ...extra })
 const falla = async (p) => { try { await p } catch (e) { return e } throw new Error('se esperaba un error') }
 
 afterEach(() => vi.useRealTimers())
@@ -19,13 +19,13 @@ describe('adaptador HTTP del asistente', () => {
     expect(assertAssistantGateway(crear(vi.fn()))).toBeTruthy()
   })
 
-  it('envía el mensaje a /chat con el JWT y el idioma, sin conversación la primera vez', async () => {
+  it('envía el mensaje a /chat con el idioma, sin conversación la primera vez', async () => {
     const fetchFn = vi.fn(async () => respuesta(buena))
     const r = await crear(fetchFn).enviarMensaje({ mensaje: 'hola', conversacionId: null, idioma: 'en' })
     const [url, init] = fetchFn.mock.calls[0]
     expect(url).toBe('/api/recommendations/chat')
     expect(init.method).toBe('POST')
-    expect(init.headers).toMatchObject({ Authorization: 'Bearer jwt-123', 'Accept-Language': 'en', 'Content-Type': 'application/json' })
+    expect(init.headers).toMatchObject({ 'Accept-Language': 'en', 'Content-Type': 'application/json' })
     expect(JSON.parse(init.body)).toEqual({ mensaje: 'hola' })
     expect(r.conversacion_id).toBe('c-1')
   })
@@ -36,9 +36,9 @@ describe('adaptador HTTP del asistente', () => {
     expect(JSON.parse(fetchFn.mock.calls[0][1].body)).toEqual({ mensaje: 'y?', conversacion_id: 'c-1' })
   })
 
-  it('no manda el encabezado Authorization sin sesión', async () => {
+  it('no pone el Authorization: lo pone el fetch autenticado que recibe (authorizedFetch)', async () => {
     const fetchFn = vi.fn(async () => respuesta(buena))
-    await crear(fetchFn, { getToken: () => null }).enviarMensaje({ mensaje: 'hola', conversacionId: null })
+    await crear(fetchFn).enviarMensaje({ mensaje: 'hola', conversacionId: null })
     expect(fetchFn.mock.calls[0][1].headers.Authorization).toBeUndefined()
   })
 

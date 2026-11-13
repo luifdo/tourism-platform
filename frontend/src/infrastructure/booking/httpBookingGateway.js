@@ -2,15 +2,14 @@ import { BookingError } from '../../domain/booking/errors.js'
 
 /**
  * Adaptador HTTP del puerto BookingGateway: habla con el booking-service a través del Gateway
- * (Traefik), siguiendo contracts/openapi/booking.yaml.
+ * (Traefik), siguiendo contracts/openapi/booking.yaml. Todas sus rutas exigen sesión: `fetchFn` debe ser el fetch
+ * autenticado (infrastructure/auth/authorizedFetch), que pone el Bearer y renueva el token.
  */
-export function createHttpBookingGateway({ baseUrl = '/api/bookings', getToken = () => null, fetchFn = (...a) => fetch(...a) } = {}) {
+export function createHttpBookingGateway({ baseUrl = '/api/bookings', fetchFn = (...a) => fetch(...a) } = {}) {
   async function http(method, path, { body, headers = {}, query } = {}) {
     const qs = query ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v != null && v !== '')) : ''
     const h = { Accept: 'application/json', ...headers }
     if (body) h['Content-Type'] = 'application/json'
-    const token = getToken()
-    if (token) h.Authorization = `Bearer ${token}`
     let res
     try { res = await fetchFn(`${baseUrl}${path}${qs}`, { method, headers: h, body: body ? JSON.stringify(body) : undefined }) }
     catch { throw new BookingError('SIN_CONEXION', 'No hay conexión con el servidor.') }

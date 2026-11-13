@@ -15,6 +15,7 @@ export const RUTAS = Object.freeze({
   registro: '/register',
   login: '/login',
   logout: '/logout',
+  refresh: '/auth/refresh', // pública: el access token puede haber vencido
   recuperar: '/auth/recuperar', // propuesta (Plan §4.1)
   restablecer: '/auth/restablecer', // propuesta
 })
@@ -48,6 +49,11 @@ export function createHttpAuthGateway({ baseUrl = '/api/iam', fetchFn = (...a) =
   return {
     registrar: (datos) => http('POST', rutas.registro, { body: datos }),
     iniciarSesion: (credenciales) => http('POST', rutas.login, { body: credenciales }),
+    // 401 = TOKEN_INVALIDO (desconocido, vencido, revocado o ya usado: siempre el mismo cuerpo). 503 = no se pudo comprobar.
+    renovar: (refreshToken) => http('POST', rutas.refresh, { body: { refresh_token: refreshToken } }).catch((e) => {
+      if (e instanceof AuthError && e.status === 401) throw new AuthError(C.TOKEN_INVALIDO, e.message, { status: 401 })
+      throw e
+    }),
     cerrarSesion: (token) => http('POST', rutas.logout, { token }).then(() => undefined),
     solicitarRecuperacion: (email) => propuesta(http('POST', rutas.recuperar, { body: { email } }).then(() => ({ enviado: true }))),
     restablecerPassword: ({ token, password }) => propuesta(http('POST', rutas.restablecer, { body: { token, password } }).then(() => undefined)),

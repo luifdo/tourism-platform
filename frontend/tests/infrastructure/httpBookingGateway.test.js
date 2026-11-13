@@ -8,7 +8,7 @@ const respuesta = (cuerpo, { status = 200, etag } = {}) => ({
   json: async () => cuerpo,
   headers: { get: (h) => (h.toLowerCase() === 'etag' ? etag ?? null : null) },
 })
-const crear = (fetchFn, token = 'jwt-123') => createHttpBookingGateway({ baseUrl: '/api/bookings', getToken: () => token, fetchFn })
+const crear = (fetchFn) => createHttpBookingGateway({ baseUrl: '/api/bookings', fetchFn })
 const falla = async (p) => { try { await p } catch (e) { return e } throw new Error('se esperaba un error') }
 
 describe('adaptador HTTP de reservas', () => {
@@ -24,13 +24,13 @@ describe('adaptador HTTP de reservas', () => {
     expect(init.method).toBe('GET')
   })
 
-  it('al solicitar envía la Idempotency-Key, el JWT y el cuerpo JSON, y devuelve el ETag', async () => {
+  it('al solicitar envía la Idempotency-Key y el cuerpo JSON, y devuelve el ETag', async () => {
     const fetchFn = vi.fn(async () => respuesta({ id: 'r1' }, { status: 201, etag: '"1"' }))
     const r = await crear(fetchFn).solicitarReserva({ servicio_id: 's1', fecha_reserva: '2026-11-05', numero_personas: 2 }, 'clave-1')
     const [url, init] = fetchFn.mock.calls[0]
     expect(url).toBe('/api/bookings/')
     expect(init.method).toBe('POST')
-    expect(init.headers).toMatchObject({ 'Idempotency-Key': 'clave-1', Authorization: 'Bearer jwt-123', 'Content-Type': 'application/json' })
+    expect(init.headers).toMatchObject({ 'Idempotency-Key': 'clave-1', 'Content-Type': 'application/json' })
     expect(JSON.parse(init.body)).toEqual({ servicio_id: 's1', fecha_reserva: '2026-11-05', numero_personas: 2 })
     expect(r).toEqual({ data: { id: 'r1' }, etag: '"1"' })
   })
@@ -51,9 +51,9 @@ describe('adaptador HTTP de reservas', () => {
     expect(JSON.parse(fetchFn.mock.calls[0][1].body)).toEqual({ motivo: 'Cambio de planes' })
   })
 
-  it('sin token no envía Authorization (las rutas públicas no lo necesitan)', async () => {
-    const fetchFn = vi.fn(async () => respuesta({ servicio_id: 's1', dias: [] }))
-    await crear(fetchFn, null).consultarDisponibilidad('s1', '2026-10-27', '2026-10-28')
+  it('no pone el Authorization: lo pone el fetch autenticado que recibe (authorizedFetch)', async () => {
+    const fetchFn = vi.fn(async () => respuesta({ items: [], total: 0 }))
+    await crear(fetchFn).misReservas()
     expect(fetchFn.mock.calls[0][1].headers.Authorization).toBeUndefined()
   })
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { CUENTA_DEMO, createMockAuthGateway } from '../../src/infrastructure/auth/mockAuthGateway.js'
 import { createSessionStore } from '../../src/infrastructure/auth/sessionStore.js'
-import { getToken, getUsuarioId } from '../../src/infrastructure/auth/tokenSession.js'
+import { getUsuarioId, tokenSession } from '../../src/infrastructure/auth/tokenSession.js'
 import { assertAuthGateway } from '../../src/application/auth/ports.js'
 import { crearSesion } from '../../src/domain/auth/rules.js'
 
@@ -141,12 +141,77 @@ describe('almacén de sesión y token para el resto de módulos', () => {
     expect(() => { sin.save({}); sin.clear() }).not.toThrow()
     expect(sin.load()).toBeNull()
   })
-  it('getToken entrega el JWT solo mientras la sesión está vigente', () => {
+  it('la sesión sigue activa con el access token vencido si el refresh sirve; sin refresh, no', () => {
     const store = createSessionStore({ storage })
-    expect(getToken(store, T0)).toBeNull()
-    store.save(crearSesion(resp, T0))
-    expect(getToken(store, T0)).toBe('jwt-9')
-    expect(getToken(store, new Date(T0.getTime() + 880_000))).toBeNull() // dentro del margen de 30 s
+    expect(tokenSession.isAuthenticated(store, T0)).toBe(false)
+    store.save(crearSesion(resp, T0)) // sesión guardada antes del refresh: solo el access token
+    expect(tokenSession.isAuthenticated(store, T0)).toBe(true)
+    expect(tokenSession.isAuthenticated(store, new Date(T0.getTime() + 880_000))).toBe(false) // dentro del margen de 30 s
+    store.save(crearSesion({ ...resp, refresh_token: 'r-1', refresh_expires_in: 604_800 }, T0))
+    expect(tokenSession.isAuthenticated(store, new Date(T0.getTime() + 880_000))).toBe(true) // venció el access, no el refresh
+    expect(tokenSession.isAuthenticated(store, new Date(T0.getTime() + 8 * 24 * 3600_000))).toBe(false) // pasaron 8 días
     expect(getUsuarioId(store)).toBe('u9')
+  })
+})
+
+describe('refresh token del simulador (rotación y detección de reutilización, como iam-service)', () => {
+  const entrar = () => gw.iniciarSesion({ email: CUENTA_DEMO.email, password: CUENTA_DEMO.password })
+  const sid = (jwt) => JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).sid
+
+  it('el login entrega un refresh token de 7 días y el access token lleva el claim sid', async () => {
+    const r = await entrar()
+    expect(r).toMatchObject({ expires_in: 900, refresh_expires_in: 604_800 })
+    expect(r.refresh_token).toMatch(/^r-/)
+    expect(sid(r.access_token)).toBeTruthy()
+  })
+
+  it('renovar entrega un access y un refresh nuevos, de la misma sesión, y el usuario público', async () => {
+    const a = await entrar()
+    const b = await gw.renovar(a.refresh_token)
+    expect(b.access_token).not.toBe(a.access_token)
+    expect(b.refresh_token).not.toBe(a.refresh_token)
+    expect(sid(b.access_token)).toBe(sid(a.access_token))
+    expect(b.usuario.email).toBe(CUENTA_DEMO.email)
+    expect(Object.keys(b.usuario)).not.toContain('hash')
+  })
+
+  it('se puede encadenar: cada renovación deja usar el refresh más reciente', async () => {
+    let r = await entrar()
+    for (let i = 0; i < 3; i++) r = await gw.renovar(r.refresh_token)
+    expect(r.refresh_token).toBeTruthy()
+  })
+
+  it('reutilizar un refresh ya usado da TOKEN_INVALIDO y revoca TODA la sesión, también el refresh nuevo', async () => {
+    const a = await entrar()
+    const b = await gw.renovar(a.refresh_token)
+    expect((await falla(gw.renovar(a.refresh_token))).code).toBe('TOKEN_INVALIDO') // el viejo, reutilizado: robo
+    expect((await falla(gw.renovar(b.refresh_token))).code).toBe('TOKEN_INVALIDO') // y el nuevo ya no sirve
+  })
+
+  it('un refresh desconocido, vacío o vencido (7 días) no sirve', async () => {
+    const a = await entrar()
+    expect(await falla(gw.renovar('r-inventado'))).toMatchObject({ code: 'TOKEN_INVALIDO', status: 401 })
+    expect((await falla(gw.renovar(''))).code).toBe('VALIDACION')
+    ahora = new Date(ahora.getTime() + 7 * 24 * 3600_000 + 1000)
+    expect((await falla(gw.renovar(a.refresh_token))).code).toBe('TOKEN_INVALIDO')
+  })
+
+  it('el logout con el access token revoca el refresh de esa sesión', async () => {
+    const a = await entrar()
+    await gw.cerrarSesion(a.access_token)
+    expect((await falla(gw.renovar(a.refresh_token))).code).toBe('TOKEN_INVALIDO')
+  })
+
+  it('el logout de una sesión no toca las demás (otro dispositivo)', async () => {
+    const a = await entrar()
+    const b = await entrar()
+    await gw.cerrarSesion(a.access_token)
+    expect((await gw.renovar(b.refresh_token)).refresh_token).toBeTruthy()
+  })
+
+  it('la duración del access token se puede acortar para ver la renovación en la demo', async () => {
+    const corto = createMockAuthGateway({ storage, clock: { now: () => ahora }, delayMs: 0, ttlTokenS: 20 })
+    const r = await corto.iniciarSesion({ email: CUENTA_DEMO.email, password: CUENTA_DEMO.password })
+    expect(r.expires_in).toBe(20)
   })
 })

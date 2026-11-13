@@ -15,6 +15,7 @@ beforeEach(() => {
   gateway = {
     registrar: vi.fn(async () => usuario),
     iniciarSesion: vi.fn(async () => ({ access_token: 'jwt-1', token_type: 'bearer', expires_in: 900, usuario })),
+    renovar: vi.fn(async () => { throw new Error('el caso de uso no debía renovar') }),
     cerrarSesion: vi.fn(async () => {}),
     solicitarRecuperacion: vi.fn(async () => ({ enviado: true })),
     restablecerPassword: vi.fn(async () => {}),
@@ -40,7 +41,7 @@ describe('iniciarSesion (UC2)', () => {
   it('normaliza el correo, guarda la sesión con su vencimiento y la devuelve', async () => {
     const s = await uc.iniciarSesion({ email: '  MARIA.PEREZ@example.com ', password: 'Tayrona2026' })
     expect(gateway.iniciarSesion).toHaveBeenCalledWith({ email: 'maria.perez@example.com', password: 'Tayrona2026' })
-    expect(s).toEqual({ token: 'jwt-1', usuario, expiraEn: AHORA.getTime() + 900_000 })
+    expect(s).toEqual({ token: 'jwt-1', usuario, expiraEn: AHORA.getTime() + 900_000, refreshToken: null, refreshExpiraEn: 0 })
     expect(store.save).toHaveBeenCalledWith(s)
   })
   it('sin correo o contraseña no llama al servidor', async () => {

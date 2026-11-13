@@ -85,7 +85,12 @@ Pantallas: `/ingresar`, `/registro` (18+ y aceptación de datos, Ley 1581), `/re
 **Diferencias con la documentación, por resolver entre el equipo** (el cliente sigue lo implementado; las rutas están en `RUTAS` de `httpAuthGateway.js`):
 
 1. El Plan §4.1 y `gateway/README` nombran `/api/iam/auth/{login,registro,recuperar,verificar,refresh}`; el servicio expone `/api/iam/{register,login,logout}`.
-2. **No hay refresh token**: el token de acceso dura 15 min (`jwt_access_token_ttl_minutes`). Al vencer se pide volver a ingresar (el Plan prevé refresh de 7 días).
+2. **Refresh token** (`POST /api/iam/auth/refresh`, ya en `iam.yaml`): el access token dura 15 min y el refresh, 7 días; cada renovación entrega **los dos nuevos** y el refresh anterior muere. **Reutilizar un refresh se toma como robo y el servicio cierra la sesión**, por eso hay una sola renovación a la vez, también entre pestañas:
+   * La sesión guarda `refreshToken` y su vencimiento. Se renueva sola 30 s antes de vencer (`useSession`), al volver la red o la pestaña, y ante un 401 (renueva una vez y repite la petición: `infrastructure/auth/authorizedFetch`, que usan reservas, chat y la cola sin conexión).
+   * Candado `navigator.locks` (`webLocksRenovacion`; sin él, solo dentro de la pestaña) y, **dentro del candado, se relee la sesión**: si otra pestaña ya renovó, se usa lo suyo. El caso de uso está en `application/auth` (`renovarSesion`, `obtenerToken`).
+   * 401 `TOKEN_INVALIDO` (vencido, revocado o reutilizado): la sesión se invalida y se pide ingresar. Un fallo pasajero (sin red, 503) **no** cierra la sesión: se reintenta cada 30 s.
+   * Riesgo que el cliente no puede quitar: si el servicio rota el refresh y la respuesta se pierde por la red, el refresh guardado ya no sirve y la sesión se cierra al reintentar.
+   * El refresh se guarda en `localStorage` junto al access token: un XSS lo podría leer (por eso la PWA muestra los textos del servidor como texto, nunca como HTML).
 3. **La recuperación de contraseña no existe en el servicio** (UC3) ni tiene contrato. Se implementó el cliente con rutas propuestas (`POST /api/iam/auth/recuperar { email }` y `POST /api/iam/auth/restablecer { token, password }`); mientras el servicio responda 404 la interfaz informa que aún no está disponible.
 4. Falta `contracts/openapi/iam.yaml` (lo cita el README del servicio) y el ForwardAuth `GET /api/iam/auth/verificar`; el servicio ya publica las llaves en `GET /api/iam/.well-known/jwks.json`.
 

@@ -101,7 +101,7 @@ describe('sesión', () => {
   const respuesta = { access_token: 'jwt', token_type: 'bearer', expires_in: 900, usuario: { id: 'u1', email: 'a@b.co', rol: 'Turista' } }
 
   it('el vencimiento se calcula con expires_in (15 min en iam-service)', () => {
-    expect(crearSesion(respuesta, AHORA)).toEqual({ token: 'jwt', usuario: respuesta.usuario, expiraEn: AHORA.getTime() + 900_000 })
+    expect(crearSesion(respuesta, AHORA)).toEqual({ token: 'jwt', usuario: respuesta.usuario, expiraEn: AHORA.getTime() + 900_000, refreshToken: null, refreshExpiraEn: 0 })
   })
   it('vigente mientras falte más que el margen de seguridad de 30 s', () => {
     const s = crearSesion(respuesta, AHORA)

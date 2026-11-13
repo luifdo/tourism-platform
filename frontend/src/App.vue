@@ -7,7 +7,7 @@ import OfflineBar from './components/OfflineBar.vue'
 import AppFooter from './components/AppFooter.vue'
 import AssistantDrawer from './components/AssistantDrawer.vue'
 
-// El token dura 15 min y no hay refresh: si vence con una pantalla protegida abierta se pide volver a ingresar
+// El token dura 15 min y se renueva solo con el refresh token (7 días): solo si no se puede renovar se pide volver a ingresar
 const route = useRoute()
 const router = useRouter()
 const { sesion } = useSession()

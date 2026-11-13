@@ -1,6 +1,5 @@
 import { reactive, readonly } from 'vue'
 import { db } from '../infrastructure/storage/idb'
-import { getToken } from '../infrastructure/auth/tokenSession'
 
 /*
  * Formularios diferidos (RNF-13, ESC-09): perfil, reseña, oferta y cupos.
@@ -17,12 +16,14 @@ async function refresh() {
   state.items = (await db.all('pending')).sort((a, b) => a.createdAt - b.createdAt)
 }
 
+// El fetch autenticado (pone el Bearer y renueva el token) lo entrega composition.js; así la cola no conoce la sesión
+let transporte = (...a) => fetch(...a)
+export const configurarTransporte = (fetchFn) => { transporte = fetchFn }
+
 async function send(item) {
   const headers = { 'Content-Type': 'application/json', 'Idempotency-Key': item.key }
   if (item.version != null) headers['If-Match'] = String(item.version)
-  const token = getToken()
-  if (token) headers.Authorization = `Bearer ${token}`
-  return fetch(item.url, { method: item.method, headers, body: JSON.stringify(item.body) })
+  return transporte(item.url, { method: item.method, headers, body: JSON.stringify(item.body) })
 }
 
 /** Envía ahora si hay conexión; si no (o si la red falla), lo guarda como "Pendiente de envío". */

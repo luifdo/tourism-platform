@@ -14,8 +14,10 @@ import { idbCatalogCache } from './infrastructure/catalog/idbCatalogCache'
 import { createHttpAuthGateway } from './infrastructure/auth/httpAuthGateway'
 import { CUENTA_DEMO, createMockAuthGateway } from './infrastructure/auth/mockAuthGateway'
 import { sessionStore } from './infrastructure/auth/sessionStore'
-import { getToken, getUsuarioId, tokenSession } from './infrastructure/auth/tokenSession'
-import { clearPersonalData } from './lib/offlineQueue'
+import { getUsuarioId, tokenSession } from './infrastructure/auth/tokenSession'
+import { createAuthorizedFetch } from './infrastructure/auth/authorizedFetch'
+import { createWebLocksRenewal } from './infrastructure/auth/webLocksRenovacion'
+import { clearPersonalData, configurarTransporte } from './lib/offlineQueue'
 
 /*
  * RAÍZ DE COMPOSICIÓN: el único lugar que conoce a la vez los casos de uso y los adaptadores concretos.
@@ -36,13 +38,23 @@ export const authUseCases = createAuthUseCases({
   gateway: authGateway,
   store: sessionStore,
   localData: { clearAll: clearPersonalData }, // al cerrar sesión se borra lo personal guardado en el dispositivo
+  lock: createWebLocksRenewal(), // una sola renovación del token a la vez, también entre pestañas
   clock,
 })
+
+// fetch con el access token de la sesión: lo renueva antes de vencer y, ante un 401, renueva una vez y repite
+export const authorizedFetch = createAuthorizedFetch({
+  tokens: {
+    obtener: () => authUseCases.obtenerToken(),
+    renovarTras401: async (tokenFallido) => (await authUseCases.renovarSesion({ tokenFallido }))?.token ?? null,
+  },
+})
+configurarTransporte(authorizedFetch) // la cola sin conexión envía con ese mismo fetch
 
 /* ---- Reservas (booking-service) ---- */
 const bookingGateway = isMockBackend
   ? createMockBookingGateway({ servicios: demoServices, clock, turistaId: getUsuarioId })
-  : createHttpBookingGateway({ baseUrl: '/api/bookings', getToken })
+  : createHttpBookingGateway({ baseUrl: '/api/bookings', fetchFn: authorizedFetch })
 
 // Solicitar una reserva exige sesión vigente (JWT de iam-service) también con el simulador
 export const bookingUseCases = createBookingUseCases({ gateway: bookingGateway, session: tokenSession, cache: idbBookingCache, clock })
@@ -50,7 +62,7 @@ export const bookingUseCases = createBookingUseCases({ gateway: bookingGateway, 
 /* ---- Asistente (recommendation-service) ---- */
 const assistantGateway = isMockBackend
   ? createMockAssistantGateway({ clock, turistaId: getUsuarioId })
-  : createHttpAssistantGateway({ baseUrl: '/api/recommendations', getToken })
+  : createHttpAssistantGateway({ baseUrl: '/api/recommendations', fetchFn: authorizedFetch })
 
 // El chat exige sesión de Turista (JWT de iam-service) también con el simulador
 export const assistantUseCases = createAssistantUseCases({ gateway: assistantGateway, session: tokenSession })

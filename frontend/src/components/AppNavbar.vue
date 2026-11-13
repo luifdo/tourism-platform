@@ -68,23 +68,23 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
 
   <!-- Barra principal fija -->
   <header ref="cabecera" class="sticky top-0 z-50 bg-cream/90 px-[clamp(16px,3vw,32px)] backdrop-blur-xl" style="height: var(--nav-h)">
-    <nav class="mx-auto flex h-full max-w-[1400px] items-center justify-between gap-4" aria-label="Principal">
+    <nav class="mx-auto flex h-full max-w-[1400px] items-center justify-between gap-3 xl:gap-4" aria-label="Principal">
       <RouterLink :to="{ name: 'home' }" class="shrink-0" aria-label="Samaland adventure"><BrandLogo /></RouterLink>
 
       <div class="hidden items-center rounded-full border border-sand/30 bg-white px-3 py-1.5 shadow-card xl:flex">
-        <RouterLink v-for="[k, to] in links" :key="k" :to="to" class="max-w-[150px] rounded-full px-4 py-1.5 text-center text-[13px] font-medium leading-tight text-ink-control transition-colors hover:bg-cream hover:text-navy">{{ t(`nav.${k}`) }}</RouterLink>
+        <RouterLink v-for="[k, to] in links" :key="k" :to="to" class="whitespace-nowrap rounded-full px-3 py-1.5 text-center text-[13px] font-medium leading-tight text-ink-control transition-colors hover:bg-cream hover:text-navy 2xl:px-4">{{ t(`nav.${k}`) }}</RouterLink>
       </div>
 
-      <div class="flex items-center gap-2 sm:gap-3">
+      <div class="flex shrink-0 items-center gap-2 sm:gap-3">
         <!-- También en la barra fija: la cinta de arriba se va al bajar -->
         <span class="hidden sm:block"><LangSwitch grande /></span><!-- en el móvil va en el menú -->
         <InstallButton />
 
         <!-- Con sesión: acceso a reservas y menú de la cuenta -->
         <template v-if="sesion.autenticado">
-          <RouterLink v-if="enlacesRol[0]" :to="{ name: enlacesRol[0][0] }" class="flex items-center gap-1.5 text-[13px] font-medium text-navy transition-colors hover:text-teal">
+          <RouterLink v-if="enlacesRol[0]" :to="{ name: enlacesRol[0][0] }" class="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[13px] font-medium text-navy transition-colors hover:text-teal" :title="t(enlacesRol[0][1])" :aria-label="t(enlacesRol[0][1])">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></svg>
-            <span class="hidden sm:inline">{{ t(enlacesRol[0][1]) }}</span>
+            <span class="hidden sm:inline xl:hidden 2xl:inline">{{ t(enlacesRol[0][1]) }}</span>
           </RouterLink>
           <div ref="zonaUsuario" class="relative" @focusout="alPerderFoco" @keydown.esc="cerrarTodo">
             <button type="button" class="flex items-center gap-2 rounded-full border border-sand/40 bg-white py-1 pl-1 pr-3 text-[13px] font-medium text-ink-control shadow-card transition hover:border-teal" :aria-expanded="userMenu" aria-haspopup="menu" :aria-label="t('auth.menu.account')" @click="alternarUsuario">

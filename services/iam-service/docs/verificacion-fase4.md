@@ -1,10 +1,12 @@
 # iam-service: verificación antes del PR a `develop` (Fase 4)
 
+**Estado al 2026-11-13.** Se cerró después de la Fase 4: el refresh token en el IAM (#14) y en la PWA (#26); la imagen Alpine (C-62), con el e2e repetido el 2026-11-02 (12 de 12, con el escenario `l` de refresh); `usuario.suprimido`, liberado en compose (#21) y en k8s (C-63); el CI y la imagen pública en GHCR (C-61); el gateway real en compose y en k3s (#21: borrado de `X-Usuario-*`, rate limiting, límite del cuerpo y registro de acceso sin query string); las claves de S3 fuera del repositorio (#27), y la infraestructura de `infra/` (#15: identidades, bucket, `infra/k8s`; `noeviction`; alertas de la DLQ y del SMTP; ADR-012). Lo que se mide ahora: en la VM de AWS, que corre docker compose, lo que pasa por el gateway real (IP del cliente, rate limiting por IP y cifrado del ADR-012); en k3d, el rolling update, el HPA y ESC-01.
+
 **Base verificada:** `3c09bac` más los cambios locales del bloque 8 y de los arreglos previos al PR. El e2e en k3d corrió antes de esos arreglos y no se repitió. Las pruebas `archivo::prueba` son relativas a `tests/`; las evidencias, a `docs/evidencias/`. "e2e x" es el escenario x de `e2e-k3d.txt`.
 
-**Estados:** ✅ cumplido · ⚠ parcial · ❌ no cumplido · ⏸ fuera de alcance
+**Estados:** ✅ cumplido · ⚠ parcial · ❌ no cumplido · ⏸ pendiente o fuera de alcance
 
-**Resumen de la matriz:** 36 filas: 25 ✅, 9 ⚠, 1 ❌ y 1 ⏸. Los hallazgos están en la sección 5.
+**Resumen de la matriz:** 36 filas: 27 ✅, 8 ⚠, 1 ❌ y 0 ⏸ (en la Fase 4 eran 25 ✅, 9 ⚠, 1 ❌ y 1 ⏸). Los hallazgos están en la sección 5.
 
 ## 1. Matriz de cumplimiento
 
@@ -19,7 +21,7 @@
 | UC6 | Aceptar la política de datos | Obligatorio en el registro, con fecha y `CHECK` en la base | `unit/test_registrar_usuario.py::test_habeas_data_se_valida_primero` | ✅ | C-01, C-03 |
 | UC27 | Administrar usuarios y roles | `/admin/usuarios`, rol y estado, con revocación inmediata | `api/test_admin_usuarios_api.py::test_desactivar_prestador`; e2e a y c | ✅ | C-21, C-29, C-41, C-42 |
 | UC28 | Aprobar o rechazar prestadores, publica `prestador.aprobado` | `/admin/prestadores/{id}/aprobar` y `rechazar` | `api/test_documentos_api.py::test_aprobar_publica_y_audita`; e2e a | ✅ | C-08, C-47 |
-| UC32 | Gestionar políticas de seguridad y rate limiting (Traefik) | La política se probó en un gateway de prueba. Es configuración, sin pantalla para el Admin, y la real falta en `gateway/` | e2e i | ⚠ | C-26 |
+| UC32 | Gestionar políticas de seguridad y rate limiting (Traefik) | Configurada en `gateway/` (#21, compose y k3s): login y recuperar, y un límite propio para el refresh. Es configuración, sin pantalla para el Admin, y es por IP: mientras no llegue la IP real (F-08), el cupo se comparte; se mide en la VM de AWS | e2e i y l; `4ab4ca8` | ⚠ | C-26 |
 | UC33 | Consultar la bitácora | `GET /admin/bitacora`, con filtros y su propia auditoría | `api/test_bitacora_api.py::test_otro_rol_403`; e2e b y d | ✅ | C-19, C-43 |
 | UC37 | Cargar RNT y RUT | `POST /prestador/documentos` con validación por firma de bytes | `api/test_documentos_api.py::test_subir_201`; e2e a | ✅ | C-02, C-07, C-30 |
 
@@ -36,7 +38,7 @@
 | RNF-10 | Bitácora inmutable, consulta en panel | Triggers y `REVOKE`, UC33, consumidor de eventos | `integration/test_bitacora_inmutable.py`; `b1-bitacora-solo-insercion.txt`; `integration/test_consumidor_auditoria.py::test_guarda_el_evento_y_el_duplicado_no`; e2e d | ✅ | C-03, C-04, C-38, C-39, C-40 |
 | RNF-12 | Contenedores, manifiestos versionados, rolling update sin 5xx, `/health` y `/metrics` | `k8s/`, misma imagen, `maxUnavailable: 0`, preStop | e2e j: 0 errores en 1272 peticiones, p95 de 16 ms, rollout de 10 s | ✅ | C-31, C-32, C-55 |
 | RNF-13 (perfil) | Formulario diferido, una sola vez, versión con 409 (§3.6.6) | `ETag` e `If-Match`, repetir el `PATCH` no duplica. La prueba sin conexión es de la PWA | `api/test_perfil_api.py::test_patch_cambia_audita_solo_los_nombres_y_sube_la_version` | ⚠ | C-49 |
-| ESC-04 | 401 y 403, 100 % registrado con IP, fecha y usuario | Cada rechazo probado deja su fila. **La IP es la que Traefik ve,** y en k3d no es la del cliente real | `api/test_verificar_api.py::test_postgresql_caido_en_un_rechazo_sigue_siendo_401`; e2e b | ⚠ | C-23, C-34, C-35, C-56; F-08 |
+| ESC-04 | 401 y 403, 100 % registrado con IP, fecha y usuario | Cada rechazo probado deja su fila. **La IP es la que Traefik ve,** y en k3d no es la del cliente real. `externalTrafficPolicy: Local` (#21) y `FORWARDED_ALLOW_IPS` en el compose (este commit) están configurados; se comprueba en la VM de AWS | `api/test_verificar_api.py::test_postgresql_caido_en_un_rechazo_sigue_siendo_401`; e2e b | ⚠ | C-23, C-34, C-35, C-56; F-08 |
 
 ### Ley 1581 (SRS §2.4.5)
 
@@ -44,8 +46,8 @@
 |---|---|---|---|---|---|
 | Consentimiento | Informado y previo, con prueba | `habeas_data_aceptado_en`, `CHECK` en la base | `unit/test_registrar_usuario.py::test_habeas_data_se_valida_primero` | ✅ | C-01, C-03 |
 | Actualización | Derecho a actualizar | Nombre e idioma. **El correo no se edita** | `api/test_perfil_api.py::test_reglas_del_registro_y_campos_que_no_se_editan` | ⚠ | C-25, C-51 |
-| Supresión | Derecho a suprimir | Anonimiza y borra documentos. **Catalog conserva el perfil** | `api/test_supresion_api.py::test_suprime_los_datos_y_borra_los_objetos`; e2e g | ⚠ | C-27, C-48 |
-| Almacenamiento cifrado | "Almacenamiento cifrado de datos sensibles" | **No implementado:** RUT y RNT en SeaweedFS y correos en PostgreSQL van sin cifrado de aplicación ni de objeto. La propuesta está escrita y la decisión del equipo sigue en ⏸ (C-58); hasta que se aplique, el requisito no se cumple | Búsqueda de `ServerSideEncryption` en `app/` y `k8s/`: sin resultados | ❌ | C-58; F-01 |
+| Supresión | Derecho a suprimir | Anonimiza y borra documentos. Catalog borra `razon_social`, `telefono` y `direccion` del perfil al recibir `usuario.suprimido`, liberado en compose (#21) y en k8s (este commit) | `api/test_supresion_api.py::test_suprime_los_datos_y_borra_los_objetos`; e2e g; catalog `6076a78` | ✅ | C-27, C-48, C-63 |
+| Almacenamiento cifrado | "Almacenamiento cifrado de datos sensibles" | **No implementado:** RUT y RNT en SeaweedFS y correos en PostgreSQL van sin cifrado de aplicación ni de objeto. Decidido en el ADR-012 (`1a9a806`): disco cifrado en la VM, volúmenes de SeaweedFS cifrados y TLS en el borde. Hasta que se aplique en la VM de AWS (Luis Fernando), el requisito no se cumple | Búsqueda de `ServerSideEncryption` en `app/` y `k8s/`, y de cifrado de volúmenes en `infra/`: sin resultados | ❌ | C-58; F-01 |
 
 ### Laboratorio 3
 
@@ -55,7 +57,7 @@
 | Fig. 1 y 2, ACME | DLQ `turismo.dead-letter` | Payload inválido, directo a la DLQ | `integration/test_consumidor_auditoria.py::test_fuera_del_contrato_va_directo_a_la_dlq`; e2e d | ✅ | C-40 |
 | Fig. 1 y 2, ACME | Sin duplicados | `UNIQUE(event_id)` | e2e d: dos publicaciones, una fila | ✅ | C-04 |
 | §4.1 | `verificar` devuelve `X-Usuario-*` | Sí, y Traefik los propaga; los falsos no llegan | e2e b | ✅ | C-13, C-16 |
-| §4.2 | Máquina de estados de la sesión | Sin refresh por ahora | Registro C-20 | ⏸ | C-20, C-21 |
+| §4.2 | Máquina de estados de la sesión | Refresh opaco con rotación, `REFRESH_REUTILIZADO` y revocación de la familia; la PWA renueva sola (#26) | `api/test_refresh_api.py`; e2e l | ✅ | C-20, C-21, C-60 |
 | §4.2 | Sin bloqueo de cuenta | No lo hay; rate limiting en Traefik | Inspección de `iniciar_sesion.py`; e2e i | ✅ | C-26 |
 | Fig. 10 | Readiness que aísla réplicas | `/health/live` cada 2 s, 2 fallos. Sin errores al borrar réplicas. **No se probó una réplica colgada** | `k8s/base/deployment-api.yaml`; e2e k | ⚠ | C-32 |
 | §5.1 | 2 a 4 réplicas al 70 % | `hpa.yaml`; subió de 2 a 4 bajo carga y no pasó de 4 | e2e k | ✅ | C-53; F-09 |
@@ -140,7 +142,7 @@ Sin hallazgos (`b4-secretos.txt`): ningún PEM, `.env` ni `secretos.env` version
 
 ### Punta a punta en k3d
 
-**11 de 11 escenarios OK** en `e2e-k3d.txt`, con k3s v1.35.5 y Traefik, **antes de los arreglos de F-04, F-06, F-07 y F-11**; no se repitió. El rate limiting, el gateway y las dependencias son de prueba, no la configuración real de `gateway/` e `infra/`. Datos principales:
+**12 de 12 escenarios OK** en `e2e-k3d.txt`, con k3s v1.35.5 y Traefik, repetido el 2026-11-02 con la imagen Alpine (C-62) y el escenario `l` de refresh. La primera corrida (11 de 11) fue antes de los arreglos de F-04, F-06, F-07 y F-11. El rate limiting, el gateway y las dependencias son de prueba, no la configuración real de `gateway/` e `infra/`. Datos principales:
 
 | Escenario | Resultado |
 |---|---|
@@ -160,16 +162,16 @@ Sin hallazgos (`b4-secretos.txt`): ningún PEM, `.env` ni `secretos.env` version
 
 ## 5. Hallazgos
 
-Cerrados: F-04, F-06, F-07 y F-11. F-07 se cerró en dos pasos: primero `pip` y después la imagen base, con Alpine (C-62). Los demás siguen abiertos.
+Cerrados: F-04, F-06, F-07, F-10 y F-11. F-07 se cerró en dos pasos: primero `pip` y después la imagen base, con Alpine (C-62). Los demás siguen abiertos.
 
 | ID | Hallazgo | Severidad | Bloquea el PR | Propuesta o resultado |
 |---|---|---|---|---|
-| F-01 | §2.4.5 pide almacenamiento cifrado de datos sensibles; no está implementado (C-58) | Alta (cumplimiento) | No: decisión del equipo, en ⏸ | Propuesta escrita en C-58: disco cifrado en la VM, cifrado de volúmenes de SeaweedFS y TLS. Cifrar en el servicio rompería las URL firmadas |
-| F-08 | Traefik ve a todos los clientes como `10.42.0.1` (`externalTrafficPolicy: Cluster`): en esas condiciones, el rate limiting por IP se comparte entre **todos** los usuarios, y la bitácora guarda esa IP en vez de la real (ESC-04). k3d agrega su propio balanceador, así que hay que confirmarlo en el k3s real | Alta, si se confirma | No: es de `gateway/` | Juan Francisco: `externalTrafficPolicy: Local` con `HelmChartConfig`, y comprobar la IP real |
-| F-10 | `infra/docker-compose.yml` usa `-volume.max=5`. La colección por defecto puede quedarse con todos y los documentos responden 503. Depende del orden: pasó en una corrida y falló en otra | Media | No: es de `infra/` | Luis Fernando: subir el límite antes de agregar `documentos-verificacion` |
+| F-01 | §2.4.5 pide almacenamiento cifrado de datos sensibles; no está implementado (C-58) | Alta (cumplimiento) | No | Decidido en el ADR-012 (`1a9a806`): disco cifrado en la VM, cifrado de volúmenes de SeaweedFS y TLS en el borde. Cifrar en el servicio rompería las URL firmadas. ⏸ Se aplica en la VM de AWS (Luis Fernando) |
+| F-08 | Traefik ve a todos los clientes como `10.42.0.1` (`externalTrafficPolicy: Cluster`): en esas condiciones, el rate limiting por IP se comparte entre **todos** los usuarios, y la bitácora guarda esa IP en vez de la real (ESC-04). k3d agrega su propio balanceador, así que hay que confirmarlo en el k3s real | Alta, si se confirma | No: es de `gateway/` | ✅ `4ab4ca8` (#21): `externalTrafficPolicy: Local` con `HelmChartConfig`. `FORWARDED_ALLOW_IPS` corregido en el compose (este commit); se comprueba en la VM de AWS. ⏸ Que llegue la IP real del cliente se mide en la VM de AWS |
+| F-10 | `infra/docker-compose.yml` usa `-volume.max=5`. La colección por defecto puede quedarse con todos y los documentos responden 503. Depende del orden: pasó en una corrida y falló en otra | Media | **Cerrado** | `a55e098` (#15): `-volume.max=30`; hoy 150, con volúmenes de 100 MB (`2089891`), en compose y en `infra/k8s` |
 | F-11 | Si SeaweedFS no puede escribir, la carga responde el 503 correcto **a los 32 s**, por los reintentos de boto3 | Media | **Cerrado** | C-59: tope de 9 s, hilos propios y los mismos límites en la supresión. 503 en 9,4 s y login sin bloquearse (`f11-s3-colgado.txt`). Quedan los límites listados en C-59 |
 | F-04 | Sin prueba automatizada de la inmutabilidad de la bitácora, que es lo que verifica la SIC (Lab §6.1) | Media | **Cerrado** | `tests/integration/test_bitacora_inmutable.py`, marcada `db`; falla si se desactivan los triggers |
-| F-09 | Con un `request` de CPU de 100m, unas 50 peticiones por segundo a `verificar` bastan para llevar el HPA a 4 réplicas | Baja | No | Medir en la Fase 5 y ajustar el `request` |
+| F-09 | Con un `request` de CPU de 100m, unas 50 peticiones por segundo a `verificar` bastan para llevar el HPA a 4 réplicas | Baja | No | ⏸ Se mide en k3d y se ajusta el `request` |
 | F-06 | C-57 contradice RNF-03, y no está en la línea "SRS v1.2" de "Pendiente de reflejar" | Baja | **Cerrado** | Agregada |
 | F-02 | `nombre_completo` y `tipo_documento` difieren del prompt | Baja | No | Ninguna en el código; son el contrato actual y están en `iam.yaml` |
 | F-03 | El smoke test no cubre la aprobación del Admin | Baja | No | Cubierto en e2e a; agregarlo al smoke si se quiere |

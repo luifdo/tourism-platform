@@ -28,9 +28,10 @@ async function install() {
 </script>
 
 <template>
-  <button v-if="deferred && !installed" type="button" class="flex items-center gap-1.5 rounded-full border border-navy/30 px-3 py-1.5 text-[13px] font-medium text-navy transition hover:bg-navy hover:text-white" @click="install">
+  <button v-if="deferred && !installed" type="button" class="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-navy/30 px-3 py-1.5 text-[13px] font-medium text-navy transition hover:bg-navy hover:text-white" :title="t('nav.install')" :aria-label="t('nav.install')" @click="install">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 20h14" /></svg>
-    <span class="hidden sm:inline">{{ t('nav.install') }}</span>
+    <!-- Entre 1280 y 1535 px la barra va justa (hay cuatro enlaces y el selector de idioma): solo el icono -->
+    <span class="hidden sm:inline xl:hidden 2xl:inline">{{ t('nav.install') }}</span>
     <span class="sm:hidden">{{ t('nav.installShort') }}</span>
   </button>
 </template>

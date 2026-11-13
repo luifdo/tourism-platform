@@ -398,6 +398,9 @@ services:
       - --accesslog.fields.names.RequestPath=drop
       - --accesslog.fields.names.RequestLine=drop
     ports: ["80:80"]
+    environment:
+      # Lo lee la plantilla del origen CORS de la PWA (gateway/config/compose/00-middlewares.yml)
+      DOMINIO_PUBLICO: ${DOMINIO_PUBLICO:-localhost}
     volumes:
       - ../gateway/config/compose:/etc/traefik/dinamica:ro
     healthcheck:

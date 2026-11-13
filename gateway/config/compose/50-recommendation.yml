@@ -5,7 +5,6 @@ http:
     recommendation-protegidas:
       rule: "PathPrefix(`/api/recommendations`)"
       priority: 10
-      entryPoints: [web]
       middlewares: [protegida]
       service: recommendation-service
 

@@ -7,7 +7,6 @@ http:
     frontend:
       rule: "PathPrefix(`/`)"
       priority: 1
-      entryPoints: [web]
       middlewares: [quitar-identidad]
       service: frontend
 

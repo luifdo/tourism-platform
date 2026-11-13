@@ -1,13 +1,13 @@
 # SeaweedFS (S3) publicado por el gateway: el navegador sube y baja archivos con URLs firmadas, y la firma
-# incluye el host, así que se enruta por nombre de host (nunca por prefijo). En compose, S3_ENDPOINT_PUBLICO
-# puede seguir siendo http://localhost:8333; esta ruta sirve para probar el mismo camino que en k3s.
+# incluye el host, así que se enruta por nombre de host (nunca por prefijo). Sirve cualquier host que empiece por
+# `s3.` (s3.localhost en local, s3.<dominio> en el servidor): el dominio solo se define en infra/.env
+# (S3_ENDPOINT_PUBLICO, IMAGENES_URL_PUBLICA y DOMINIO_PUBLICO), no aquí. Traefik conserva el Host, que va en la firma.
 # La autenticación es la firma de la URL: no lleva ForwardAuth.
 http:
   routers:
     almacenamiento:
-      rule: "Host(`s3.localhost`)"
+      rule: "HostRegexp(`^s3\\..+$`)"
       priority: 100
-      entryPoints: [web]
       middlewares: [almacenamiento-cors]
       service: seaweedfs
 

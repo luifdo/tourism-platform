@@ -1,0 +1,51 @@
+# HTTPS en el gateway (Traefik + Let's Encrypt). Se SUMA al compose base; no lo reemplaza:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+#
+# o, para no repetirlo, en infra/.env:   COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml
+# Variables en infra/.env (ver .env.example): DOMINIO_PUBLICO (obligatoria), ACME_EMAIL y ACME_CA_SERVER.
+#
+# Qué hace:
+#   * Abre el 443 (websecure) y deja que el 80 solo redirija a HTTPS. Las rutas de gateway/config/compose/ no declaran
+#     entryPoints, así que sirven igual en los dos.
+#   * Pide a Let's Encrypt UN certificado para DOMINIO_PUBLICO y s3.DOMINIO_PUBLICO (reto HTTP-01 por el puerto 80, que
+#     debe estar abierto a todo internet, igual que el 443) y lo renueva solo. Se guarda en el volumen traefik-acme.
+#   * Agrega HSTS (middleware `hsts`).
+#
+# OJO: Compose REEMPLAZA `command` (no lo suma), así que aquí van TAMBIÉN los flags del compose base; deben ser los
+# mismos. gateway/pruebas/probar_gateway.py lo comprueba. (Traefik tampoco mezcla variables TRAEFIK_* con flags: usa solo una
+# de las dos fuentes.)
+services:
+  traefik:
+    command:
+      # --- los del compose base ---
+      - --providers.file.directory=/etc/traefik/dinamica
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --ping=true
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.fields.names.RequestPath=drop
+      - --accesslog.fields.names.RequestLine=drop
+      # --- HTTPS ---
+      - --entrypoints.websecure.address=:443
+      # El 80 solo redirige. El reto HTTP-01 de Let's Encrypt lo atiende Traefik antes de la redirección.
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.http.tls=true
+      - --entrypoints.websecure.http.tls.certresolver=le
+      - --entrypoints.websecure.http.tls.domains[0].main=${DOMINIO_PUBLICO:?Define DOMINIO_PUBLICO en infra/.env (por ejemplo 3-141-142-12.sslip.io)}
+      - --entrypoints.websecure.http.tls.domains[0].sans=s3.${DOMINIO_PUBLICO}
+      - --entrypoints.websecure.http.middlewares=hsts@file
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL:-}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      # Producción por defecto. Para PROBAR sin gastar el límite de certificados (sslip.io lo comparte con todos sus
+      # usuarios): ACME_CA_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory (el navegador lo marcará no confiable).
+      - --certificatesresolvers.le.acme.caserver=${ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+    ports: ["443:443"]
+    volumes:
+      - traefik-acme:/letsencrypt
+
+volumes:
+  traefik-acme:

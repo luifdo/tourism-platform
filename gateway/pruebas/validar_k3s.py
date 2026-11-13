@@ -22,6 +22,7 @@ import jsonschema
 import yaml
 
 RAIZ = Path(__file__).resolve().parents[2]
+DOMINIO_PROVISIONAL = "3-141-142-12.sslip.io"  # el de infra/.env.example; en k3s va escrito en almacenamiento.yaml
 CRD_URL = "https://raw.githubusercontent.com/traefik/traefik/{version}/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml"
 fallos = []
 
@@ -154,6 +155,17 @@ def main():
         if "forwardAuth" in spec:  # solo cambia el nombre del host (compose: iam-service:8001; k3s: iam-service.turismo-app.svc:8001)
             spec["forwardAuth"]["address"] = spec["forwardAuth"]["address"].replace("iam-service.turismo-app.svc", "iam-service")
         verificar(f"middleware {nombre} igual en compose y k3s", spec == original, f"k3s={spec} compose={original}")
+
+    print("\nCORS del almacenamiento: compose (con plantilla) y k3s (valor fijo) permiten los mismos orígenes")
+    cors_k3s = next((d for d in documentos if d["kind"] == "Middleware" and d["metadata"]["name"] == "almacenamiento-cors"), None)
+    cors_compose = middlewares_de_compose().get("almacenamiento-cors")
+    if cors_k3s and cors_compose:
+        # La plantilla {{ env "DOMINIO_PUBLICO" }} solo existe en compose (los CRD no admiten plantillas): se rellena con el dominio provisional
+        desde_compose = {re.sub(r'\{\{\s*env "DOMINIO_PUBLICO"\s*\}\}', DOMINIO_PROVISIONAL, o) for o in cors_compose["headers"]["accessControlAllowOriginList"]}
+        verificar("orígenes CORS iguales (con el dominio provisional)", desde_compose == set(cors_k3s["spec"]["headers"]["accessControlAllowOriginList"]),
+                  f"compose={sorted(desde_compose)} k3s={sorted(cors_k3s['spec']['headers']['accessControlAllowOriginList'])}")
+    else:
+        verificar("el middleware almacenamiento-cors existe en compose y en k3s", False)
 
     print("\nCada ruta apunta a un Service que existe")
     existentes = servicios_de_k8s()

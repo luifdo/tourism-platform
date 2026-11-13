@@ -24,7 +24,7 @@ La fuente de verdad es el `security` de cada contrato de `contracts/openapi/`; u
 | `/api/bookings` → `booking-service:8003` | `GET disponibilidad` |
 | `/api/reviews` → `review-service:8004` | `GET servicios/{id}/resenas`, `GET servicios/{id}/resumen`, `GET resenas/{id}` |
 | `/api/recommendations` → `recommendation-service:8005` | ninguna (el chat puede tardar hasta 45 s: espera de 60 s) |
-| `Host(s3.localhost)` → `seaweedfs:8333` | todo (la autenticación es la firma de la URL) |
+| `HostRegexp(^s3\..+$)` → `seaweedfs:8333` | todo (la autenticación es la firma de la URL); sirve `s3.localhost` y `s3.<dominio>` |
 | `/` (lo demás) → frontend | todo |
 
 Todo lo demás pasa por ForwardAuth (`GET /api/iam/auth/verificar`). **Nunca se enrutan** `/internal`, `/health` ni `/metrics`: caen en el frontend, cuyo Nginx responde 404. Prometheus y Blackbox consultan los Services por dentro del clúster.
@@ -58,10 +58,24 @@ python validar_k3s.py                   # kustomize + CRD de Traefik + igualdad 
 
 * **No se aplicó en un clúster** (no hay k3d en el equipo de desarrollo): `k3s/` se validó contra los CRD de Traefik v3.3, no contra un Traefik en ejecución. La lógica de rutas sí se probó con un Traefik real, pero la 3.7 y por `compose/`; el compose usa `traefik:v3.3` y k3s trae su propia versión.
 * **`externalTrafficPolicy: Local`** (F-08 del IAM) está configurado en `k3s/sistema/traefik.yaml`, pero hay que comprobar en el clúster real que la IP del cliente llega. El balanceador de k3d no la conserva aunque se configure; mientras no llegue, el límite de tasa por IP se comparte entre todos los usuarios.
-* **TLS** (cert-manager, ACME) y los **dominios**: faltan hasta que exista la VM (`sslip.io`). El host de SeaweedFS (`s3.localhost`) y el origen de CORS de la PWA se cambian entonces, y deben coincidir con `S3_ENDPOINT_PUBLICO` e `IMAGENES_URL_PUBLICA` de los servicios.
+* **TLS en k3s** (cert-manager o el resolver ACME de Traefik) falta: el HTTPS de abajo es del compose. En k3s los CRD no admiten plantillas: el origen CORS de `k3s/datos/almacenamiento.yaml` lleva el dominio provisional escrito y `validar_k3s.py` comprueba que coincida con el de compose.
 * **`X-Correlation-ID`:** Traefik lo reenvía pero no lo genera (haría falta un plugin). Los servicios generan uno si falta (catalog lo hace; confirmar los demás).
 * **SeaweedFS expuesto:** el gateway publica todo el S3. Antes de abrirlo hay que limitar el acceso anónimo a `Read:catalogo-imagenes` (C-46, `infra/seaweedfs/s3.json`) o los documentos de verificación quedan legibles sin firma.
 * **Frontend en k3s:** el Dockerfile ya existe, pero faltan el Deployment, el Service `frontend` (puerto 80 hacia el 8080 del contenedor) y su NetworkPolicy.
 * Una ruta `/api/...` que no existe cae en el frontend, pero el Nginx del frontend responde 404 en JSON (no el HTML con 200). Igual `/internal`, `/health` y `/metrics`: 404.
 * `GET /api/iam/auth/verificar` es alcanzable desde fuera (con token válido); solo devuelve la identidad que ya tiene el usuario.
 * No hay CORS en la API: la PWA entra por el mismo origen (en desarrollo, el proxy de Vite envía `/api` al puerto 80).
+
+## HTTPS (compose)
+
+`infra/docker-compose.https.yml` se **suma** al compose base (`docker compose -f docker-compose.yml -f docker-compose.https.yml up -d`, o `COMPOSE_FILE` en `infra/.env`). Variables: `DOMINIO_PUBLICO` (obligatoria, por ejemplo `3-141-142-12.sslip.io`), `ACME_EMAIL` y `ACME_CA_SERVER`.
+
+* Abre el 443; el 80 solo redirige a HTTPS (conserva la ruta y el query string, que lleva el token de recuperar contraseña; el log de acceso sigue sin registrarlos). Las rutas no declaran `entryPoints`, así que sirven igual por HTTP (local) y por HTTPS (servidor).
+* Un certificado de Let's Encrypt para `DOMINIO_PUBLICO` y `s3.DOMINIO_PUBLICO` (reto HTTP-01), guardado en el volumen `traefik-acme` y renovado solo. HSTS de un día (`hsts`).
+* **Los puertos 80 y 443 deben estar abiertos a todo internet** (Let's Encrypt valida desde fuera). Si el firewall solo deja pasar IPs autorizadas, el certificado no se emite.
+* **Primero con staging** (`ACME_CA_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory`): `sslip.io` no está en la lista de sufijos públicos, así que comparte el límite de certificados de Let's Encrypt con todos sus usuarios; un intento fallido con la CA real gasta cupo. Con staging el navegador marca el certificado como no confiable; después se quita la variable y se borra el volumen `traefik-acme`.
+* El host de S3 es `HostRegexp(^s3\..+$)`: el dominio solo se define en `infra/.env` (`DOMINIO_PUBLICO`, `S3_ENDPOINT_PUBLICO`, `IMAGENES_URL_PUBLICA`, `PWA_URL`, que deben coincidir). El origen CORS de la PWA sale de `DOMINIO_PUBLICO` (plantilla del proveedor de archivos).
+* **Compose reemplaza `command`, no lo suma:** el del archivo HTTPS repite los flags del base. `probar_gateway.py` comprueba que no se desincronicen. (Traefik tampoco mezcla variables `TRAEFIK_*` con flags: usa solo una fuente.)
+* Probado con Traefik 3.3 real y un servidor ACME de prueba (Pebble): el certificado se emite con los dos nombres, la redirección no rompe el reto y HSTS, CORS y el reparto por host funcionan por HTTPS. **No probado** con Let's Encrypt real ni con el firewall de la VM.
+* Traefik escribe un aviso por ruta ("No domain found in rule"): es informativo, las rutas por ruta (no por host) usan el SNI de la petición.
+

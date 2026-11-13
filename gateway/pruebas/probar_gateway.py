@@ -16,6 +16,7 @@ Termina con código distinto de cero si algo falla.
 """
 import argparse
 import http.client
+import os
 import re
 import shutil
 import subprocess
@@ -51,6 +52,9 @@ BANDERAS_DEL_COMPOSE = [
     "--accesslog.fields.names.RequestPath=drop",
     "--accesslog.fields.names.RequestLine=drop",
 ]
+
+# Dominio público ficticio con el que se prueba la plantilla del CORS y el host s3.<dominio> (en el servidor es el de infra/.env)
+DOMINIO_DE_PRUEBA = "ejemplo.test"
 
 resultados = {"ok": 0, "fallos": []}
 
@@ -96,7 +100,8 @@ class Gateway:
             f"--entrypoints.web.address=127.0.0.1:{PUERTO}", f"--entrypoints.traefik.address=127.0.0.1:{PUERTO_PING}",
             f"--accesslog.filepath={self.log_acceso}", "--log.level=ERROR", *banderas,
         ]
-        self.proceso = subprocess.Popen(orden, stdout=self.log_traefik.open("w"), stderr=subprocess.STDOUT)
+        entorno = {**os.environ, "DOMINIO_PUBLICO": DOMINIO_DE_PRUEBA}  # lo lee la plantilla del origen CORS de 00-middlewares.yml
+        self.proceso = subprocess.Popen(orden, stdout=self.log_traefik.open("w"), stderr=subprocess.STDOUT, env=entorno)
         for _ in range(60):
             try:
                 if pedir("GET", "/")[0] == 200:
@@ -162,6 +167,37 @@ def grupo_compose():
         verificar(f"el compose tiene {bandera}", bandera in comando, f"command = {comando}")
     volumenes = " ".join(compose["services"]["traefik"].get("volumes", []))
     verificar("el compose monta gateway/config/compose", "gateway/config/compose" in volumenes)
+    verificar("el compose pasa DOMINIO_PUBLICO a Traefik (la plantilla del CORS lo lee)", "DOMINIO_PUBLICO" in compose["services"]["traefik"].get("environment", {}))
+
+    grupo("HTTPS: infra/docker-compose.https.yml (se suma al compose base)")
+    https = yaml.safe_load((RAIZ / "infra/docker-compose.https.yml").read_text())["services"]["traefik"]
+    cmd = https["command"]
+    # Compose REEMPLAZA `command`: el del archivo adicional debe llevar todos los flags del base
+    faltan = [f for f in comando if f not in cmd]
+    verificar("el command del archivo HTTPS incluye todos los flags del compose base", not faltan, f"faltan: {faltan}")
+    for bandera, que in [
+        ("--entrypoints.websecure.address=:443", "abre el 443"),
+        ("--entrypoints.web.http.redirections.entrypoint.to=websecure", "el 80 redirige a HTTPS"),
+        ("--entrypoints.websecure.http.tls.certresolver=le", "los routers de websecure usan Let's Encrypt"),
+        ("--certificatesresolvers.le.acme.httpchallenge.entrypoint=web", "reto HTTP-01 por el puerto 80"),
+        ("--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json", "guarda el certificado en un volumen"),
+        ("--entrypoints.websecure.http.middlewares=hsts@file", "HSTS en todas las respuestas HTTPS"),
+    ]:
+        verificar(f"HTTPS: {que}", bandera in cmd)
+    dominios = [f for f in cmd if "tls.domains" in f]
+    verificar("el certificado cubre DOMINIO_PUBLICO y s3.DOMINIO_PUBLICO", any("${DOMINIO_PUBLICO" in f for f in dominios) and any("sans=s3.${DOMINIO_PUBLICO}" in f for f in dominios), str(dominios))
+    verificar("publica el 443", any(str(p).endswith("443:443") for p in https.get("ports", [])))
+    verificar("el certificado va en un volumen (se pierde al recrear el contenedor si no)", any("/letsencrypt" in v for v in https.get("volumes", [])))
+    verificar("la CA de Let's Encrypt se puede cambiar a staging con ACME_CA_SERVER", any("ACME_CA_SERVER" in f for f in cmd))
+
+    grupo("Rutas sin entryPoints: sirven igual por HTTP (local) y por HTTPS (servidor)")
+    import glob
+    con_entrypoints = []
+    for archivo in sorted(glob.glob(str(RAIZ / "gateway/config/compose/*.yml"))):
+        for nombre, r in ((yaml.safe_load(open(archivo).read()).get("http", {}).get("routers")) or {}).items():
+            if "entryPoints" in r:
+                con_entrypoints.append(nombre)
+    verificar("ninguna ruta fija entryPoints (con `web` fijo, nunca atenderían por HTTPS)", not con_entrypoints, str(con_entrypoints))
 
 
 def grupo_publicas():
@@ -250,8 +286,19 @@ def grupo_almacenamiento():
         "Origin": "https://sitio-malo.example", "Access-Control-Request-Method": "PUT"}, host="s3.localhost")
     verificar("preflight desde otro origen NO permitido", "access-control-allow-origin" not in cab, str(cab))
     falsos.limpiar()
+    estado, _, _ = pedir("GET", "/catalogo-imagenes/foto.jpg", host=f"s3.{DOMINIO_DE_PRUEBA}")
+    verificar(f"Host s3.<dominio> ({'s3.' + DOMINIO_DE_PRUEBA}) → SeaweedFS: el dominio no está escrito en la ruta", estado == 200 and falsos.vistos("almacenamiento") and not falsos.vistos("frontend"))
+    estado, cab, _ = pedir("OPTIONS", "/documentos/x", {
+        "Origin": f"https://{DOMINIO_DE_PRUEBA}", "Access-Control-Request-Method": "PUT"}, host=f"s3.{DOMINIO_DE_PRUEBA}")
+    verificar("preflight desde la PWA con HTTPS (el DOMINIO_PUBLICO del entorno) permitido", cab.get("access-control-allow-origin") == f"https://{DOMINIO_DE_PRUEBA}", str(cab))
+    estado, cab, _ = pedir("OPTIONS", "/documentos/x", {
+        "Origin": f"http://{DOMINIO_DE_PRUEBA}", "Access-Control-Request-Method": "PUT"}, host=f"s3.{DOMINIO_DE_PRUEBA}")
+    verificar("la PWA por HTTP plano en ese dominio NO está permitida", "access-control-allow-origin" not in cab, str(cab))
+    falsos.limpiar()
     pedir("GET", "/catalogo-imagenes/foto.jpg")
     verificar("sin ese host, la misma ruta va al frontend (no a SeaweedFS)", not falsos.vistos("almacenamiento"))
+    estado, _, _ = pedir("GET", "/catalogo-imagenes/foto.jpg", host="mis3.localhost")
+    verificar("un host que solo CONTIENE s3 (mis3.localhost) no va a SeaweedFS", not falsos.vistos("almacenamiento"))
 
 
 def grupo_frontend():

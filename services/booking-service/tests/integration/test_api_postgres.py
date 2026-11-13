@@ -153,4 +153,4 @@ async def test_conflicto_de_version_del_calendario_trae_el_dia_de_postgres(clien
     cuerpo = r.json()
     assert cuerpo["version_actual"] == 2
     assert (cuerpo["actual"]["cupos_totales"], cuerpo["actual"]["version"]) == (8, 2)
-    assert float(cuerpo["actual"]["tarifa_dia"]) == 95000
+    assert cuerpo["actual"]["tarifa_dia"] == 95000  # número en JSON (booking.yaml), no texto

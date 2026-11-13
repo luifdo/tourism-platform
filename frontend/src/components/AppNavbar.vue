@@ -1,7 +1,7 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useSession } from '../ui/useSession'
 import BrandLogo from './BrandLogo.vue'
 import InstallButton from './InstallButton.vue'
@@ -9,11 +9,23 @@ import LangSwitch from './LangSwitch.vue'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const { sesion, salir } = useSession()
 const menu = ref(false)
 const userMenu = ref(false)
 const saliendo = ref(false)
 const zonaUsuario = ref(null)
+const cabecera = ref(null)
+
+// El menú del móvil y el de la cuenta no pueden estar abiertos a la vez (se tapaban entre sí): abrir uno cierra el otro.
+const cerrarTodo = () => { menu.value = false; userMenu.value = false }
+const alternarMenu = () => { userMenu.value = false; menu.value = !menu.value }
+const alternarUsuario = () => { menu.value = false; userMenu.value = !userMenu.value }
+// Un clic fuera de la barra (en Opera y otros el botón no recibe foco al hacer clic, así que el focusout no basta) o Escape lo cierran
+const alClicFuera = (e) => { if (cabecera.value && !cabecera.value.contains(e.target)) cerrarTodo() }
+onMounted(() => document.addEventListener('click', alClicFuera))
+onBeforeUnmount(() => document.removeEventListener('click', alClicFuera))
+watch(() => route.fullPath, cerrarTodo)
 
 // Accesos según el rol: cada uno tiene su propio panel; el Turista tiene sus reservas y sus reseñas
 const ENLACES_ROL = {
@@ -55,7 +67,7 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
   </div>
 
   <!-- Barra principal fija -->
-  <header class="sticky top-0 z-50 bg-cream/90 px-[clamp(16px,3vw,32px)] backdrop-blur-xl" style="height: var(--nav-h)">
+  <header ref="cabecera" class="sticky top-0 z-50 bg-cream/90 px-[clamp(16px,3vw,32px)] backdrop-blur-xl" style="height: var(--nav-h)">
     <nav class="mx-auto flex h-full max-w-[1400px] items-center justify-between gap-4" aria-label="Principal">
       <RouterLink :to="{ name: 'home' }" class="shrink-0" aria-label="Samaland adventure"><BrandLogo /></RouterLink>
 
@@ -74,8 +86,8 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></svg>
             <span class="hidden sm:inline">{{ t(enlacesRol[0][1]) }}</span>
           </RouterLink>
-          <div ref="zonaUsuario" class="relative" @focusout="alPerderFoco" @keydown.esc="userMenu = false">
-            <button type="button" class="flex items-center gap-2 rounded-full border border-sand/40 bg-white py-1 pl-1 pr-3 text-[13px] font-medium text-ink-control shadow-card transition hover:border-teal" :aria-expanded="userMenu" aria-haspopup="menu" :aria-label="t('auth.menu.account')" @click="userMenu = !userMenu">
+          <div ref="zonaUsuario" class="relative" @focusout="alPerderFoco" @keydown.esc="cerrarTodo">
+            <button type="button" class="flex items-center gap-2 rounded-full border border-sand/40 bg-white py-1 pl-1 pr-3 text-[13px] font-medium text-ink-control shadow-card transition hover:border-teal" :aria-expanded="userMenu" aria-haspopup="menu" :aria-label="t('auth.menu.account')" @click="alternarUsuario">
               <span class="grid size-7 place-items-center rounded-full bg-navy text-xs font-bold text-white" aria-hidden="true">{{ inicial }}</span>
               <span class="hidden max-w-[110px] truncate md:inline">{{ primerNombre }}</span>
             </button>
@@ -98,7 +110,7 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
           <RouterLink :to="{ name: 'register' }" class="hidden rounded-full bg-navy px-4 py-2 text-[13px] font-semibold text-white shadow-cta transition hover:-translate-y-0.5 hover:bg-blue sm:inline-block">{{ t('auth.menu.register') }}</RouterLink>
         </template>
 
-        <button type="button" class="xl:hidden" :aria-label="t('nav.menu')" :aria-expanded="menu" @click="menu = !menu">
+        <button type="button" class="xl:hidden" :aria-label="t('nav.menu')" :aria-expanded="menu" @click="alternarMenu">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
         </button>
       </div>

@@ -1,0 +1,52 @@
+# Comprobaciones de iam-service en la VM pública, por el gateway con HTTPS
+# Puntuales, sin carga. Sin contraseñas, tokens, URL firmadas ni correos completos.
+# Fecha: 2026-11-13 20:25:44 UTC
+# URL: https://3-141-142-12.sslip.io
+# IP pública de quien mide: 186.116.x.x
+# Commit del script: d2823d1-dirty
+
+0     OK        Registro del Turista de prueba l***@gmail.com  -> usuario_id=8c66d9df-97f6-45d8-b811-d845bcafad0c
+0     OK        Registro del Prestador de prueba l***@gmail.com  -> usuario_id=bc342ff3-ac66-4077-807b-2c5515d1dc63
+1.1   OK        GET /api/iam/perfil sin token -> 401  -> 401 TOKEN_INVALIDO
+1.2   OK        GET /api/iam/perfil con token mal formado -> 401  -> 401 TOKEN_INVALIDO
+1.3   OK        Login del Turista  -> 200
+1.4   OK        Turista en GET /api/iam/admin/usuarios -> 403 ROL_INSUFICIENTE  -> 403 ROL_INSUFICIENTE
+1.5   OK        Bitácora: las dos filas ACCESS_DENIED de los 401  -> 2 encontradas por su X-Correlation-ID
+1.6   OK        Bitácora: la fila ACCESS_DENIED del 403 con el usuario_id del Turista  -> 1 encontradas
+2.1   OK        ip_origen de las 3 filas coincide con la IP pública de quien mide (186.116.x.x)  -> quedó la misma, la misma, la misma
+3.1   OK        Login del Prestador  -> 200
+3.2   OK        Carga del RNT y del RUT ficticios -> 201  -> 201 / 201
+3.3   OK        El Admin pide la URL firmada -> 200  -> 200
+3.4   OK        Con la firma -> 200 y el PDF subido (host https://s3.3-141-142-12.sslip.io)  -> 200
+3.5   OK        La misma URL sin la query string -> 403 o 401  -> 403
+4.1   OK        El Admin aprueba al Prestador -> 200  -> 200
+4.2   OK        GET /api/catalog/prestador/perfil con la razón social (prestador.aprobado)  -> 200 a los 3 s
+5.1   OK        Login del Turista (sesión nueva)  -> 200
+5.2   OK        Refresh -> 200 con tokens nuevos  -> 200
+5.3   OK        El refresh viejo otra vez -> 401  -> 401 TOKEN_INVALIDO
+5.4   OK        Bitácora: fila REFRESH_REUTILIZADO del Turista  -> 1
+5.5   OK        El refresh nuevo también -> 401 (familia revocada)  -> 401 TOKEN_INVALIDO
+6.1   OK        DELETE /api/iam/perfil del Prestador -> 204  -> 204
+6.2   OK        Login del Prestador suprimido -> 401  -> 401 CREDENCIALES_INVALIDAS
+6.3   PENDIENTE catalog borró razon_social, telefono y direccion  -> no se ve desde fuera; Luis Fernando corre en la VM la consulta de abajo sobre catalog_db
+      (6.3 se cerró como OK el 2026-11-13 con la consulta de abajo; ver su resultado al final)
+7.1   OK        Certificado válido y no de staging  -> emisor Let's Encrypt / YR1, vence Feb 11 11:37:24 2027 GMT
+7.2   OK        http:// redirige a https://  -> 301 hacia https://3-141-142-12.sslip.io
+
+# Resumen: 26 OK, 0 FALLA, 0 PENDIENTE (25 OK y 1 PENDIENTE en la corrida; 6.3 se cerró con la consulta de abajo)
+
+# Cuentas de prueba al terminar:
+  Turista l***@gmail.com (8c66d9df-97f6-45d8-b811-d845bcafad0c): desactivado
+  Prestador l***@gmail.com (bc342ff3-ac66-4077-807b-2c5515d1dc63): suprimido
+
+# Consulta para catalog_db (Luis Fernando, en la VM):
+SELECT usuario_id, razon_social, telefono, direccion, activo, estado_iam_en
+  FROM prestador_perfil
+ WHERE usuario_id = 'bc342ff3-ac66-4077-807b-2c5515d1dc63';
+-- Esperado: una fila con razon_social, telefono y direccion en NULL (C-63).
+
+# Resultado (2026-11-13, comprobado por Luis Fernando en la VM):
+#   1 fila para bc342ff3-ac66-4077-807b-2c5515d1dc63.
+#   razon_social, telefono y direccion en NULL (comprobado con IS NULL, no textos vacíos).
+#   activo = false; estado_iam_en = 2026-11-13 20:26:38 UTC.
+#   usuario.suprimido llegó a catalog y catalog borró los datos del perfil: 6.3 OK.

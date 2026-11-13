@@ -74,7 +74,9 @@ const fecha = computed(() => (estado.actualizadoEn ? d(estado.actualizadoEn, { d
           v-for="e in estado.items" :key="e.id"
           class="group flex flex-col overflow-hidden rounded-card border border-sand/30 bg-cream shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"
         >
-          <div class="relative h-44" :style="{ background: degradado(e.categoria) }">
+          <div class="relative h-44 overflow-hidden" :style="{ background: degradado(e.categoria) }">
+            <!-- Sin foto queda el degradado de la categoría; las etiquetas van encima de la imagen. -->
+            <img v-if="e.imagen" :src="e.imagen" alt="" class="absolute inset-0 size-full object-cover transition duration-500 group-hover:scale-105" loading="lazy" decoding="async" />
             <div class="absolute left-3 top-3 flex gap-1.5 font-mono text-xs">
               <span class="rounded-full bg-white/90 px-2.5 py-1 text-ink-control">{{ e.categoriaEtiqueta }}</span>
               <span v-if="e.calificacion" class="rounded-full bg-navy-darkest/85 px-2.5 py-1 text-white" :title="t('explorer.reviews', { n: e.totalResenas })">★ {{ e.calificacion.toFixed(1) }}</span>

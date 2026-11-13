@@ -14,7 +14,7 @@ const resumen = {
   id: '11111111-1111-4111-8111-111111111111', nombre: 'Bahía Concha', tipo: 'DEPORTE_ACUATICO', tipo_etiqueta: 'Deporte acuático',
   categoria: 'PLAYA', categoria_etiqueta: 'Playas', zona: { codigo: 'taganga', nombre: 'Taganga' },
   ubicacion: { lat: 11.32, lon: -74.09 }, tarifa_base: 130000, unidad_tarifa: 'POR_PERSONA', unidad_tarifa_etiqueta: 'por persona',
-  calificacion_promedio: 4.5, total_resenas: 8,
+  calificacion_promedio: 4.5, total_resenas: 8, imagen_principal: 'https://s3.ejemplo/portada.jpg',
 }
 const detalle = {
   ...resumen, descripcion: 'Texto', capacidad_aforo_diario: 20, imagenes_urls: ['https://s3.ejemplo/img.jpg', 7],
@@ -55,7 +55,13 @@ describe('adaptador HTTP del catálogo', () => {
         id: resumen.id, nombre: 'Bahía Concha', tipo: 'DEPORTE_ACUATICO', tipoEtiqueta: 'Deporte acuático', categoria: 'PLAYA', categoriaEtiqueta: 'Playas',
         zona: { codigo: 'taganga', nombre: 'Taganga' }, ubicacion: { lat: 11.32, lon: -74.09 }, tarifaBase: 130000,
         unidadTarifa: 'POR_PERSONA', unidadEtiqueta: 'por persona', calificacion: 4.5, totalResenas: 8,
+        imagen: 'https://s3.ejemplo/portada.jpg',
       })
+    })
+
+    it('sin imagen_principal (o con algo que no es texto) la tarjeta queda sin foto', async () => {
+      const r = await crear(async () => respuesta({ items: [{ ...resumen, imagen_principal: null }, { ...resumen, imagen_principal: 7 }], total: 2 })).buscarServicios({ pagina: 1 })
+      expect(r.items.map((s) => s.imagen)).toEqual([null, null])
     })
 
     it('tolera una zona nula y una calificación nula (servicio sin reseñas)', async () => {

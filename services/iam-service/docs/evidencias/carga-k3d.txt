@@ -1,0 +1,291 @@
+# Carga del login de iam-service en k3d, detrás de Traefik (prueba, no producción)
+# Fecha: 2026-11-13 18:34 UTC
+# Commit: 468ee93-dirty
+# k3s: v1.35.5+k3s1  Traefik: rancher/mirrored-library-traefik:3.6.13
+# Máquina: 18 núcleos lógicos, 23.4 GiB de RAM; Docker Desktop con 18 CPU y 11.4 GiB. El generador de carga corre en la misma máquina.
+#
+# Método:
+# - Overlay e2e/overlay-carga: el overlay e2e con el Middleware iam-rate-limit en 100/s (burst 100)
+#   en lugar de 5/min. Sigue en la cadena de Traefik; en k3d todos los clientes comparten IP (F-08).
+# - Logins: POST /api/iam/login por el gateway, en rueda sobre 20 usuarios creados antes.
+# - Verificar: GET /otro-modulo/carga con Bearer, un ForwardAuth por petición (el caso real).
+# - Lazo abierto: cada petición sale a su hora aunque las anteriores no hayan terminado.
+# - Antes de cada fase: se borra el HPA (y su historial de 300 s para bajar), se escala
+#   a 2, se espera CPU < 30m por pod y se recrea con la misma especificación (2-4, 70 %).
+# - Muestras cada 5 s: percentiles sobre los 200 que terminaron en la ventana; CPU con kubectl top
+#   (metrics-server, ventana propia de unos 15 s). Detalle en carga-k3d.csv.
+# - Ruptura: un error distinto de 503 SERVICIO_OCUPADO, o un login que no es ese 503 y tarda más de 10 s.
+
+## Base: 1 logins/s y 0 verificar/s, 120 s
+  Logins: 120 enviados, 120 con 200, 0 con 503 SERVICIO_OCUPADO (0.0 %), códigos {'200': 120}
+  Login (200): p50 359 ms, p95 500 ms, p99 516 ms; máximo de cualquier respuesta 672 ms
+  Retry-After recibidos: ninguno; 200 de más de 10 s: 0; rupturas: 0
+  HPA: deseadas>=3 a los 27 s, deseadas>=4 a los 27 s, listas>=3 a los 35 s, listas>=4 a los 35 s
+  CPU en reposo antes de empezar (m): {'664c5f7bd9-bvdxg': 6, '664c5f7bd9-f6vlr': 6}; media del total durante la fase 470m, máximo de un pod 314m
+  Retraso máximo del generador: 16 ms
+  t(s)  login/s  p50  p95  p99  503%  otros  verif p95  rép.des  rép.listas  HPA%                                                                      CPU por pod (m)
+     5      1.0  359  515  515   0.0      -          -        2           2     6                                                664c5f7bd9-bvdxg:6;664c5f7bd9-f6vlr:6
+    10      1.0  359  500  500   0.0      -          -        2           2     6                                               664c5f7bd9-bvdxg:41;664c5f7bd9-f6vlr:6
+    15      1.0  359  516  516   0.0      -          -        2           2    23                                               664c5f7bd9-bvdxg:41;664c5f7bd9-f6vlr:6
+    20      1.0  391  500  500   0.0      -          -        2           2    23                                               664c5f7bd9-bvdxg:41;664c5f7bd9-f6vlr:6
+    25      1.0  359  484  484   0.0      -          -        2           2    23                                            664c5f7bd9-bvdxg:210;664c5f7bd9-f6vlr:128
+    30      1.0  359  422  422   0.0      -          -        4           2   169                                            664c5f7bd9-bvdxg:210;664c5f7bd9-f6vlr:128
+    35      1.0  359  469  469   0.0      -          -        4           4   169                                            664c5f7bd9-bvdxg:210;664c5f7bd9-f6vlr:128
+    40      1.0  375  672  672   0.0      -          -        4           4   169  664c5f7bd9-bvdxg:187;664c5f7bd9-c4tdq:310;664c5f7bd9-f6vlr:192;664c5f7bd9-fw9kq:314
+    45      1.0  359  500  500   0.0      -          -        4           4   189  664c5f7bd9-bvdxg:187;664c5f7bd9-c4tdq:310;664c5f7bd9-f6vlr:192;664c5f7bd9-fw9kq:314
+    50      1.0  359  500  500   0.0      -          -        4           4   189  664c5f7bd9-bvdxg:187;664c5f7bd9-c4tdq:310;664c5f7bd9-f6vlr:192;664c5f7bd9-fw9kq:314
+    55      1.0  359  468  468   0.0      -          -        4           4   189  664c5f7bd9-bvdxg:187;664c5f7bd9-c4tdq:280;664c5f7bd9-f6vlr:135;664c5f7bd9-fw9kq:296
+    60      1.0  359  484  484   0.0      -          -        4           4   161  664c5f7bd9-bvdxg:187;664c5f7bd9-c4tdq:280;664c5f7bd9-f6vlr:135;664c5f7bd9-fw9kq:296
+    65      1.0  328  469  469   0.0      -          -        4           4   161  664c5f7bd9-bvdxg:187;664c5f7bd9-c4tdq:280;664c5f7bd9-f6vlr:135;664c5f7bd9-fw9kq:296
+    70      1.0  359  516  516   0.0      -          -        4           4   161    664c5f7bd9-bvdxg:105;664c5f7bd9-c4tdq:99;664c5f7bd9-f6vlr:107;664c5f7bd9-fw9kq:85
+    75      1.0  344  484  484   0.0      -          -        4           4    99    664c5f7bd9-bvdxg:105;664c5f7bd9-c4tdq:99;664c5f7bd9-f6vlr:107;664c5f7bd9-fw9kq:85
+    80      1.0  359  484  484   0.0      -          -        4           4    99    664c5f7bd9-bvdxg:105;664c5f7bd9-c4tdq:99;664c5f7bd9-f6vlr:107;664c5f7bd9-fw9kq:85
+    85      1.0  343  484  484   0.0      -          -        4           4    99   664c5f7bd9-bvdxg:102;664c5f7bd9-c4tdq:117;664c5f7bd9-f6vlr:104;664c5f7bd9-fw9kq:84
+    90      1.0  359  484  484   0.0      -          -        4           4   101   664c5f7bd9-bvdxg:102;664c5f7bd9-c4tdq:117;664c5f7bd9-f6vlr:104;664c5f7bd9-fw9kq:84
+    95      1.0  359  469  469   0.0      -          -        4           4   101   664c5f7bd9-bvdxg:102;664c5f7bd9-c4tdq:117;664c5f7bd9-f6vlr:104;664c5f7bd9-fw9kq:84
+   100      1.0  359  484  484   0.0      -          -        4           4   101    664c5f7bd9-bvdxg:80;664c5f7bd9-c4tdq:92;664c5f7bd9-f6vlr:106;664c5f7bd9-fw9kq:104
+   105      1.0  359  516  516   0.0      -          -        4           4    95    664c5f7bd9-bvdxg:80;664c5f7bd9-c4tdq:92;664c5f7bd9-f6vlr:106;664c5f7bd9-fw9kq:104
+   110      1.0  391  469  469   0.0      -          -        4           4    95    664c5f7bd9-bvdxg:80;664c5f7bd9-c4tdq:92;664c5f7bd9-f6vlr:106;664c5f7bd9-fw9kq:104
+   115      1.0  343  500  500   0.0      -          -        4           4    95     664c5f7bd9-bvdxg:115;664c5f7bd9-c4tdq:75;664c5f7bd9-f6vlr:97;664c5f7bd9-fw9kq:88
+
+## Pico 2/s: 2 logins/s y 0 verificar/s, 120 s
+  Logins: 240 enviados, 240 con 200, 0 con 503 SERVICIO_OCUPADO (0.0 %), códigos {'200': 240}
+  Login (200): p50 390 ms, p95 515 ms, p99 563 ms; máximo de cualquier respuesta 688 ms
+  Retry-After recibidos: ninguno; 200 de más de 10 s: 0; rupturas: 0
+  HPA: deseadas>=3 a los 26 s, deseadas>=4 a los 26 s, listas>=3 a los 33 s, listas>=4 a los 33 s
+  CPU en reposo antes de empezar (m): {'664c5f7bd9-bvdxg': 6, '664c5f7bd9-f6vlr': 6}; media del total durante la fase 734m, máximo de un pod 418m
+  Retraso máximo del generador: 16 ms
+  t(s)  login/s  p50  p95  p99  503%  otros  verif p95  rép.des  rép.listas  HPA%                                                                      CPU por pod (m)
+     5      1.8  375  516  516   0.0      -          -        2           2     6                                               664c5f7bd9-bvdxg:5;664c5f7bd9-f6vlr:47
+    10      2.0  391  579  579   0.0      -          -        2           2     6                                               664c5f7bd9-bvdxg:5;664c5f7bd9-f6vlr:47
+    15      2.2  438  563  563   0.0      -          -        2           2    26                                               664c5f7bd9-bvdxg:5;664c5f7bd9-f6vlr:47
+    20      2.0  391  515  515   0.0      -          -        2           2    26                                            664c5f7bd9-bvdxg:299;664c5f7bd9-f6vlr:418
+    25      2.0  375  485  485   0.0      -          -        2           2    26                                            664c5f7bd9-bvdxg:299;664c5f7bd9-f6vlr:418
+    30      1.8  360  484  484   0.0      -          -        4           2   358                                            664c5f7bd9-bvdxg:299;664c5f7bd9-f6vlr:418
+    35      2.0  391  500  500   0.0      -          -        4           4   358                                            664c5f7bd9-bvdxg:397;664c5f7bd9-f6vlr:388
+    40      2.2  391  688  688   0.0      -          -        4           4   358                                            664c5f7bd9-bvdxg:397;664c5f7bd9-f6vlr:388
+    45      2.0  360  500  500   0.0      -          -        4           4   392                                            664c5f7bd9-bvdxg:397;664c5f7bd9-f6vlr:388
+    50      1.8  391  454  454   0.0      -          -        4           4   392  664c5f7bd9-bndp7:235;664c5f7bd9-bvdxg:397;664c5f7bd9-f6vlr:227;664c5f7bd9-zzx7h:208
+    55      2.0  391  500  500   0.0      -          -        4           4   392  664c5f7bd9-bndp7:235;664c5f7bd9-bvdxg:397;664c5f7bd9-f6vlr:227;664c5f7bd9-zzx7h:208
+    60      2.2  407  547  547   0.0      -          -        4           4   266  664c5f7bd9-bndp7:235;664c5f7bd9-bvdxg:397;664c5f7bd9-f6vlr:227;664c5f7bd9-zzx7h:208
+    65      2.0  391  515  515   0.0      -          -        4           4   266  664c5f7bd9-bndp7:208;664c5f7bd9-bvdxg:202;664c5f7bd9-f6vlr:188;664c5f7bd9-zzx7h:208
+    70      2.0  375  484  484   0.0      -          -        4           4   266  664c5f7bd9-bndp7:208;664c5f7bd9-bvdxg:202;664c5f7bd9-f6vlr:188;664c5f7bd9-zzx7h:208
+    75      2.0  375  484  484   0.0      -          -        4           4   201  664c5f7bd9-bndp7:208;664c5f7bd9-bvdxg:202;664c5f7bd9-f6vlr:188;664c5f7bd9-zzx7h:208
+    80      1.8  391  485  485   0.0      -          -        4           4   201  664c5f7bd9-bndp7:227;664c5f7bd9-bvdxg:217;664c5f7bd9-f6vlr:197;664c5f7bd9-zzx7h:208
+    85      2.2  375  547  547   0.0      -          -        4           4   201  664c5f7bd9-bndp7:227;664c5f7bd9-bvdxg:217;664c5f7bd9-f6vlr:197;664c5f7bd9-zzx7h:208
+    90      2.0  375  485  485   0.0      -          -        4           4   212  664c5f7bd9-bndp7:227;664c5f7bd9-bvdxg:217;664c5f7bd9-f6vlr:197;664c5f7bd9-zzx7h:208
+    95      2.0  375  562  562   0.0      -          -        4           4   212  664c5f7bd9-bndp7:158;664c5f7bd9-bvdxg:201;664c5f7bd9-f6vlr:215;664c5f7bd9-zzx7h:214
+   100      2.0  375  485  485   0.0      -          -        4           4   212  664c5f7bd9-bndp7:158;664c5f7bd9-bvdxg:201;664c5f7bd9-f6vlr:215;664c5f7bd9-zzx7h:214
+   105      2.0  375  485  485   0.0      -          -        4           4   197  664c5f7bd9-bndp7:158;664c5f7bd9-bvdxg:201;664c5f7bd9-f6vlr:215;664c5f7bd9-zzx7h:214
+   110      2.0  375  516  516   0.0      -          -        4           4   197  664c5f7bd9-bndp7:243;664c5f7bd9-bvdxg:172;664c5f7bd9-f6vlr:215;664c5f7bd9-zzx7h:214
+   115      2.0  375  516  516   0.0      -          -        4           4   197  664c5f7bd9-bndp7:243;664c5f7bd9-bvdxg:172;664c5f7bd9-f6vlr:215;664c5f7bd9-zzx7h:214
+
+## Pico 4/s: 4 logins/s y 0 verificar/s, 120 s
+  Logins: 480 enviados, 480 con 200, 0 con 503 SERVICIO_OCUPADO (0.0 %), códigos {'200': 480}
+  Login (200): p50 360 ms, p95 484 ms, p99 500 ms; máximo de cualquier respuesta 562 ms
+  Retry-After recibidos: ninguno; 200 de más de 10 s: 0; rupturas: 0
+  HPA: deseadas>=3 a los 26 s, deseadas>=4 a los 26 s, listas>=3 a los 33 s, listas>=4 a los 33 s
+  CPU en reposo antes de empezar (m): {'664c5f7bd9-bvdxg': 6, '664c5f7bd9-f6vlr': 6}; media del total durante la fase 1350m, máximo de un pod 749m
+  Retraso máximo del generador: 31 ms
+  t(s)  login/s  p50  p95  p99  503%  otros  verif p95  rép.des  rép.listas  HPA%                                                                      CPU por pod (m)
+     5      3.8  375  500  500   0.0      -          -        2           2     6                                               664c5f7bd9-bvdxg:37;664c5f7bd9-f6vlr:5
+    10      4.0  375  469  469   0.0      -          -        2           2     6                                               664c5f7bd9-bvdxg:37;664c5f7bd9-f6vlr:5
+    15      4.0  360  422  484   0.0      -          -        2           2    21                                               664c5f7bd9-bvdxg:37;664c5f7bd9-f6vlr:5
+    20      4.0  360  468  469   0.0      -          -        2           2    21                                            664c5f7bd9-bvdxg:746;664c5f7bd9-f6vlr:346
+    25      4.0  359  469  469   0.0      -          -        2           2    21                                            664c5f7bd9-bvdxg:746;664c5f7bd9-f6vlr:346
+    30      4.0  343  375  421   0.0      -          -        4           2   546                                            664c5f7bd9-bvdxg:746;664c5f7bd9-f6vlr:346
+    35      4.0  328  515  547   0.0      -          -        4           4   546                                            664c5f7bd9-bvdxg:686;664c5f7bd9-f6vlr:749
+    40      4.0  344  469  485   0.0      -          -        4           4   717                                            664c5f7bd9-bvdxg:686;664c5f7bd9-f6vlr:749
+    45      4.0  344  500  547   0.0      -          -        4           4   717                                            664c5f7bd9-bvdxg:686;664c5f7bd9-f6vlr:749
+    50      4.0  359  453  500   0.0      -          -        4           4   717  664c5f7bd9-2fmbq:372;664c5f7bd9-bvdxg:686;664c5f7bd9-f6vlr:654;664c5f7bd9-jzwzx:450
+    55      4.0  375  485  500   0.0      -          -        4           4   570  664c5f7bd9-2fmbq:372;664c5f7bd9-bvdxg:686;664c5f7bd9-f6vlr:654;664c5f7bd9-jzwzx:450
+    60      4.0  375  484  485   0.0      -          -        4           4   570  664c5f7bd9-2fmbq:372;664c5f7bd9-bvdxg:686;664c5f7bd9-f6vlr:654;664c5f7bd9-jzwzx:450
+    65      4.0  360  485  500   0.0      -          -        4           4   570  664c5f7bd9-2fmbq:365;664c5f7bd9-bvdxg:389;664c5f7bd9-f6vlr:385;664c5f7bd9-jzwzx:365
+    70      4.0  360  453  469   0.0      -          -        4           4   376  664c5f7bd9-2fmbq:365;664c5f7bd9-bvdxg:389;664c5f7bd9-f6vlr:385;664c5f7bd9-jzwzx:365
+    75      4.0  360  469  500   0.0      -          -        4           4   376  664c5f7bd9-2fmbq:365;664c5f7bd9-bvdxg:389;664c5f7bd9-f6vlr:385;664c5f7bd9-jzwzx:365
+    80      4.0  375  453  468   0.0      -          -        4           4   376  664c5f7bd9-2fmbq:413;664c5f7bd9-bvdxg:399;664c5f7bd9-f6vlr:386;664c5f7bd9-jzwzx:400
+    85      4.0  359  438  469   0.0      -          -        4           4   376  664c5f7bd9-2fmbq:413;664c5f7bd9-bvdxg:399;664c5f7bd9-f6vlr:386;664c5f7bd9-jzwzx:400
+    90      4.0  359  484  484   0.0      -          -        4           4   399  664c5f7bd9-2fmbq:413;664c5f7bd9-bvdxg:399;664c5f7bd9-f6vlr:386;664c5f7bd9-jzwzx:400
+    95      4.0  343  484  500   0.0      -          -        4           4   399  664c5f7bd9-2fmbq:370;664c5f7bd9-bvdxg:367;664c5f7bd9-f6vlr:395;664c5f7bd9-jzwzx:386
+   100      4.0  360  453  485   0.0      -          -        4           4   399  664c5f7bd9-2fmbq:370;664c5f7bd9-bvdxg:367;664c5f7bd9-f6vlr:395;664c5f7bd9-jzwzx:386
+   105      4.0  328  484  562   0.0      -          -        4           4   379  664c5f7bd9-2fmbq:370;664c5f7bd9-bvdxg:367;664c5f7bd9-f6vlr:395;664c5f7bd9-jzwzx:386
+   110      4.0  375  468  485   0.0      -          -        4           4   379  664c5f7bd9-2fmbq:352;664c5f7bd9-bvdxg:367;664c5f7bd9-f6vlr:354;664c5f7bd9-jzwzx:379
+   115      4.0  360  469  469   0.0      -          -        4           4   379  664c5f7bd9-2fmbq:352;664c5f7bd9-bvdxg:367;664c5f7bd9-f6vlr:354;664c5f7bd9-jzwzx:379
+   120      4.0  360  469  469   0.0      -          -        4           4   363  664c5f7bd9-2fmbq:352;664c5f7bd9-bvdxg:367;664c5f7bd9-f6vlr:354;664c5f7bd9-jzwzx:379
+
+## Pico 8/s: 8 logins/s y 0 verificar/s, 120 s
+  Logins: 960 enviados, 960 con 200, 0 con 503 SERVICIO_OCUPADO (0.0 %), códigos {'200': 960}
+  Login (200): p50 484 ms, p95 8109 ms, p99 10140 ms; máximo de cualquier respuesta 10421 ms
+  Retry-After recibidos: ninguno; 200 de más de 10 s: 12; rupturas: 12
+  HPA: deseadas>=3 a los 9 s, deseadas>=4 a los 9 s, listas>=3 a los 17 s, listas>=4 a los 17 s
+  CPU en reposo antes de empezar (m): {'664c5f7bd9-bvdxg': 6, '664c5f7bd9-f6vlr': 6}; media del total durante la fase 2752m, máximo de un pod 997m
+  Retraso máximo del generador: 31 ms
+  t(s)  login/s   p50    p95    p99  503%  otros  verif p95  rép.des  rép.listas  HPA%                                                                      CPU por pod (m)
+     5      4.8  1250   2172   2281   0.0      -          -        2           2     5                                                664c5f7bd9-bvdxg:5;664c5f7bd9-f6vlr:5
+    10      4.8  2937   4250   4312   0.0      -          -        4           2   260                                             664c5f7bd9-bvdxg:86;664c5f7bd9-f6vlr:435
+    15      5.2  4812   5922   6094   0.0      -          -        4           2   260                                             664c5f7bd9-bvdxg:86;664c5f7bd9-f6vlr:435
+    20      8.0  5968   7719   8016   0.0      -          -        4           4   260                                             664c5f7bd9-bvdxg:86;664c5f7bd9-f6vlr:435
+    25      9.0  7421   9703   9875   0.0      -          -        4           4   715  664c5f7bd9-25nvr:604;664c5f7bd9-bvdxg:995;664c5f7bd9-f6vlr:435;664c5f7bd9-hn56d:868
+    30      9.4  7047  10406  10421   0.0      -          -        4           4   715  664c5f7bd9-25nvr:604;664c5f7bd9-bvdxg:995;664c5f7bd9-f6vlr:435;664c5f7bd9-hn56d:868
+    35      9.2  5312   9734  10000   0.0      -          -        4           4   715  664c5f7bd9-25nvr:604;664c5f7bd9-bvdxg:995;664c5f7bd9-f6vlr:435;664c5f7bd9-hn56d:868
+    40      8.8  3906   8203   8468   0.0      -          -        4           4   869  664c5f7bd9-25nvr:716;664c5f7bd9-bvdxg:996;664c5f7bd9-f6vlr:996;664c5f7bd9-hn56d:768
+    45      9.0  2500   7171   7422   0.0      -          -        4           4   869  664c5f7bd9-25nvr:716;664c5f7bd9-bvdxg:996;664c5f7bd9-f6vlr:996;664c5f7bd9-hn56d:768
+    50      9.0  1140   6156   6344   0.0      -          -        4           4   869  664c5f7bd9-25nvr:716;664c5f7bd9-bvdxg:996;664c5f7bd9-f6vlr:996;664c5f7bd9-hn56d:768
+    55      8.8   484   5078   5281   0.0      -          -        4           4   874  664c5f7bd9-25nvr:725;664c5f7bd9-bvdxg:997;664c5f7bd9-f6vlr:996;664c5f7bd9-hn56d:778
+    60      8.6   468   3641   4000   0.0      -          -        4           4   874  664c5f7bd9-25nvr:725;664c5f7bd9-bvdxg:997;664c5f7bd9-f6vlr:996;664c5f7bd9-hn56d:778
+    65      8.6   515   1953   2203   0.0      -          -        4           4   874  664c5f7bd9-25nvr:725;664c5f7bd9-bvdxg:997;664c5f7bd9-f6vlr:996;664c5f7bd9-hn56d:778
+    70      8.2   437    609    953   0.0      -          -        4           4   861  664c5f7bd9-25nvr:712;664c5f7bd9-bvdxg:992;664c5f7bd9-f6vlr:957;664c5f7bd9-hn56d:785
+    75      8.0   437    562    594   0.0      -          -        4           4   861  664c5f7bd9-25nvr:712;664c5f7bd9-bvdxg:992;664c5f7bd9-f6vlr:957;664c5f7bd9-hn56d:785
+    80      8.0   437    656    687   0.0      -          -        4           4   861  664c5f7bd9-25nvr:712;664c5f7bd9-bvdxg:992;664c5f7bd9-f6vlr:957;664c5f7bd9-hn56d:785
+    85      8.0   421    578    609   0.0      -          -        4           4   800  664c5f7bd9-25nvr:706;664c5f7bd9-bvdxg:992;664c5f7bd9-f6vlr:750;664c5f7bd9-hn56d:754
+    90      8.0   422    562    609   0.0      -          -        4           4   800  664c5f7bd9-25nvr:706;664c5f7bd9-bvdxg:992;664c5f7bd9-f6vlr:750;664c5f7bd9-hn56d:754
+    95      8.0   422    578    625   0.0      -          -        4           4   800  664c5f7bd9-25nvr:706;664c5f7bd9-bvdxg:992;664c5f7bd9-f6vlr:750;664c5f7bd9-hn56d:754
+   100      8.0   453    641    687   0.0      -          -        4           4   744  664c5f7bd9-25nvr:698;664c5f7bd9-bvdxg:740;664c5f7bd9-f6vlr:771;664c5f7bd9-hn56d:767
+   105      8.0   391    547    609   0.0      -          -        4           4   744  664c5f7bd9-25nvr:698;664c5f7bd9-bvdxg:740;664c5f7bd9-f6vlr:771;664c5f7bd9-hn56d:767
+   110      8.0   406    609    687   0.0      -          -        4           4   744  664c5f7bd9-25nvr:698;664c5f7bd9-bvdxg:740;664c5f7bd9-f6vlr:771;664c5f7bd9-hn56d:767
+   115      8.0   406    562    625   0.0      -          -        4           4   746  664c5f7bd9-25nvr:703;664c5f7bd9-bvdxg:763;664c5f7bd9-f6vlr:761;664c5f7bd9-hn56d:758
+   120      8.0   391    594    641   0.0      -          -        4           4   746  664c5f7bd9-25nvr:703;664c5f7bd9-bvdxg:763;664c5f7bd9-f6vlr:761;664c5f7bd9-hn56d:758
+  Ruptura: {'tipo': 'login', 'inicio': 15.125, 'fin': 25.15599999999995, 'codigo': '200', 'retry_after': None}
+  Ruptura: {'tipo': 'login', 'inicio': 15.390999999999622, 'fin': 25.53099999999995, 'codigo': '200', 'retry_after': None}
+  Ruptura: {'tipo': 'login', 'inicio': 15.515999999999622, 'fin': 25.936999999999898, 'codigo': '200', 'retry_after': None}
+  Ruptura: {'tipo': 'login', 'inicio': 16.125, 'fin': 26.29699999999957, 'codigo': '200', 'retry_after': None}
+  Ruptura: {'tipo': 'login', 'inicio': 16.375, 'fin': 26.625, 'codigo': '200', 'retry_after': None}
+  Ruptura: {'tipo': 'login', 'inicio': 16.625, 'fin': 27.03099999999995, 'codigo': '200', 'retry_after': None}
+  Ruptura: {'tipo': 'login', 'inicio': 17.25, 'fin': 27.42199999999957, 'codigo': '200', 'retry_after': None}
+  Ruptura: {'tipo': 'login', 'inicio': 17.5, 'fin': 27.85899999999947, 'codigo': '200', 'retry_after': None}
+  Ruptura: {'tipo': 'login', 'inicio': 18.0, 'fin': 28.32799999999952, 'codigo': '200', 'retry_after': None}
+  Ruptura: {'tipo': 'login', 'inicio': 18.26599999999962, 'fin': 28.686999999999898, 'codigo': '200', 'retry_after': None}
+
+## Referencia de verificar: 0 logins/s y 50 verificar/s, 60 s
+  Logins: 0 enviados, 0 con 200, 0 con 503 SERVICIO_OCUPADO (0.0 %), códigos {}
+  Login (200): p50 - ms, p95 - ms, p99 - ms; máximo de cualquier respuesta - ms
+  Retry-After recibidos: ninguno; 200 de más de 10 s: 0; rupturas: 0
+  Verificar: 3000 enviados, p50 31 ms, p95 47 ms, p99 47 ms, códigos {'200': 3000}
+  HPA: deseadas>=3 a los 26 s, deseadas>=4 a los 26 s, listas>=3 a los 33 s, listas>=4 a los 33 s
+  CPU en reposo antes de empezar (m): {'664c5f7bd9-bvdxg': 6, '664c5f7bd9-f6vlr': 6}; media del total durante la fase 246m, máximo de un pod 227m
+  Retraso máximo del generador: 46 ms
+  t(s)  login/s  p50  p95  p99  503%  otros  verif p95  rép.des  rép.listas  HPA%                                                                     CPU por pod (m)
+     5      0.0    -    -    -   0.0      -         47        2           2     6                                               664c5f7bd9-bvdxg:6;664c5f7bd9-f6vlr:6
+    10      0.0    -    -    -   0.0      -         47        2           2     6                                              664c5f7bd9-bvdxg:6;664c5f7bd9-f6vlr:34
+    15      0.0    -    -    -   0.0      -         47        2           2    20                                              664c5f7bd9-bvdxg:6;664c5f7bd9-f6vlr:34
+    20      0.0    -    -    -   0.0      -         32        2           2    20                                              664c5f7bd9-bvdxg:6;664c5f7bd9-f6vlr:34
+    25      0.0    -    -    -   0.0      -         47        2           2    20                                            664c5f7bd9-bvdxg:165;664c5f7bd9-f6vlr:85
+    30      0.0    -    -    -   0.0      -         47        4           2   125                                            664c5f7bd9-bvdxg:165;664c5f7bd9-f6vlr:85
+    35      0.0    -    -    -   0.0      -         47        4           4   125                                            664c5f7bd9-bvdxg:165;664c5f7bd9-f6vlr:85
+    40      0.0    -    -    -   0.0      -         47        4           4   125                                           664c5f7bd9-bvdxg:227;664c5f7bd9-f6vlr:148
+    45      0.0    -    -    -   0.0      -         47        4           4   187                                           664c5f7bd9-bvdxg:227;664c5f7bd9-f6vlr:148
+    50      0.0    -    -    -   0.0      -         47        4           4   187                                           664c5f7bd9-bvdxg:227;664c5f7bd9-f6vlr:148
+    55      0.0    -    -    -   0.0      -         47        4           4   187  664c5f7bd9-bvdxg:195;664c5f7bd9-cdtqk:109;664c5f7bd9-f6vlr:29;664c5f7bd9-g2nfn:139
+    60      0.0    -    -    -   0.0      -         47        4           4   118  664c5f7bd9-bvdxg:195;664c5f7bd9-cdtqk:109;664c5f7bd9-f6vlr:29;664c5f7bd9-g2nfn:139
+
+## Mezcla: 2 logins/s y 50 verificar/s, 120 s
+  Logins: 240 enviados, 240 con 200, 0 con 503 SERVICIO_OCUPADO (0.0 %), códigos {'200': 240}
+  Login (200): p50 437 ms, p95 578 ms, p99 625 ms; máximo de cualquier respuesta 703 ms
+  Retry-After recibidos: ninguno; 200 de más de 10 s: 0; rupturas: 0
+  Verificar: 6000 enviados, p50 31 ms, p95 94 ms, p99 156 ms, códigos {'200': 6000}
+  HPA: deseadas>=3 a los 26 s, deseadas>=4 a los 26 s, listas>=3 a los 32 s, listas>=4 a los 32 s
+  CPU en reposo antes de empezar (m): {'664c5f7bd9-bvdxg': 6, '664c5f7bd9-f6vlr': 6}; media del total durante la fase 1007m, máximo de un pod 619m
+  Retraso máximo del generador: 46 ms
+  t(s)  login/s  p50  p95  p99  503%  otros  verif p95  rép.des  rép.listas  HPA%                                                                      CPU por pod (m)
+     5      1.8  453  578  578   0.0      -        109        2           2     6                                                664c5f7bd9-bvdxg:6;664c5f7bd9-f6vlr:6
+    10      2.2  484  625  625   0.0      -        125        2           2    17                                               664c5f7bd9-bvdxg:28;664c5f7bd9-f6vlr:6
+    15      2.0  468  625  625   0.0      -        109        2           2    17                                               664c5f7bd9-bvdxg:28;664c5f7bd9-f6vlr:6
+    20      2.0  468  688  688   0.0      -        109        2           2    17                                               664c5f7bd9-bvdxg:28;664c5f7bd9-f6vlr:6
+    25      2.0  468  593  593   0.0      -        141        2           2   469                                            664c5f7bd9-bvdxg:592;664c5f7bd9-f6vlr:346
+    30      2.0  437  562  562   0.0      -        156        4           2   469                                            664c5f7bd9-bvdxg:592;664c5f7bd9-f6vlr:346
+    35      2.0  453  593  593   0.0      -        109        4           4   469                                            664c5f7bd9-bvdxg:592;664c5f7bd9-f6vlr:346
+    40      2.0  359  562  562   0.0      -         63        4           4   469                                            664c5f7bd9-bvdxg:600;664c5f7bd9-f6vlr:619
+    45      2.0  390  546  546   0.0      -         63        4           4   609                                            664c5f7bd9-bvdxg:600;664c5f7bd9-f6vlr:619
+    50      2.0  390  453  453   0.0      -         63        4           4   609                                            664c5f7bd9-bvdxg:600;664c5f7bd9-f6vlr:619
+    55      2.0  391  593  593   0.0      -         78        4           4   609  664c5f7bd9-bvdxg:415;664c5f7bd9-f6vlr:389;664c5f7bd9-sggrf:447;664c5f7bd9-t62wr:286
+    60      2.0  375  547  547   0.0      -         47        4           4   363  664c5f7bd9-bvdxg:415;664c5f7bd9-f6vlr:389;664c5f7bd9-sggrf:447;664c5f7bd9-t62wr:286
+    65      2.0  406  500  500   0.0      -         78        4           4   363  664c5f7bd9-bvdxg:415;664c5f7bd9-f6vlr:389;664c5f7bd9-sggrf:447;664c5f7bd9-t62wr:286
+    70      2.0  375  531  531   0.0      -         47        4           4   363  664c5f7bd9-bvdxg:281;664c5f7bd9-f6vlr:299;664c5f7bd9-sggrf:381;664c5f7bd9-t62wr:271
+    75      2.0  359  703  703   0.0      -        109        4           4   308  664c5f7bd9-bvdxg:281;664c5f7bd9-f6vlr:299;664c5f7bd9-sggrf:381;664c5f7bd9-t62wr:271
+    80      2.0  390  500  500   0.0      -         78        4           4   308  664c5f7bd9-bvdxg:281;664c5f7bd9-f6vlr:299;664c5f7bd9-sggrf:381;664c5f7bd9-t62wr:271
+    85      2.0  406  484  484   0.0      -         63        4           4   308  664c5f7bd9-bvdxg:281;664c5f7bd9-f6vlr:281;664c5f7bd9-sggrf:281;664c5f7bd9-t62wr:297
+    90      2.0  406  610  610   0.0      -         93        4           4   285  664c5f7bd9-bvdxg:281;664c5f7bd9-f6vlr:281;664c5f7bd9-sggrf:281;664c5f7bd9-t62wr:297
+    95      2.0  375  578  578   0.0      -         78        4           4   285  664c5f7bd9-bvdxg:281;664c5f7bd9-f6vlr:281;664c5f7bd9-sggrf:281;664c5f7bd9-t62wr:297
+   100      2.0  375  593  593   0.0      -         63        4           4   285  664c5f7bd9-bvdxg:310;664c5f7bd9-f6vlr:305;664c5f7bd9-sggrf:277;664c5f7bd9-t62wr:278
+   105      2.0  390  546  546   0.0      -         93        4           4   292  664c5f7bd9-bvdxg:310;664c5f7bd9-f6vlr:305;664c5f7bd9-sggrf:277;664c5f7bd9-t62wr:278
+   110      2.0  360  562  562   0.0      -         62        4           4   292  664c5f7bd9-bvdxg:310;664c5f7bd9-f6vlr:305;664c5f7bd9-sggrf:277;664c5f7bd9-t62wr:278
+   115      2.0  375  593  593   0.0      -         62        4           4   292  664c5f7bd9-bvdxg:265;664c5f7bd9-f6vlr:296;664c5f7bd9-sggrf:301;664c5f7bd9-t62wr:308
+   120      2.0  437  578  578   0.0      -         78        4           4   292  664c5f7bd9-bvdxg:265;664c5f7bd9-f6vlr:296;664c5f7bd9-sggrf:301;664c5f7bd9-t62wr:308
+
+## Conclusiones medidas
+  Saturación (503 > 1 %): no alcanzada hasta 8/s
+  Ruptura: 8 logins/s
+  Verificar p95: 47 ms solo, 94 ms con logins; p99 47 y 156 ms; errores 0 en la mezcla
+
+## Análisis (escrito a mano después de la corrida; los números salen de las tablas de arriba y del CSV)
+
+Umbrales:
+- Saturación (503 SERVICIO_OCUPADO > 1 %): no alcanzada hasta 8/s. En esta corrida no hubo ningún 503,
+  así que tampoco llegó ningún Retry-After. Una corrida anterior, descartada (ver abajo), sí dio 13 503 a
+  8/s (1,4 %), todos con Retry-After: 2. 8/s está en el borde de la saturación.
+- Ruptura: 8/s, por el criterio literal. No hubo errores: los 960 logins dieron 200. Hubo 12 logins con
+  200 que tardaron entre 10,03 y 10,42 s. Todos empezaron entre los segundos 15 y 18, cuando solo
+  atendían 2 réplicas. Es el comportamiento diseñado en C-53: hasta 10 s de espera por el cupo más el
+  hash, que corre después de esa espera. Cuando las 4 réplicas estuvieron listas (t=17 s) la cola se
+  vació a los 70 s, y desde ahí 8/s se sostuvo con p95 de 550-650 ms y los pods en 700-1000m, al borde
+  del límite de 1000m. Por la regla de parada, 12/s y 16/s no se probaron.
+
+Capacidad (régimen estable, t >= 70 s; CPU en reposo de 6m por pod):
+- Login: unos 0,38 CPU·s cada uno (1519m con 4/s, 3167m con 8/s y 393m con 1/s). Con el límite de
+  1000m, un pod da unos 2,6 logins/s. 2 réplicas dan unos 5/s (se midieron 4,8-5,2/s mientras había 2)
+  y 4 réplicas, unos 10/s. Los 190 ms de C-62 son tiempo de reloj; Argon2 usa 4 hilos y la cuota de 1
+  CPU los reparte.
+- Verificar: unos 8 ms de CPU cada uno (414m con 50/s).
+
+HPA (de 2 a 3 y a 4 réplicas, desde el inicio de la fase):
+- Siempre pasó de 2 a 4 réplicas de una vez, sin quedarse en 3: la utilización ya era más del doble
+  del 70 % y la subida no tiene ventana de estabilización.
+- Réplicas pedidas: 9 s a 8/s y 26-27 s en las demás fases. Réplicas listas: 7-8 s después
+  (17 s a 8/s y 32-35 s en las demás).
+- Lo pide incluso con 1 login/s o con 50 verificar/s solos: con un request de 100m el umbral es de 70m
+  por pod, y un login por segundo ya pone 2 pods en unos 200m cada uno (F-09 confirmado).
+- El retraso viene de metrics-server, que mide en ventanas de unos 15 s, y del ciclo del HPA, que
+  también es de 15 s. Mientras tanto, 2 réplicas atienden solas.
+
+¿Verificar se degrada con logins? Poco, y sin errores:
+- p95 de 47 ms solo y de 94 ms con 2 logins/s; p99 de 47 ms y de 156 ms. 0 errores en 6000 peticiones.
+- Lo peor fue en los primeros 35 s, con 2 réplicas calculando hashes: entre 109 y 156 ms por ventana.
+  Con 4 réplicas bajó a 47-109 ms.
+- Es contención de CPU dentro del pod (los 4 hilos de Argon2 frente al bucle de eventos, C-53), no
+  bloqueo: el hash corre en un hilo.
+
+¿Algún login con 5xx distinto de 503, o de más de 10 s? Ningún 5xx en ninguna fase. Más de 10 s: los 12
+del tramo de 8/s descritos arriba, todos con 200.
+
+Límites de esta medición:
+- Una sola corrida, en Docker Desktop con un solo nodo; el generador corre en la misma máquina. Sirve para
+  comparar, no como capacidad de producción. Se repite en la Fase 5.
+- El reloj de Python en Windows (time.monotonic) tiene una resolución de unos 15,6 ms: las latencias de
+  verificar salen en múltiplos de esa cifra (31, 47, 63...), así que diferencias menores de 16 ms no
+  significan nada. Para la Fase 5, conviene usar time.perf_counter.
+- La CPU de kubectl top es una media de unos 15 s y se repite en muestras seguidas.
+- Corridas descartadas, con el mismo clúster:
+  - La 1.ª falló en el script: la consulta conjunta de Deployment y HPA no funcionaba con el HPA
+    borrado. No llegó a medir.
+  - La 2.ª tenía un defecto del generador: tomaba t0 antes de crear los clientes HTTP (unos 1,3 s en
+    Windows) y arrancaba con una ráfaga de conexiones nuevas por el puerto publicado de Docker Desktop.
+    Con 50 verificar/s eso formó una cola en el cliente que no se recuperó (p95 de 84 s, con el IAM a
+    60-90m de CPU). Los logins no se vieron afectados de forma visible (base: p95 de 547 ms; 8/s: 13 503
+    y 38 de más de 10 s, todos con 200).
+  - Esta 3.ª corrida crea y precalienta los clientes antes de t0: el retraso máximo del generador fue
+    de 46 ms.
+
+Propuesta (no aplicada; los manifiestos no se cambian): request de CPU de 500m en lugar de 100m.
+- Con 100m, el HPA solo distingue entre "sin tráfico" y "4 réplicas": 1 login/s o 50 verificar/s ya lo
+  llevan al máximo. Además, el planificador reserva 100m por pod mientras cada pod usa hasta 1000m: con
+  4 réplicas a 8/s, el IAM consumió 3,2 CPU con 0,4 reservadas. En un nodo compartido, los demás
+  servicios no ven ese consumo al planificarse.
+- Con 500m el umbral queda en 350m por pod, un 35 % de lo que satura un pod (1000m, unos 2,6 logins/s).
+  Con los consumos medidos, 2 réplicas aguantan 1 login/s (unos 200m por pod) y piden más con unos 1,8
+  logins/s o unos 85 verificar/s. El margen hasta saturarse (2 réplicas dan unos 5 logins/s) cubre los
+  25-35 s que tarda el HPA en tener réplicas nuevas.
+- 1000m (request igual al límite) dejaría el umbral en 700m por pod, solo un 30 % antes de saturarse,
+  con el mismo retraso del HPA.
+- Costo: 1 CPU reservada con 2 réplicas y 2 CPU con 4. Hay que confirmar que cabe en la VM de AWS.
+  Si no cabe, 250m (umbral de 175m por pod) sigue siendo mejor que 100m.
+- ARGON2_CONCURRENCIA_MAXIMA no cambia: depende del límite de 1000m, no del request.

@@ -60,7 +60,7 @@
 | §4.2 | Máquina de estados de la sesión | Refresh opaco con rotación, `REFRESH_REUTILIZADO` y revocación de la familia; la PWA renueva sola (#26) | `api/test_refresh_api.py`; e2e l | ✅ | C-20, C-21, C-60 |
 | §4.2 | Sin bloqueo de cuenta | No lo hay; rate limiting en Traefik | Inspección de `iniciar_sesion.py`; e2e i | ✅ | C-26 |
 | Fig. 10 | Readiness que aísla réplicas | `/health/live` cada 2 s, 2 fallos. Sin errores al borrar réplicas. **No se probó una réplica colgada** | `k8s/base/deployment-api.yaml`; e2e k | ⚠ | C-32 |
-| §5.1 | 2 a 4 réplicas al 70 % | `hpa.yaml`; subió de 2 a 4 bajo carga y no pasó de 4 | e2e k | ✅ | C-53; F-09 |
+| §5.1 | 2 a 4 réplicas al 70 % | `hpa.yaml`; subió de 2 a 4 bajo carga y no pasó de 4. Con logins: 4 réplicas listas a los 17-35 s del inicio de la carga | e2e k; `carga-k3d.txt` | ✅ | C-53; F-09 |
 | §5.1 | Datos en `iam_db` y SeaweedFS | Sí | e2e a y g | ✅ | C-46 |
 | §6.1 | Bitácora de solo inserción | Triggers: `UPDATE`, `DELETE` y `TRUNCATE` fallan, e `INSERT ... ON CONFLICT DO NOTHING` sigue funcionando. Con el rol de esta base, que es superusuario, rechaza el trigger; el `REVOKE` no se ejerce aquí | `integration/test_bitacora_inmutable.py`; `b1-bitacora-solo-insercion.txt` | ✅ | C-03 |
 | §6.1 | Sin duplicados | `UNIQUE(event_id)` | e2e d | ✅ | C-04 |
@@ -160,6 +160,24 @@ Sin hallazgos (`b4-secretos.txt`): ningún PEM, `.env` ni `secretos.env` version
 - Antes de la corrida válida hubo fallos del propio arnés, corregidos en `e2e/` y en el script: permisos de la cookie de RabbitMQ, puertos gRPC de SeaweedFS, cola de prueba no durable y la espera de réplicas. Una vez k3s falló al arrancar y bastó con recrear el clúster.
 - El relay del outbox registró un `ERROR` al arrancar, mientras las dependencias se levantaban, y se recuperó solo.
 
+### Carga del login en k3d
+
+`carga-k3d.txt` y `carga-k3d.csv` (2026-11-13, k3s v1.35.5, `scripts/carga_k3d.py`). Todo pasa por Traefik. El overlay de prueba `e2e/overlay-carga` sube el límite del login de 5/min a 100/s, porque en k3d todos los clientes comparten IP (F-08). Cada fase empieza desde 2 réplicas en reposo y dura 2 minutos (la referencia de `verificar` dura 1). Muestras cada 5 s.
+
+| Fase | Logins: 200 / enviados | 503 | Login p50 / p95 / p99 | `verificar` p95 / p99 | HPA: 4 réplicas listas |
+|---|---|---|---|---|---|
+| Base, 1/s | 120 / 120 | 0 | 359 / 500 / 516 ms | — | 35 s |
+| Pico 2/s | 240 / 240 | 0 | 390 / 515 / 563 ms | — | 33 s |
+| Pico 4/s | 480 / 480 | 0 | 360 / 484 / 500 ms | — | 33 s |
+| Pico 8/s | 960 / 960 | 0 | 484 / 8109 / 10 140 ms | — | 17 s |
+| Solo `verificar`, 50/s | — | — | — | 47 / 47 ms (3000 sin error) | 33 s |
+| Mezcla, 2/s + 50/s | 240 / 240 | 0 | 437 / 578 / 625 ms | 94 / 156 ms (6000 sin error) | 32 s |
+
+- **Saturación** (503 > 1 %): no alcanzada hasta 8/s. Una corrida descartada dio un 1,4 % a 8/s, así que 8/s está en el borde.
+- **Ruptura:** 8/s, con el criterio literal. No hubo errores, pero 12 logins dieron 200 entre 10,03 y 10,42 s: es la espera de 10 s por el cupo más el hash (C-53), mientras atendían 2 réplicas. Con 4 réplicas, 8/s se sostuvo con p95 de unos 600 ms, al borde del límite de CPU. Por la regla de parada, 12/s y 16/s no se probaron.
+- Ningún 5xx en ninguna fase. `verificar` se degrada poco con logins (p95 de 47 a 94 ms), por contención de CPU dentro del pod.
+- **Límites:** una sola corrida, en Docker Desktop, con el generador en la misma máquina (18 núcleos y 23,4 GiB). Las latencias tienen una resolución de unos 16 ms (reloj de Windows). Se repite en la Fase 5.
+
 ## 5. Hallazgos
 
 Cerrados: F-04, F-06, F-07, F-10 y F-11. F-07 se cerró en dos pasos: primero `pip` y después la imagen base, con Alpine (C-62). Los demás siguen abiertos.
@@ -171,7 +189,7 @@ Cerrados: F-04, F-06, F-07, F-10 y F-11. F-07 se cerró en dos pasos: primero `p
 | F-10 | `infra/docker-compose.yml` usa `-volume.max=5`. La colección por defecto puede quedarse con todos y los documentos responden 503. Depende del orden: pasó en una corrida y falló en otra | Media | **Cerrado** | `a55e098` (#15): `-volume.max=30`; hoy 150, con volúmenes de 100 MB (`2089891`), en compose y en `infra/k8s` |
 | F-11 | Si SeaweedFS no puede escribir, la carga responde el 503 correcto **a los 32 s**, por los reintentos de boto3 | Media | **Cerrado** | C-59: tope de 9 s, hilos propios y los mismos límites en la supresión. 503 en 9,4 s y login sin bloquearse (`f11-s3-colgado.txt`). Quedan los límites listados en C-59 |
 | F-04 | Sin prueba automatizada de la inmutabilidad de la bitácora, que es lo que verifica la SIC (Lab §6.1) | Media | **Cerrado** | `tests/integration/test_bitacora_inmutable.py`, marcada `db`; falla si se desactivan los triggers |
-| F-09 | Con un `request` de CPU de 100m, unas 50 peticiones por segundo a `verificar` bastan para llevar el HPA a 4 réplicas | Baja | No | ⏸ Se mide en k3d y se ajusta el `request` |
+| F-09 | Con un `request` de CPU de 100m, unas 50 peticiones por segundo a `verificar` bastan para llevar el HPA a 4 réplicas | Baja | No | **Medido** en k3d el 2026-11-13 (`carga-k3d.txt` y `carga-k3d.csv`, overlay de prueba `e2e/overlay-carga` con el límite del login subido). **Confirmado, y es más:** 50 `verificar`/s solos, o 1 login/s, ya llevan el HPA de 2 a 4 réplicas (pedidas a los 26 s, listas a los 33 s). Siempre salta de 2 a 4, sin pasar por 3. Cada login cuesta unos 0,38 CPU·s y cada `verificar`, unos 8 ms de CPU. Un pod se satura en unos 2,6 logins/s con el límite de 1000m. Con 4 réplicas a 8/s, el IAM usó 3,2 CPU con 0,4 reservadas. **Propuesta, no aplicada: `request` de 500m** (umbral de 350m por pod): 2 réplicas aguantan 1 login/s y piden más desde unos 1,8 logins/s o 85 `verificar`/s, con margen para los 25-35 s que tarda el HPA. Cuesta 1-2 CPU reservadas: hay que confirmar con Luis Fernando que caben en la VM; si no, 250m. `ARGON2_CONCURRENCIA_MAXIMA` no cambia. ⏸ Decidir el `request` |
 | F-06 | C-57 contradice RNF-03, y no está en la línea "SRS v1.2" de "Pendiente de reflejar" | Baja | **Cerrado** | Agregada |
 | F-02 | `nombre_completo` y `tipo_documento` difieren del prompt | Baja | No | Ninguna en el código; son el contrato actual y están en `iam.yaml` |
 | F-03 | El smoke test no cubre la aprobación del Admin | Baja | No | Cubierto en e2e a; agregarlo al smoke si se quiere |

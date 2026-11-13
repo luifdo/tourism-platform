@@ -551,8 +551,22 @@ del laboratorio y conviene reflejarlas en una versión 1.2 del SRS o en un ADR d
   - En un pico, algunos logins válidos reciben 503 y deben reintentar. La PWA debe respetar `Retry-After` y no mostrarlo como credenciales inválidas.
   - Con 1 cupo, una réplica calcula un hash a la vez, y cada uno tarda del orden de medio segundo con 1 CPU. La capacidad de login crece con las réplicas del HPA, no con los cupos.
   - Si el límite de CPU sube, hay que revisar `ARGON2_CONCURRENCIA_MAXIMA`.
-- **Sin probar:** que el HPA agregue réplicas durante un pico (necesita varios minutos de carga en un clúster con `metrics-server`). Hasta que las nuevas réplicas estén listas, los 503 siguen saliendo. Se comprueba en la Fase 5.
-- **Estado:** ✅ `3c09bac`. ⏸ Repetir la medición y comprobar el HPA durante un pico de logins: se mide en k3d (IAM).
+- **Medición en k3d, con el HPA** (2026-11-13, `docs/evidencias/carga-k3d.txt` y `carga-k3d.csv`, `scripts/carga_k3d.py`): logins por Traefik, con un overlay de prueba que sube el límite del login a 100/s (en k3d todos los clientes comparten IP, F-08). Cada fase dura 2 minutos y empieza desde 2 réplicas en reposo:
+
+  | Logins/s | 200 / enviados | 503 `SERVICIO_OCUPADO` | p50 / p95 / p99 | De más de 10 s | 4 réplicas listas |
+  |---|---|---|---|---|---|
+  | 1 | 120 / 120 | 0 | 359 / 500 / 516 ms | 0 | 35 s |
+  | 2 | 240 / 240 | 0 | 390 / 515 / 563 ms | 0 | 33 s |
+  | 4 | 480 / 480 | 0 | 360 / 484 / 500 ms | 0 | 33 s |
+  | 8 | 960 / 960 | 0 | 484 / 8109 / 10 140 ms | 12, todos 200 | 17 s |
+  | 2, con 50 `verificar`/s | 240 / 240 | 0 | 437 / 578 / 625 ms | 0 | 32 s |
+
+  - **El HPA sí agrega réplicas durante un pico:** siempre salta de 2 a 4. Las pide entre 9 y 27 s después del inicio y están listas 7-8 s más tarde. Mientras tanto, 2 réplicas dan unos 5 logins/s: a 8/s, la cola llegó a 10,4 s y se vació a los 70 s.
+  - **Saturación** (503 > 1 %): no alcanzada hasta 8/s. Una corrida descartada dio un 1,4 % a 8/s, con `Retry-After: 2`. **Ruptura:** 8/s con el criterio literal: 12 logins con 200 tardaron entre 10,03 y 10,42 s. El tope acota la espera por el cupo, no el total: el hash corre después. Ningún 5xx distinto de 503 en ninguna fase. Las réplicas listas nunca bajaron durante la carga.
+  - **`verificar` con logins:** p95 de 47 ms solo y de 94 ms con 2 logins/s (p99 de 47 y de 156 ms), sin errores en 6000. Es la contención de CPU ya descrita arriba, más leve que con varios cupos.
+  - **Costo medido:** unos 0,38 CPU·s por login (4 hilos de Argon2 sobre la cuota de 1 CPU) y unos 8 ms por `verificar`. Un pod se satura en unos 2,6 logins/s. La propuesta sobre el `request` de CPU está en F-09 (`verificacion-fase4.md`).
+  - **Límites:** una sola corrida, en Docker Desktop con un solo nodo y el generador en la misma máquina. 12/s y 16/s no se probaron por la regla de parada. Se repite en la Fase 5.
+- **Estado:** ✅ `3c09bac`. ✅ Medido en k3d con el HPA (2026-11-13, sin commit todavía). ⏸ El `request` de CPU, en F-09.
 
 ### C-54 · NetworkPolicy: Blackbox directo y salida sin restringir
 - **Referencia:** Plan §7.4 ("Prometheus → `/metrics` de todos", y cada servicio → su base, Valkey y RabbitMQ) y §7 (Blackbox consulta `/health` a través del gateway).

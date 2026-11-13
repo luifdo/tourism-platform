@@ -10,4 +10,6 @@ uv run python -m scripts.e2e_k3d --conservar     # no borra el clúster al termi
 uv run python -m scripts.e2e_k3d --solo-borrar   # borra lo que haya quedado
 ```
 
+**Prueba de carga del login** (F-09, C-53): `uv run python -m scripts.carga_k3d` usa la misma preparación con `e2e/overlay-carga`, que sube el límite del login de 5/min a 100/s solo para esa prueba (en k3d todos los clientes comparten IP, F-08). Deja `docs/evidencias/carga-k3d.txt` y `carga-k3d.csv` y tarda unos 35 minutos.
+
 Necesita Docker, `k3d` y `kubectl`, y los puertos 18080 (Traefik), 25433, 25673, 28025 y 28333 libres. El reporte queda en `docs/evidencias/e2e-k3d.txt`. Tarda unos 12 minutos, porque el rate limiting del login obliga a esperar entre escenarios.

@@ -20,6 +20,8 @@ const aServicio = (s) => ({
   unidadEtiqueta: s.unidad_tarifa_etiqueta ?? '',
   calificacion: num(s.calificacion_promedio),
   totalResenas: num(s.total_resenas) ?? 0,
+  // Portada de la tarjeta: /buscar solo trae la primera imagen; el detalle trae todas en `imagenes_urls`.
+  imagen: typeof s.imagen_principal === 'string' ? s.imagen_principal : null,
 })
 
 /** ServicioDetalle del contrato -> ServicioDetalle de la aplicación. */

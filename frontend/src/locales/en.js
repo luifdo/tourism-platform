@@ -85,7 +85,7 @@ export default {
     },
   },
   service: {
-    details: 'Service details',     back: 'Back to the catalog', notFound: 'We could not find this service.', about: 'About the experience',
+    gallery: 'Service photos', photoOf: 'Photo {n} of {total}', details: 'Service details',     back: 'Back to the catalog', notFound: 'We could not find this service.', about: 'About the experience',
     loading: 'Loading the service…', error: 'We could not load this service. Try again.', retry: 'Try again',
     alerts: 'Current alerts', payments: 'What money to bring', directions: 'Get directions',
     provider: 'Provider', phone: 'Contact', rnt: 'RNT', fee: 'Base rate', perPerson: 'per person',
@@ -150,6 +150,7 @@ export default {
     kicker: 'Authentic experiential tourism',
     title: 'Experience explorer',
     lead: 'Plan your trip with no commissions. Every service is published by a provider verified in the National Tourism Registry.',
+    advanced: { toggle: 'More filters', active: 'Filters applied', zone: 'Zone', anyZone: 'All of Santa Marta', priceMin: 'Price from (COP)', priceMax: 'Price up to (COP)', date: 'Date', people: 'People', sort: 'Sort by', orders: { relevancia: 'Relevance', precio: 'Price, low to high', calificacion: 'Best rated' }, note: 'With a date and people, only services with room that day are shown.', clear: 'Clear filters' },
     search: { what: 'What are you looking for', whatPh: 'Attraction, activity…', go: 'Search' },
     categories: 'Categories',
     filters: { all: 'All', PLAYA: 'Beaches', NATURALEZA: 'Nature', CULTURA: 'Culture', GASTRONOMIA: 'Gastronomy', AVENTURA: 'Adventure', ALOJAMIENTO: 'Lodging', TRANSPORTE: 'Transport' },
@@ -182,7 +183,7 @@ export default {
     open: 'Open', caution: 'Caution', saturated: 'Saturated',
     updated: 'Sample data · OpenStreetMap', source: 'Map © OpenStreetMap',
     aria: 'Map of tourist services', empty: 'There are no services in this area of the map.', error: 'We could not update the map. Move the map to try again.',
-    gis: 'Open the full GIS viewer',
+    layers: { title: 'Map layers', zones: 'Zones and their crowding', alerts: 'Official alerts' },
   },
   routes: {
     kicker: 'Sacred territory',

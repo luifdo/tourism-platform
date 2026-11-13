@@ -4,13 +4,19 @@
  * contracts/openapi/catalog.yaml. Todos devuelven el MODELO de la aplicación (camelCase), no el JSON del servicio.
  *
  * CatalogGateway  (puerto de salida)
- *   buscarServicios({ texto, categorias, pagina, tamano, idioma }) -> { items: Servicio[], pagina, tamano, total }
+ *   buscarServicios({ texto, categorias, zona, precioMin, precioMax, fecha, personas, orden, pagina, tamano, idioma }) -> { items: Servicio[], pagina, tamano, total }
+ *       (zona = código; precios en COP; fecha YYYY-MM-DD y personas: solo servicios con cupo; orden: 'precio' | 'calificacion' | null)
+ *   zonas(idioma)                               -> { codigo, nombre }[]            (zonas activas, para el filtro)
  *   obtenerServicio(id, idioma)                 -> ServicioDetalle                 (CatalogError NO_ENCONTRADO si no existe)
  *   nombresServicios(ids, idioma)               -> { id, nombre, activo }[]        (los ids que no existen no vienen)
  *   registrarIntencionVisita(id)                -> void                            ("Cómo llegar")
  *   serviciosPrestador({ pagina, tamano }, idioma) -> { items: ServicioPrestador[], pagina, tamano, total }   (exige sesión de Prestador)
  *       ServicioPrestador { id, nombre, categoria, zona, activo, capacidadDiaria, tarifaBase }
  *   mapaServicios({ bbox, zoom, categorias, idioma }) -> PuntoMapa[]
+ *   mapaZonas({ bbox, zoom, idioma })           -> ZonaMapa[]                      (polígonos de las zonas; el nivel de saturación, si el catálogo lo da)
+ *   mapaAlertas({ bbox, idioma })               -> AlertaMapa[]                    (alertas vigentes: punto si son de un servicio, polígono si son de una zona)
+ *       ZonaMapa   { codigo, nombre, indice|null, nivel: 'BAJO'|'MEDIO'|'ALTO'|null, nivelEtiqueta|null, geometry }
+ *       AlertaMapa { id, nivel, nivelEtiqueta, mensaje, servicioId|null, zona|null, geometry }
  *   Los errores se lanzan como CatalogError (domain/catalog/errors.js).
  *
  *   Servicio       { id, nombre, tipo, tipoEtiqueta, categoria, categoriaEtiqueta, zona: {codigo,nombre}|null,
@@ -26,7 +32,7 @@
  * Clock        (puerto de salida)  now() -> Date
  */
 export const CATALOG_GATEWAY_METHODS = Object.freeze([
-  'buscarServicios', 'obtenerServicio', 'nombresServicios', 'registrarIntencionVisita', 'mapaServicios', 'serviciosPrestador',
+  'buscarServicios', 'obtenerServicio', 'nombresServicios', 'registrarIntencionVisita', 'mapaServicios', 'serviciosPrestador', 'zonas', 'mapaZonas', 'mapaAlertas',
 ])
 
 export function assertCatalogGateway(gateway) {

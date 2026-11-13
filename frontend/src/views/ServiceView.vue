@@ -34,7 +34,11 @@ const bar = { ok: 'bg-ok', mid: 'bg-warn', high: 'bg-danger' }
 const nivelAlerta = { INFORMATIVA: 'bg-sand/15 text-ink-control', PREVENTIVA: 'bg-warn-bg text-warn', CRITICA: 'bg-danger-bg text-danger' }
 const pagoClase = (a) => (a.importante ? 'border-warn/40 bg-warn-bg text-warn' : 'border-sand/40 bg-sand/10 text-ink-control')
 const secciones = computed(() => seccionesDeAtributos(servicio.value?.atributos, servicio.value?.etiquetasPorCodigo))
-const portada = computed(() => servicio.value?.imagenes?.[0] ?? null)
+// Galería: la ficha trae todas las fotos; la grande es la elegida (la primera al abrir o al cambiar de servicio)
+const fotoActiva = ref(0)
+watch(servicio, () => { fotoActiva.value = 0 })
+const fotos = computed(() => servicio.value?.imagenes ?? [])
+const portada = computed(() => fotos.value[fotoActiva.value] ?? null)
 const duracion = (min) => (min >= 60 ? `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''}` : `${min} min`)
 const enlaceMapa = computed(() => (servicio.value ? urlMapa(servicio.value.ubicacion) : '#'))
 // "Cómo llegar": cuenta la intención de visita (indicador aparte) y abre el punto en OpenStreetMap
@@ -67,6 +71,14 @@ const comoLlegar = () => catalogUseCases.comoLlegar(props.id)
               <span v-if="servicio.calificacion" class="rounded-full bg-navy-darkest/85 px-3 py-1 text-white" :title="t('explorer.reviews', { n: servicio.totalResenas })">★ {{ servicio.calificacion.toFixed(1) }}</span>
             </div>
           </div>
+
+          <ul v-if="fotos.length > 1" class="mt-3 flex gap-2 overflow-x-auto pb-1" :aria-label="t('service.gallery')">
+            <li v-for="(u, i) in fotos" :key="u" class="shrink-0">
+              <button type="button" class="block overflow-hidden rounded-xl border-2 transition" :class="i === fotoActiva ? 'border-navy' : 'border-transparent opacity-70 hover:opacity-100'" :aria-label="t('service.photoOf', { n: i + 1, total: fotos.length })" :aria-current="i === fotoActiva" @click="fotoActiva = i">
+                <img :src="u" alt="" class="h-16 w-24 object-cover" loading="lazy" />
+              </button>
+            </li>
+          </ul>
 
           <p class="kicker mt-8 flex items-center gap-2"><span class="size-1.5 rounded-full bg-teal" />{{ servicio.zona?.nombre ?? servicio.tipoEtiqueta }}</p>
           <h1 class="mt-2 text-[clamp(30px,4vw,48px)] font-bold leading-[1.1] tracking-[-.02em] text-navy-darkest text-balance">{{ servicio.nombre }}</h1>

@@ -1,5 +1,5 @@
 import { CatalogError, CODIGOS } from '../../domain/catalog/errors.js'
-import { MAX_IDS_NOMBRES, normalizarBusqueda, trocear } from '../../domain/catalog/rules.js'
+import { MAX_IDS_NOMBRES, hayFiltros, normalizarBusqueda, trocear } from '../../domain/catalog/rules.js'
 import { assertCatalogGateway } from './ports.js'
 
 /*
@@ -16,7 +16,7 @@ export function createCatalogUseCases({ gateway, cache, clock }) {
      */
     async explorar(filtros, { idioma = 'es' } = {}) {
       const f = normalizarBusqueda(filtros)
-      const esPortada = !f.texto && !f.categorias.length && f.pagina === 1
+      const esPortada = !hayFiltros(f) && f.pagina === 1
       try {
         const r = await gateway.buscarServicios({ ...f, idioma })
         if (esPortada) await cache?.write({ items: r.items, total: r.total, at: ahora() }).catch(() => {})
@@ -31,6 +31,9 @@ export function createCatalogUseCases({ gateway, cache, clock }) {
         throw e
       }
     },
+
+    /** Zonas activas para el filtro del explorador (pública). */
+    zonas: (idioma = 'es') => gateway.zonas(idioma),
 
     /** UC9 · pública. NO_ENCONTRADO si el servicio no existe o está inactivo. */
     ficha(id, { idioma = 'es' } = {}) {
@@ -74,6 +77,16 @@ export function createCatalogUseCases({ gateway, cache, clock }) {
     /** UC16 · pública. Servicios (y grupos de servicios) que caen en la vista del mapa. */
     puntosDelMapa({ bbox, zoom, categorias = [] }, { idioma = 'es' } = {}) {
       return gateway.mapaServicios({ bbox, zoom, categorias: normalizarBusqueda({ categorias }).categorias, idioma })
+    },
+
+    /** UC16 · pública. Polígonos de las zonas en la vista (con su nivel de saturación si el catálogo lo publica). */
+    zonasDelMapa({ bbox, zoom }, { idioma = 'es' } = {}) {
+      return gateway.mapaZonas({ bbox, zoom, idioma })
+    },
+
+    /** UC16/UC26 · pública. Alertas oficiales vigentes en la vista del mapa. */
+    alertasDelMapa({ bbox }, { idioma = 'es' } = {}) {
+      return gateway.mapaAlertas({ bbox, idioma })
     },
   }
 }

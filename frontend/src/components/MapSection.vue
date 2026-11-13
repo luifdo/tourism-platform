@@ -12,8 +12,13 @@ const router = useRouter()
 const el = ref(null)
 const puntos = ref([]) // lo que hay en la vista actual del mapa (UC16)
 const falloMapa = ref(false)
+// Capas opcionales del mapa (UC16, UC26): zonas con su nivel de saturación y alertas oficiales vigentes
+const verZonas = ref(false)
+const verAlertas = ref(false)
 let map
 let capa
+let capaZonas
+let capaAlertas
 let solicitud = 0 // una vista nueva descarta la respuesta de la anterior
 let esperar
 
@@ -53,11 +58,37 @@ function marcador(p) {
   return L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html: punto, iconSize: [18, 18] }), title: p.nombre }).bindPopup(popup)
 }
 
+const COLOR_NIVEL = { BAJO: '#009767', MEDIO: '#F99C00', ALTO: '#E40014' }
+const COLOR_ALERTA = { INFORMATIVA: '#5D9A92', PREVENTIVA: '#F99C00', CRITICA: '#E40014' }
+// Los textos vienen del servidor: los rótulos se arman con textContent, nunca como HTML
+const rotulo = (txt) => { const e = document.createElement('span'); e.textContent = txt; return e }
+
+function pintarZonas(zonas) {
+  capaZonas.clearLayers()
+  for (const z of zonas) {
+    const f = { type: 'Feature', geometry: z.geometry, properties: {} }
+    L.geoJSON(f, { style: { color: COLOR_NIVEL[z.nivel] ?? '#5D9A92', weight: 2, fillOpacity: 0.18, dashArray: z.nivel ? null : '4 4' } })
+      .bindTooltip(rotulo(`${z.nombre}${z.nivelEtiqueta ? `: ${z.nivelEtiqueta}` : ''}`), { sticky: true }).addTo(capaZonas)
+  }
+}
+function pintarAlertas(alertas) {
+  capaAlertas.clearLayers()
+  for (const a of alertas) {
+    const color = COLOR_ALERTA[a.nivel] ?? '#5D9A92'
+    const f = { type: 'Feature', geometry: a.geometry, properties: {} }
+    L.geoJSON(f, {
+      style: { color, weight: 2, fillOpacity: 0.12 },
+      pointToLayer: (_f, ll) => L.circleMarker(ll, { radius: 10, color, weight: 3, fillColor: '#fff', fillOpacity: 1 }),
+    }).bindTooltip(rotulo(`${a.nivelEtiqueta}: ${a.mensaje}`), { sticky: true }).addTo(capaAlertas)
+  }
+}
+
 async function actualizar() {
   const mia = ++solicitud
   const b = map.getBounds()
+  const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
   try {
-    const r = await catalogUseCases.puntosDelMapa({ bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], zoom: map.getZoom() }, { idioma: locale.value })
+    const r = await catalogUseCases.puntosDelMapa({ bbox, zoom: map.getZoom() }, { idioma: locale.value })
     if (mia !== solicitud) return
     puntos.value = r
     falloMapa.value = false
@@ -66,6 +97,11 @@ async function actualizar() {
   } catch {
     if (mia === solicitud) falloMapa.value = true
   }
+  // Las capas opcionales fallan en silencio: el mapa de servicios sigue sirviendo sin ellas
+  if (verZonas.value) catalogUseCases.zonasDelMapa({ bbox, zoom: map.getZoom() }, { idioma: locale.value }).then((z) => { if (mia === solicitud) pintarZonas(z) }).catch(() => {})
+  else capaZonas.clearLayers()
+  if (verAlertas.value) catalogUseCases.alertasDelMapa({ bbox }, { idioma: locale.value }).then((a) => { if (mia === solicitud) pintarAlertas(a) }).catch(() => {})
+  else capaAlertas.clearLayers()
 }
 const alMover = () => { clearTimeout(esperar); esperar = setTimeout(actualizar, 300) }
 
@@ -76,11 +112,13 @@ onMounted(() => {
     maxZoom: 18,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(map)
+  capaZonas = L.layerGroup().addTo(map) // debajo de los marcadores
+  capaAlertas = L.layerGroup().addTo(map)
   capa = L.layerGroup().addTo(map)
   map.on('moveend', alMover)
   actualizar()
 })
-watch(locale, actualizar)
+watch([locale, verZonas, verAlertas], actualizar)
 onBeforeUnmount(() => { clearTimeout(esperar); map?.remove() })
 </script>
 
@@ -106,7 +144,13 @@ onBeforeUnmount(() => { clearTimeout(esperar); map?.remove() })
             <span v-if="p.ocupacion != null" class="rounded-full px-3 py-1 font-mono text-xs font-semibold" :class="chip[nivelOcupacion(p.ocupacion)]">{{ t(label[nivelOcupacion(p.ocupacion)]) }}</span>
           </li>
         </ul>
-        <a href="#" class="mt-6 inline-flex items-center gap-2 font-mono text-sm font-semibold uppercase tracking-wider text-navy hover:text-teal">{{ t('map.gis') }} →</a>
+        <fieldset class="mt-6">
+          <legend class="font-mono text-[11px] font-semibold uppercase tracking-[.14em] text-teal">{{ t('map.layers.title') }}</legend>
+          <div class="mt-2 flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink-control">
+            <label class="flex items-center gap-2"><input v-model="verZonas" type="checkbox" class="size-4 accent-navy" />{{ t('map.layers.zones') }}</label>
+            <label class="flex items-center gap-2"><input v-model="verAlertas" type="checkbox" class="size-4 accent-navy" />{{ t('map.layers.alerts') }}</label>
+          </div>
+        </fieldset>
       </div>
 
       <div class="relative isolate overflow-hidden rounded-panel border border-navy/20 shadow-elevated">

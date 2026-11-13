@@ -7,8 +7,9 @@ describe('reglas del catálogo', () => {
   })
 
   it('normaliza la búsqueda: texto recortado, página y tamaño por defecto', () => {
-    expect(normalizarBusqueda({ texto: '  playa  ' })).toEqual({ texto: 'playa', categorias: [], pagina: 1, tamano: TAMANO_PAGINA })
-    expect(normalizarBusqueda()).toEqual({ texto: '', categorias: [], pagina: 1, tamano: TAMANO_PAGINA })
+    const sinFiltros = { zona: null, precioMin: null, precioMax: null, fecha: null, personas: null, orden: null }
+    expect(normalizarBusqueda({ texto: '  playa  ' })).toEqual({ texto: 'playa', categorias: [], pagina: 1, tamano: TAMANO_PAGINA, ...sinFiltros })
+    expect(normalizarBusqueda()).toEqual({ texto: '', categorias: [], pagina: 1, tamano: TAMANO_PAGINA, ...sinFiltros })
   })
 
   it('corta el texto en 200 caracteres (contrato)', () => {

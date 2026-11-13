@@ -85,7 +85,7 @@ export default {
     },
   },
   service: {
-    details: 'Detalles del servicio',     back: 'Volver al catálogo', notFound: 'No encontramos este servicio.', about: 'Sobre la experiencia',
+    gallery: 'Fotos del servicio', photoOf: 'Foto {n} de {total}', details: 'Detalles del servicio',     back: 'Volver al catálogo', notFound: 'No encontramos este servicio.', about: 'Sobre la experiencia',
     loading: 'Cargando el servicio…', error: 'No pudimos cargar este servicio. Inténtalo de nuevo.', retry: 'Reintentar',
     alerts: 'Alertas vigentes', payments: 'Qué dinero llevar', directions: 'Cómo llegar',
     provider: 'Prestador', phone: 'Contacto', rnt: 'RNT', fee: 'Tarifa base', perPerson: 'por persona',
@@ -150,6 +150,7 @@ export default {
     kicker: 'Turismo vivencial auténtico',
     title: 'Explorador de experiencias',
     lead: 'Planea tu destino sin comisiones. Cada servicio lo publica un prestador verificado con Registro Nacional de Turismo.',
+    advanced: { toggle: 'Más filtros', active: 'Hay filtros aplicados', zone: 'Zona', anyZone: 'Todo Santa Marta', priceMin: 'Precio desde (COP)', priceMax: 'Precio hasta (COP)', date: 'Fecha', people: 'Personas', sort: 'Ordenar por', orders: { relevancia: 'Relevancia', precio: 'Precio, de menor a mayor', calificacion: 'Mejor calificados' }, note: 'Con fecha y personas solo salen los servicios con cupo ese día.', clear: 'Quitar filtros' },
     search: { what: 'Qué buscas', whatPh: 'Atractivo, actividad…', go: 'Buscar' },
     categories: 'Categorías',
     filters: { all: 'Todas', PLAYA: 'Playas', NATURALEZA: 'Naturaleza', CULTURA: 'Cultura', GASTRONOMIA: 'Gastronomía', AVENTURA: 'Aventura', ALOJAMIENTO: 'Alojamiento', TRANSPORTE: 'Transporte' },
@@ -182,7 +183,7 @@ export default {
     open: 'Abierto', caution: 'Precaución', saturated: 'Saturado',
     updated: 'Datos de ejemplo · OpenStreetMap', source: 'Mapa © OpenStreetMap',
     aria: 'Mapa de servicios turísticos', empty: 'No hay servicios en esta zona del mapa.', error: 'No pudimos actualizar el mapa. Mueve el mapa para reintentar.',
-    gis: 'Ver visor GIS completo',
+    layers: { title: 'Capas del mapa', zones: 'Zonas y su saturación', alerts: 'Alertas oficiales' },
   },
   routes: {
     kicker: 'Territorio sagrado',

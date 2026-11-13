@@ -38,15 +38,24 @@ export function createMockCatalogGateway({ servicios = DEMO_SERVICIOS, esperaMs 
   const buscar = (id) => servicios.find((s) => s.id === id)
 
   return {
-    async buscarServicios({ texto = '', categorias = [], pagina = 1, tamano = 12, idioma }) {
+    async buscarServicios({ texto = '', categorias = [], zona, precioMin, precioMax, orden, pagina = 1, tamano = 12, idioma }) {
       await sleep(esperaMs)
       const l = lang(idioma)
       const q = normalizar(texto)
       const todos = servicios
         .filter((s) => !categorias.length || categorias.includes(s.categoria))
         .filter((s) => !q || normalizar(`${s[l].nombre} ${s[l].descripcion} ${s.zona.nombre}`).includes(q))
+        .filter((s) => !zona || s.zona.codigo === zona)
+        .filter((s) => (precioMin == null || s.tarifaBase >= precioMin) && (precioMax == null || s.tarifaBase <= precioMax))
+      if (orden === 'precio') todos.sort((a, b) => a.tarifaBase - b.tarifaBase)
+      else if (orden === 'calificacion') todos.sort((a, b) => b.calificacion - a.calificacion)
       const desde = (pagina - 1) * tamano
       return { items: todos.slice(desde, desde + tamano).map((s) => aServicio(s, idioma)), pagina, tamano, total: todos.length }
+    },
+
+    async zonas() {
+      await sleep(esperaMs)
+      return [...new Map(servicios.map((s) => [s.zona.codigo, { codigo: s.zona.codigo, nombre: s.zona.nombre }])).values()]
     },
 
     async obtenerServicio(id, idioma) {
@@ -75,6 +84,32 @@ export function createMockCatalogGateway({ servicios = DEMO_SERVICIOS, esperaMs 
         zona: s.zona, activo: true, capacidadDiaria: s.capacidadDiaria, tarifaBase: s.tarifaBase,
       }))
       return { items: todos.slice((pagina - 1) * tamano, pagina * tamano), pagina, tamano, total: todos.length }
+    },
+
+    /** Zonas de ejemplo: un cuadrado alrededor de cada zona de los servicios de demostración, con el nivel que sale de su ocupación. */
+    async mapaZonas({ idioma }) {
+      await sleep(esperaMs)
+      const l = lang(idioma)
+      const porZona = new Map()
+      for (const s of servicios) porZona.set(s.zona.codigo, [...(porZona.get(s.zona.codigo) ?? []), s])
+      return [...porZona].map(([codigo, lista]) => {
+        const ocu = Math.round(lista.reduce((a, s) => a + s.ocupacion, 0) / lista.length)
+        const nivel = ocu < 60 ? 'BAJO' : ocu <= 85 ? 'MEDIO' : 'ALTO'
+        const c = lista[0].ubicacion; const r = 0.04
+        return {
+          codigo, nombre: lista[0].zona.nombre, indice: ocu / 100, nivel, nivelEtiqueta: { es: { BAJO: 'Bajo', MEDIO: 'Medio', ALTO: 'Alto' }, en: { BAJO: 'Low', MEDIO: 'Medium', ALTO: 'High' } }[l][nivel],
+          geometry: { type: 'MultiPolygon', coordinates: [[[[c.lon - r, c.lat - r], [c.lon + r, c.lat - r], [c.lon + r, c.lat + r], [c.lon - r, c.lat + r], [c.lon - r, c.lat - r]]]] },
+        }
+      })
+    },
+
+    async mapaAlertas({ idioma }) {
+      await sleep(esperaMs)
+      const l = lang(idioma)
+      return servicios.flatMap((s) => s.alertas.map((a) => ({
+        id: a.id, nivel: a.nivel, nivelEtiqueta: a.nivelEtiqueta[l], mensaje: a.mensaje[l], servicioId: s.id, zona: null,
+        geometry: { type: 'Point', coordinates: [s.ubicacion.lon, s.ubicacion.lat] },
+      })))
     },
 
     async mapaServicios({ bbox, categorias = [], idioma }) {

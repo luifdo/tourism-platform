@@ -20,7 +20,8 @@ export function useGestion() {
     const code = e?.code ?? 'generic'
     if (ns && te(`${ns}.errors.${code}`)) return t(`${ns}.errors.${code}`)
     if (te(`gestion.errors.${code}`)) return t(`gestion.errors.${code}`)
-    return t('gestion.errors.generic')
+    // Un error que no sabemos explicar lleva la referencia del servidor (correlation_id): con ella se rastrea en la bitácora y los registros
+    return e?.correlationId ? `${t('gestion.errors.generic')} (${t('gestion.reference')}: ${String(e.correlationId).slice(0, 36)})` : t('gestion.errors.generic')
   }
 
   /** campo -> texto, para pintar el error junto a cada campo. */

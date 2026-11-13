@@ -1,5 +1,5 @@
 import { CODIGOS_GESTION as C, GestionError } from '../../domain/gestion/errors.js'
-import { paginar } from '../../domain/gestion/rules.js'
+import { nuevaClave, paginar } from '../../domain/gestion/rules.js'
 import { DEMO_SERVICIOS } from '../catalog/demoCatalogo.js'
 
 /*
@@ -89,7 +89,7 @@ const lang = (i) => (i === 'en' ? 'en' : 'es')
 
 export function createMockGestion({
   storage = globalThis.localStorage, clock = { now: () => new Date() }, directorio, usuario, delayMs = 120,
-  newId = () => globalThis.crypto.randomUUID(),
+  newId = nuevaClave,
 } = {}) {
   const ahora = () => clock.now().getTime()
   const espera = (v) => (delayMs ? new Promise((r) => setTimeout(() => r(v), delayMs)) : Promise.resolve(v))

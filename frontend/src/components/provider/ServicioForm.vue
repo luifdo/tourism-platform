@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { offerUseCases } from '../../composition'
 import { CAMPOS, MEDIOS_PAGO, RECOMENDACIONES_DINERO, SENALES, TIPOS, UNIDADES_TARIFA, bloqueDeTipo, formularioDeServicio, formularioVacio, validarServicio } from '../../domain/gestion/servicio'
-import { MAX_IMAGENES } from '../../domain/gestion/rules'
+import { MAX_IMAGENES, nuevaClave } from '../../domain/gestion/rules'
 import { useGestion } from '../../ui/useGestion'
 import { useOnline } from '../../ui/useOnline'
 import CampoAtributo from './CampoAtributo.vue'
@@ -66,7 +66,7 @@ const portada = (i) => form.imagenes_urls.unshift(...form.imagenes_urls.splice(i
 let ultimo = { huella: '', clave: '' }
 function claveDelIntento() {
   const huella = JSON.stringify(form)
-  if (huella !== ultimo.huella) ultimo = { huella, clave: globalThis.crypto.randomUUID() }
+  if (huella !== ultimo.huella) ultimo = { huella, clave: nuevaClave() }
   return ultimo.clave
 }
 async function guardar() {

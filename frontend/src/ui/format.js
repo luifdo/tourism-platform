@@ -17,4 +17,8 @@ export const degradado = (categoria) => {
 }
 
 /** Enlace a OpenStreetMap con el punto marcado (la plataforma solo usa mapas abiertos). */
-export const urlMapa = ({ lat, lon }) => `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`
+// lat y lon vienen del servidor: se pasan por Number para que lo único que entre a la dirección sean números
+export const urlMapa = ({ lat, lon }) => {
+  const [la, lo] = [Number(lat), Number(lon)]
+  return Number.isFinite(la) && Number.isFinite(lo) ? `https://www.openstreetmap.org/?mlat=${la}&mlon=${lo}#map=16/${la}/${lo}` : 'https://www.openstreetmap.org/'
+}

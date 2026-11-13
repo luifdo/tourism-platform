@@ -1,6 +1,6 @@
 import { GestionError, CODIGOS_GESTION as C } from '../../domain/gestion/errors.js'
 import { evaluarPassword } from '../../domain/auth/rules.js'
-import { validarArchivoDocumento, validarImagen, validarMotivo, validarRango } from '../../domain/gestion/rules.js'
+import { nuevaClave as claveNueva, validarArchivoDocumento, validarImagen, validarMotivo, validarRango } from '../../domain/gestion/rules.js'
 import { armarModeracion, armarReporte, armarResena, validarRespuesta } from '../../domain/gestion/resenas.js'
 import { servicioAPayload, validarServicio } from '../../domain/gestion/servicio.js'
 import { assertAccountGateway, assertAdminGateway, assertEntityGateway, assertOfferGateway, assertReviewGateway } from './ports.js'
@@ -92,7 +92,7 @@ export function createAdminUseCases({ gateway }) {
 }
 
 /* ---- Reseñas (UC15, UC21, UC29, UC39) ---- */
-export function createReviewUseCases({ gateway, nuevaClave = () => globalThis.crypto.randomUUID() }) {
+export function createReviewUseCases({ gateway, nuevaClave = claveNueva }) {
   assertReviewGateway(gateway)
   const armar = (datos) => { const r = armarResena(datos); if (!r.ok) throw invalido(r.errores); return r.cuerpo }
   return {
@@ -124,7 +124,7 @@ export function createReviewUseCases({ gateway, nuevaClave = () => globalThis.cr
 }
 
 /* ---- Oferta del prestador (UC17, UC18, UC22) ---- */
-export function createOfferUseCases({ gateway, nuevaClave = () => globalThis.crypto.randomUUID() }) {
+export function createOfferUseCases({ gateway, nuevaClave = claveNueva }) {
   assertOfferGateway(gateway)
   const preparar = (form, atributosPrevios) => {
     const e = validarServicio(form)

@@ -4,6 +4,7 @@ export default {
     loading: 'Cargando…', retry: 'Reintentar', empty: 'No hay nada que mostrar todavía.', save: 'Guardar', saving: 'Guardando…', sending: 'Enviando…', searching: 'Buscando…',
     cancel: 'Cancelar', confirm: 'Confirmar', edit: 'Editar', remove: 'Quitar', all: 'Todos', clear: 'Limpiar', apply: 'Aplicar', optional: 'opcional', days: 'días',
     from: 'Desde', to: 'Hasta', prev: 'Anterior', next: 'Siguiente', pagination: 'Paginación', pageOf: 'Página {n} de {total}',
+    unexpected: 'Algo salió mal en la página. Referencia: {ref}.', reload: 'Recargar', dismiss: 'Cerrar', reference: 'referencia',
     needOnline: 'Requiere conexión.',
     errors: {
       generic: 'No pudimos completar la acción. Inténtalo de nuevo.', SIN_CONEXION: 'No hay conexión. Inténtalo de nuevo cuando vuelva la red.',

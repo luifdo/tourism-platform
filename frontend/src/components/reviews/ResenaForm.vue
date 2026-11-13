@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { reviewUseCases } from '../../composition'
 import { ASPECTOS, MAX_COMENTARIO } from '../../domain/gestion/resenas'
+import { nuevaClave } from '../../domain/gestion/rules'
 import { useGestion } from '../../ui/useGestion'
 import { useOnline } from '../../ui/useOnline'
 import EstrellasInput from './EstrellasInput.vue'
@@ -27,7 +28,7 @@ let ultimo = { huella: '', clave: '' }
 async function enviar() {
   enviando.value = true; error.value = ''; campos.value = {}
   const huella = JSON.stringify(f)
-  if (huella !== ultimo.huella) ultimo = { huella, clave: globalThis.crypto.randomUUID() }
+  if (huella !== ultimo.huella) ultimo = { huella, clave: nuevaClave() }
   try {
     const r = editando
       ? await reviewUseCases.editar(props.resena.id, f, props.resena.version)

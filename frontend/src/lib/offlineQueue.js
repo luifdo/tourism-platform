@@ -1,5 +1,6 @@
 import { reactive, readonly } from 'vue'
 import { db } from '../infrastructure/storage/idb'
+import { borrarCachesObsoletas } from './limpiezaLocal'
 
 /*
  * Formularios diferidos (RNF-13, ESC-09): perfil, reseña, oferta y cupos.
@@ -70,7 +71,7 @@ export async function retry(id) {
   flush()
 }
 /** Al cerrar sesión se borran los formularios pendientes y las copias personales; el catálogo público se conserva. */
-export async function clearPersonalData() { await db.clear('pending'); await db.del('kv', 'misReservas'); await refresh() }
+export async function clearPersonalData() { await db.clear('pending'); await db.del('kv', 'misReservas'); await borrarCachesObsoletas(); await refresh() }
 /** Borra todo lo guardado en el dispositivo (incluido el catálogo). */
 export async function clearLocalData() { await db.clear('pending'); await db.clear('kv'); await refresh() }
 

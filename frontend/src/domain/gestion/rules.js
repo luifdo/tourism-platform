@@ -56,3 +56,17 @@ export function ultimosDias(hoy, dias) {
 
 /** Parte una lista en páginas (los mocks paginan en memoria). */
 export const paginar = (lista, pagina = 1, tamano = 20) => ({ items: lista.slice((pagina - 1) * tamano, pagina * tamano), pagina, tamano, total: lista.length })
+
+/**
+ * UUID v4 para las Idempotency-Key. `crypto.randomUUID` solo existe en contextos seguros (HTTPS o localhost): en una página por HTTP
+ * (p. ej. la IP de la VM sin certificado) no está y el formulario fallaría. `getRandomValues` sí está en todos.
+ */
+export function nuevaClave(cripto = globalThis.crypto) {
+  if (typeof cripto?.randomUUID === 'function') return cripto.randomUUID()
+  const b = new Uint8Array(16)
+  cripto.getRandomValues(b)
+  b[6] = (b[6] & 0x0f) | 0x40
+  b[8] = (b[8] & 0x3f) | 0x80
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0'))
+  return `${h.slice(0, 4).join('')}-${h.slice(4, 6).join('')}-${h.slice(6, 8).join('')}-${h.slice(8, 10).join('')}-${h.slice(10).join('')}`
+}

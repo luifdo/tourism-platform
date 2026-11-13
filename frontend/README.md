@@ -114,7 +114,7 @@ cd infra && docker compose up -d --build frontend
 - **`VITE_API_MOCK` y `VITE_BASE` se fijan al compilar** (argumentos del build; por defecto `false` y `/`). Todo lo que empieza con `VITE_` queda dentro de los archivos públicos: nunca pongas claves ahí.
 - `nginx.conf`: fallback a `index.html` para las rutas de Vue Router; **404** en `/internal`, `/health` y `/metrics`; **404 en JSON** para cualquier `/api/...` que ningún servicio tenga; `index.html`, `sw.js` y el manifiesto sin caché (para que se actualice la PWA) y `/assets/` con hash por un año.
 - Para desarrollar con recarga en caliente: `VITE_API_MOCK=false` en `frontend/.env` y `npm run dev`; el proxy de Vite manda `/api` a `localhost:80` (el gateway, o un túnel SSH a la VM).
-- **Content-Security-Policy** (`nginx.conf`): solo código propio (sin scripts en línea ni `eval`); fuentes de Google Fonts, teselas de OpenStreetMap y fotos por https. `nginx.conf` es una **plantilla**: la imagen sustituye `${CSP_ALMACENAMIENTO}` al arrancar (solo las variables `CSP_*`; las de nginx como `$uri` quedan intactas). En el compose vale `S3_ENDPOINT_PUBLICO`, el mismo origen de las URL firmadas con que el prestador sube fotos; sin esa variable, `http://localhost:8333`. Si cambias el dominio del almacenamiento y no la variable, la subida de fotos queda bloqueada por la política (el navegador lo dice en la consola).
+- **Content-Security-Policy** (`nginx.conf`): solo código propio (sin scripts en línea ni `eval`); fuentes **autoalojadas** (`@fontsource`, sin terceros), teselas de OpenStreetMap y fotos por https. Además `Permissions-Policy` y `Cross-Origin-Opener-Policy`. `nginx.conf` es una **plantilla**: la imagen sustituye `${CSP_ALMACENAMIENTO}` al arrancar (solo las variables `CSP_*`; las de nginx como `$uri` quedan intactas). En el compose vale `S3_ENDPOINT_PUBLICO`, el mismo origen de las URL firmadas con que el prestador sube fotos; sin esa variable, `http://localhost:8333`. Si cambias el dominio del almacenamiento y no la variable, la subida de fotos queda bloqueada por la política (el navegador lo dice en la consola).
 - Pendiente: los manifiestos de k8s del frontend.
 
 ## Panel del prestador (UC19, UC20)
@@ -154,3 +154,10 @@ Toda la API ya existía (`contracts/openapi/`); estas pantallas la usan. Cada á
 * El selector de idioma está en la cinta, en la barra fija (desde tablet) y en el menú del móvil.
 
 **No está hecho:** editar el calendario sin conexión (cola) y subir fotos sin conexión. Las reseñas se probaron contra el servicio real solo en lectura: escribirlas exige una reserva finalizada, que el stack local no genera sin esperar la fecha.
+
+## Seguridad (revisión OWASP Top 10:2025)
+
+* **Service Worker**: solo guarda las rutas **públicas** del catálogo (`servicios`, `buscar`, `zonas`, `alertas`, `mapa`) y solo peticiones **sin** `Authorization`, en la caché `catalogo-publico-v2`. Antes guardaba todo `/api/catalog/`, incluidas métricas, servicios del prestador y analítica de la Entidad, y las servía a quien entrara después; la caché vieja `catalogo` se borra al arrancar (`lib/limpiezaLocal.js`). `tests/lib.limpiezaLocal.test.js` fija qué rutas se cachean y cuáles no.
+* Los tokens siguen en `localStorage` (limitación conocida: un XSS tomaría la sesión). Lo mitigan la CSP sin scripts en línea y que no haya `v-html`/`innerHTML`/`eval` (se vigila con grep en la revisión); el remedio de fondo es una cookie HttpOnly desde IAM.
+* Errores sin atrapar: `app.config.errorHandler`, `unhandledrejection` y `error` muestran un aviso con una referencia (`lib/errorGlobal.js`); los errores de servicio muestran su `correlation_id` cuando no se saben explicar. Las `Idempotency-Key` usan `nuevaClave()`, que no depende de `crypto.randomUUID` (no existe en HTTP no seguro).
+* Las GitHub Actions de `frontend-ci.yml` y `frontend-pages.yml` van fijadas por hash de commit (con la versión en un comentario); las de los demás servicios siguen por etiqueta.

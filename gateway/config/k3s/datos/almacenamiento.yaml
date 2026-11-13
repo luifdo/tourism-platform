@@ -3,8 +3,8 @@
 # Sirve cualquier host que empiece por `s3.` (s3.localhost en local, s3.<dominio> en el servidor); el dominio va en
 # S3_ENDPOINT_PUBLICO e IMAGENES_URL_PUBLICA de los servicios. El origen de la PWA de la lista de CORS NO es una plantilla
 # aquí (los CRD no las admiten): hay que poner el dominio definitivo en lugar del provisional.
-# Sin ForwardAuth: la autenticación es la firma. OJO: expone TODO el S3; el acceso anónimo de SeaweedFS debe limitarse
-# a Read:catalogo-imagenes (infra/seaweedfs/s3.json) o los documentos de verificación quedan legibles.
+# Sin ForwardAuth: la autenticación es la firma. OJO: expone TODO el S3; el acceso anónimo de SeaweedFS debe seguir
+# limitado a Read:catalogo-imagenes (Secret seaweedfs-identidades de infra/k8s) o los documentos de verificación quedan legibles.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata: { name: almacenamiento-cors }

@@ -7,6 +7,7 @@ import { nivelOcupacion } from '../domain/catalog/rules'
 import { seccionesDeAtributos } from '../domain/catalog/atributos'
 import { degradado, urlMapa } from '../ui/format'
 import BookingWidget from '../components/BookingWidget.vue'
+import ResenasServicio from '../components/reviews/ResenasServicio.vue'
 
 const props = defineProps({ id: { type: String, required: true } })
 const { t, n, locale } = useI18n()
@@ -160,6 +161,9 @@ const comoLlegar = () => catalogUseCases.comoLlegar(props.id)
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z" /><circle cx="12" cy="10" r="2.5" /></svg>
             {{ t('service.directions') }}
           </a>
+
+          <!-- Reseñas (UC15, UC39): lectura pública, escribir y reportar piden sesión -->
+          <ResenasServicio :key="id" :servicio-id="id" />
         </article>
 
         <aside class="lg:sticky lg:top-[calc(var(--nav-h)+16px)]">

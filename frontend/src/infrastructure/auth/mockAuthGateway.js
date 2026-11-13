@@ -17,6 +17,14 @@ const TTL_RESET_MS = 30 * 60_000
 
 export const CUENTA_DEMO = /* @__PURE__ */ Object.freeze({ email: 'maria.perez@example.com', password: 'Tayrona2026', nombre: 'María Pérez' })
 
+/** Cuentas de los otros roles del simulador (misma contraseña): para recorrer el panel del prestador, de la Entidad y del Admin. */
+export const CUENTAS_DEMO = /* @__PURE__ */ Object.freeze([
+  Object.freeze({ ...CUENTA_DEMO, rol: 'Turista' }),
+  Object.freeze({ email: 'prestador@samaland.demo', password: 'Tayrona2026', nombre: 'Guías de Taganga', rol: 'Prestador' }),
+  Object.freeze({ email: 'entidad@samaland.demo', password: 'Tayrona2026', nombre: 'Oficina de Turismo', rol: 'Entidad' }),
+  Object.freeze({ email: 'admin@samaland.demo', password: 'Tayrona2026', nombre: 'Administración Samaland', rol: 'Admin' }),
+])
+
 async function resumen(password, sal) {
   const bytes = new TextEncoder().encode(`${sal}:${password}`)
   if (globalThis.crypto?.subtle) {
@@ -44,12 +52,15 @@ export function createMockAuthGateway({
 
   async function usuarios() {
     let lista = leer(USERS, null)
-    if (!lista) {
+    // Las cuentas de demostración se completan aunque ya hubiera usuarios guardados de una versión anterior
+    const faltan = CUENTAS_DEMO.filter((c) => !lista?.some((u) => u.email === c.email))
+    if (!lista || faltan.length) {
       const sal = 'demo'
-      lista = [{
-        id: newId(), email: CUENTA_DEMO.email, sal, hash: await resumen(CUENTA_DEMO.password, sal), nombre_completo: CUENTA_DEMO.nombre,
-        rol: 'Turista', activo: true, email_verificado: false, creado_en: ahora().toISOString(),
-      }]
+      const nuevas = await Promise.all(faltan.map(async (c) => ({
+        id: newId(), email: c.email, sal, hash: await resumen(c.password, sal), nombre_completo: c.nombre,
+        rol: c.rol, activo: true, email_verificado: true, idioma: 'es', creado_en: ahora().toISOString(), actualizado_en: ahora().toISOString(),
+      })))
+      lista = [...(lista ?? []), ...nuevas]
       guardar(USERS, lista)
     }
     return lista
@@ -74,7 +85,43 @@ export function createMockAuthGateway({
     return `${b64({ alg: 'none', typ: 'JWT' })}.${b64(payload)}.mock`
   }
 
+  /**
+   * Directorio de cuentas para los simuladores de perfil y administración (el iam-service real los resuelve con sus
+   * propias rutas /perfil y /admin). No forma parte del puerto AuthGateway.
+   */
+  const completo = (u) => ({ ...publico(u), activo: u.activo, idioma: u.idioma ?? 'es', actualizado_en: u.actualizado_en ?? u.creado_en })
+  const directorio = {
+    async todos() { return (await usuarios()).map(completo) },
+    async obtener(id) { const u = (await usuarios()).find((x) => x.id === id); return u ? completo(u) : null },
+    async actualizar(id, cambios) {
+      const lista = await usuarios()
+      const u = lista.find((x) => x.id === id)
+      if (!u) return null
+      Object.assign(u, cambios, { actualizado_en: ahora().toISOString() })
+      guardar(USERS, lista)
+      if ('rol' in cambios || cambios.activo === false) guardar(SESIONES, sesiones().map((x) => (x.usuarioId === id ? { ...x, revocada: true } : x)))
+      return completo(u)
+    },
+    async verificarPassword(id, password) {
+      const u = (await usuarios()).find((x) => x.id === id)
+      return !!u && (await resumen(password, u.sal)) === u.hash
+    },
+    async cambiarPassword(id, nueva) {
+      const lista = await usuarios()
+      const u = lista.find((x) => x.id === id)
+      if (!u) return
+      u.sal = newId(); u.hash = await resumen(nueva, u.sal)
+      guardar(USERS, lista)
+      guardar(SESIONES, sesiones().map((x) => (x.usuarioId === id ? { ...x, revocada: true } : x))) // revoca todas las sesiones
+    },
+    async suprimir(id) {
+      guardar(USERS, (await usuarios()).filter((x) => x.id !== id))
+      guardar(SESIONES, sesiones().filter((x) => x.usuarioId !== id))
+    },
+  }
+
   return {
+    directorio,
     async registrar(datos) {
       const lista = await usuarios()
       // Mismo orden de comprobación que RegistrarUsuario: consentimiento, mayoría de edad, rol, correo, contraseña, nombre

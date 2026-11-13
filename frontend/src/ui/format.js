@@ -2,6 +2,10 @@
 export const fmtDate = (iso, locale, opts = { weekday: 'long', day: 'numeric', month: 'long' }) =>
   new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' }).format(new Date(`${iso}T12:00:00Z`))
 
+/** Fecha y hora de un instante (ISO con zona), en la zona del navegador. `conHora: false` deja solo el día. */
+export const fmtMomento = (iso, locale, conHora = true) =>
+  iso ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', ...(conHora ? { timeStyle: 'short' } : {}) }).format(new Date(iso)) : ''
+
 /** Fondo de las tarjetas y fichas sin foto: un degradado fijo por categoría (el listado no trae imágenes). */
 const DEGRADADOS = {
   PLAYA: ['#0189C7', '#5D9A92'], NATURALEZA: ['#009767', '#0E3064'], CULTURA: ['#C7A781', '#5D9A92'],

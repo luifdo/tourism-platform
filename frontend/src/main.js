@@ -4,6 +4,8 @@ import App from './App.vue'
 import router from './router'
 import es from './locales/es'
 import en from './locales/en'
+import gestionEs from './locales/gestion.es'
+import gestionEn from './locales/gestion.en'
 import { initOffline, submitOrQueue } from './lib/offlineQueue'
 import './styles/main.css'
 
@@ -13,7 +15,7 @@ export const i18n = createI18n({
   legacy: false,
   locale: saved === 'en' ? 'en' : 'es', // español por defecto (RF-10)
   fallbackLocale: 'es',
-  messages: { es, en },
+  messages: { es: { ...es, ...gestionEs }, en: { ...en, ...gestionEn } },
 })
 
 createApp(App).use(router).use(i18n).mount('#app')

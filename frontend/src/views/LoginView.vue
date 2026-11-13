@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { cuentaDemo } from '../composition'
+import { cuentasDemo } from '../composition'
 import { AuthError } from '../domain/auth/errors'
 import { rutaSegura } from '../domain/auth/rules'
 import { queue } from '../lib/offlineQueue'
@@ -38,12 +38,13 @@ async function enviar() {
   } finally { enviando.value = false }
 }
 
-function usarDemo() { email.value = cuentaDemo.email; password.value = cuentaDemo.password }
+function usarDemo(c) { email.value = c.email; password.value = c.password }
 </script>
 
 <template>
   <AuthShell :title="t('auth.login.title')" :lead="t('auth.login.lead')">
     <p v-if="route.query.expirada" class="mb-4 rounded-xl bg-warn-bg px-4 py-3 text-sm text-warn" role="status">{{ t('auth.login.expired') }}</p>
+    <p v-if="route.query.clave" class="mb-4 rounded-xl bg-ok-bg px-4 py-3 text-sm text-ok" role="status">{{ t('auth.login.passwordChanged') }}</p>
     <p v-if="route.query.restablecida" class="mb-4 rounded-xl bg-ok-bg px-4 py-3 text-sm text-ok" role="status">{{ t('auth.login.resetDone') }}</p>
     <p v-if="route.query.creada" class="mb-4 rounded-xl bg-ok-bg px-4 py-3 text-sm text-ok" role="status">{{ t('auth.register.createdNoLogin') }}</p>
 
@@ -60,10 +61,12 @@ function usarDemo() { email.value = cuentaDemo.email; password.value = cuentaDem
       <RouterLink :to="{ name: 'recover' }" class="text-center text-sm font-medium text-navy hover:text-teal">{{ t('auth.login.forgot') }}</RouterLink>
     </form>
 
-    <div v-if="cuentaDemo" class="mt-6 rounded-card border border-sand/40 bg-sand/10 p-4 text-sm">
+    <div v-if="cuentasDemo.length" class="mt-6 rounded-card border border-sand/40 bg-sand/10 p-4 text-sm">
       <p class="font-mono text-[11px] uppercase tracking-[.12em] text-teal">{{ t('auth.login.demoTitle') }}</p>
       <p class="mt-1 text-ink-control">{{ t('auth.login.demoBody') }}</p>
-      <button type="button" class="mt-2 font-semibold text-navy hover:text-teal" @click="usarDemo">{{ t('auth.login.demoUse') }}</button>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <button v-for="c in cuentasDemo" :key="c.email" type="button" class="rounded-full border border-navy px-3 py-1 font-semibold text-navy transition hover:bg-white" @click="usarDemo(c)">{{ t(`perfil.roles.${c.rol}`) }}</button>
+      </div>
     </div>
 
     <template #footer>

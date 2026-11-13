@@ -15,7 +15,14 @@ const userMenu = ref(false)
 const saliendo = ref(false)
 const zonaUsuario = ref(null)
 
-const esPrestador = computed(() => sesion.usuario?.rol === 'Prestador')
+// Accesos según el rol: cada uno tiene su propio panel; el Turista tiene sus reservas y sus reseñas
+const ENLACES_ROL = {
+  Turista: [['my-bookings', 'nav.reservations'], ['my-reviews', 'nav.reviews']],
+  Prestador: [['provider', 'nav.panel']],
+  Entidad: [['entity', 'nav.entityPanel']],
+  Admin: [['admin', 'nav.adminPanel'], ['entity', 'nav.entityPanel']],
+}
+const enlacesRol = computed(() => ENLACES_ROL[sesion.usuario?.rol] ?? [])
 const primerNombre = computed(() => (sesion.usuario?.nombre_completo ?? '').trim().split(/\s+/)[0])
 const inicial = computed(() => primerNombre.value.charAt(0).toUpperCase())
 // Cierra el menú del usuario al salir de él con el teclado o al tocar fuera
@@ -63,9 +70,9 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
 
         <!-- Con sesión: acceso a reservas y menú de la cuenta -->
         <template v-if="sesion.autenticado">
-          <RouterLink :to="{ name: esPrestador ? 'provider' : 'my-bookings' }" class="flex items-center gap-1.5 text-[13px] font-medium text-navy transition-colors hover:text-teal">
+          <RouterLink v-if="enlacesRol[0]" :to="{ name: enlacesRol[0][0] }" class="flex items-center gap-1.5 text-[13px] font-medium text-navy transition-colors hover:text-teal">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></svg>
-            <span class="hidden sm:inline">{{ esPrestador ? t('nav.panel') : t('nav.reservations') }}</span>
+            <span class="hidden sm:inline">{{ t(enlacesRol[0][1]) }}</span>
           </RouterLink>
           <div ref="zonaUsuario" class="relative" @focusout="alPerderFoco" @keydown.esc="userMenu = false">
             <button type="button" class="flex items-center gap-2 rounded-full border border-sand/40 bg-white py-1 pl-1 pr-3 text-[13px] font-medium text-ink-control shadow-card transition hover:border-teal" :aria-expanded="userMenu" aria-haspopup="menu" :aria-label="t('auth.menu.account')" @click="userMenu = !userMenu">
@@ -78,7 +85,8 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
                 <p class="truncate font-mono text-[11px] text-muted">{{ sesion.usuario?.email }}</p>
                 <p class="mt-1 w-fit rounded bg-teal/15 px-1.5 font-mono text-[10px] uppercase tracking-widest text-teal">{{ sesion.usuario?.rol }}</p>
               </div>
-              <RouterLink :to="{ name: esPrestador ? 'provider' : 'my-bookings' }" role="menuitem" class="block rounded-lg px-3 py-2 text-sm text-ink-control hover:bg-cream" @click="userMenu = false">{{ esPrestador ? t('nav.panel') : t('auth.menu.bookings') }}</RouterLink>
+              <RouterLink v-for="[nombre, clave] in enlacesRol" :key="nombre" :to="{ name: nombre }" role="menuitem" class="block rounded-lg px-3 py-2 text-sm text-ink-control hover:bg-cream" @click="userMenu = false">{{ t(clave) }}</RouterLink>
+              <RouterLink :to="{ name: 'profile' }" role="menuitem" class="block rounded-lg px-3 py-2 text-sm text-ink-control hover:bg-cream" @click="userMenu = false">{{ t('nav.profile') }}</RouterLink>
               <button type="button" role="menuitem" class="block w-full rounded-lg px-3 py-2 text-left text-sm text-danger hover:bg-danger-bg disabled:opacity-50" :disabled="saliendo" @click="cerrarSesion">{{ saliendo ? t('auth.menu.loggingOut') : t('auth.menu.logout') }}</button>
             </div>
           </div>
@@ -100,7 +108,8 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
       <RouterLink v-for="[k, to] in links" :key="k" :to="to" class="rounded-lg px-3 py-3 font-medium text-ink-control hover:bg-white" @click="menu = false">{{ t(`nav.${k}`) }}</RouterLink>
       <div class="flex items-center justify-between rounded-lg px-3 py-2 font-medium text-ink-control">{{ t('nav.language') }}<LangSwitch grande /></div>
       <template v-if="sesion.autenticado">
-        <RouterLink :to="{ name: esPrestador ? 'provider' : 'my-bookings' }" class="rounded-lg px-3 py-3 font-medium text-navy hover:bg-white" @click="menu = false">{{ esPrestador ? t('nav.panel') : t('nav.reservations') }}</RouterLink>
+        <RouterLink v-for="[nombre, clave] in enlacesRol" :key="nombre" :to="{ name: nombre }" class="rounded-lg px-3 py-3 font-medium text-navy hover:bg-white" @click="menu = false">{{ t(clave) }}</RouterLink>
+        <RouterLink :to="{ name: 'profile' }" class="rounded-lg px-3 py-3 font-medium text-navy hover:bg-white" @click="menu = false">{{ t('nav.profile') }}</RouterLink>
         <button type="button" class="rounded-lg px-3 py-3 text-left font-medium text-danger hover:bg-white" :disabled="saliendo" @click="cerrarSesion">{{ t('auth.menu.logout') }}</button>
       </template>
       <template v-else>

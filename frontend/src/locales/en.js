@@ -1,7 +1,7 @@
 export default {
   brand: { name: 'Samaland', alt: 'adventure', tag: 'Regenerative tourism' },
   nav: {
-    language: 'Language', catalog: 'Experience explorer', map: 'Biocultural map & capacity', routes: 'Ancestral routes', ethics: 'Ethical commitment',
+    reviews: 'My reviews', entityPanel: 'Tourism office panel', adminPanel: 'Administration', profile: 'My profile', language: 'Language', catalog: 'Experience explorer', map: 'Biocultural map & capacity', routes: 'Ancestral routes', ethics: 'Ethical commitment',
     reservations: 'My bookings', panel: 'My panel', install: 'Install app', installShort: 'Install', assistant: 'AI Assistant', login: 'Log in', register: 'Sign up', menu: 'Menu',
   },
   ticker: { badge: 'Digital public good', text: 'No commercial intermediaries\' fees · A Universidad del Magdalena project', live: 'Live capacity' },
@@ -33,7 +33,7 @@ export default {
     login: {
       title: 'Log in', lead: 'Sign in to request and manage your bookings.', email: 'Email', password: 'Password',
       submit: 'Log in', submitting: 'Signing in…', forgot: 'Forgot your password?', noAccount: 'No account yet?', createAccount: 'Create account',
-      expired: 'Your session expired. Log in again to continue.', resetDone: 'Your password was updated. You can log in now.',
+      passwordChanged: 'You changed your password. Log in again with the new one.', expired: 'Your session expired. Log in again to continue.', resetDone: 'Your password was updated. You can log in now.',
       needOnline: 'You need a connection to log in.', demoTitle: 'Demo mode',
       demoBody: 'No server is connected. You can log in with a sample account.', demoUse: 'Use the sample account',
     },
@@ -202,8 +202,8 @@ export default {
     cta: 'Request a booking',
   },
   provider: {
-    title: 'Provider panel', lead: 'Answer the requests for your services and manage each day\'s spots and rates.',
-    tabs: { solicitudes: 'Requests', calendario: 'Calendar' },
+    title: 'Provider panel', lead: 'Handle requests, manage your calendars, services and their reviews, check your metrics and verify your account.',
+    tabs: { solicitudes: 'Requests', calendario: 'Calendar', servicios: 'My services', resenas: 'Reviews', metricas: 'Metrics', negocio: 'My business' },
     loading: 'Loading…', retry: 'Try again', working: 'Sending…', cancel: 'Cancel', more: 'Show more', save: 'Save', edit: 'Edit', add: 'Add',
     offline: 'Offline: confirming, rejecting and editing the calendar need internet.',
     noServices: 'You have no published services yet. Once you publish one it will show up here.',

@@ -1,7 +1,7 @@
 export default {
   brand: { name: 'Samaland', alt: 'adventure', tag: 'Turismo regenerativo' },
   nav: {
-    language: 'Idioma', catalog: 'Explorador de experiencias', map: 'Mapa biocultural y aforos', routes: 'Rutas ancestrales', ethics: 'Compromiso ético',
+    reviews: 'Mis reseñas', entityPanel: 'Panel de la Entidad', adminPanel: 'Administración', profile: 'Mi perfil', language: 'Idioma', catalog: 'Explorador de experiencias', map: 'Mapa biocultural y aforos', routes: 'Rutas ancestrales', ethics: 'Compromiso ético',
     reservations: 'Mis reservas', panel: 'Mi panel', install: 'Instalar app', installShort: 'Instalar', assistant: 'Asistente IA', login: 'Iniciar sesión', register: 'Registrarse', menu: 'Menú',
   },
   ticker: { badge: 'Bien público digital', text: 'Sin comisiones comerciales intermedias · Proyecto de la Universidad del Magdalena', live: 'Aforos en vivo' },
@@ -33,7 +33,7 @@ export default {
     login: {
       title: 'Inicia sesión', lead: 'Accede para solicitar y gestionar tus reservas.', email: 'Correo electrónico', password: 'Contraseña',
       submit: 'Ingresar', submitting: 'Ingresando…', forgot: '¿Olvidaste tu contraseña?', noAccount: '¿No tienes cuenta?', createAccount: 'Crear cuenta',
-      expired: 'Tu sesión expiró. Vuelve a iniciar sesión para continuar.', resetDone: 'Tu contraseña se actualizó. Ya puedes ingresar.',
+      passwordChanged: 'Cambiaste tu contraseña. Ingresa de nuevo con la nueva.', expired: 'Tu sesión expiró. Vuelve a iniciar sesión para continuar.', resetDone: 'Tu contraseña se actualizó. Ya puedes ingresar.',
       needOnline: 'Necesitas conexión para iniciar sesión.', demoTitle: 'Modo demostración',
       demoBody: 'No hay un servidor conectado. Puedes ingresar con una cuenta de ejemplo.', demoUse: 'Usar la cuenta de ejemplo',
     },
@@ -202,8 +202,8 @@ export default {
     cta: 'Solicitar reserva',
   },
   provider: {
-    title: 'Panel del prestador', lead: 'Responde las solicitudes de tus servicios y administra los cupos y las tarifas de cada día.',
-    tabs: { solicitudes: 'Solicitudes', calendario: 'Calendario' },
+    title: 'Panel del prestador', lead: 'Atiende las solicitudes, administra tus calendarios, tus servicios y sus reseñas, mira tus métricas y verifica tu cuenta.',
+    tabs: { solicitudes: 'Solicitudes', calendario: 'Calendario', servicios: 'Mis servicios', resenas: 'Reseñas', metricas: 'Métricas', negocio: 'Mi negocio' },
     loading: 'Cargando…', retry: 'Reintentar', working: 'Enviando…', cancel: 'Cancelar', more: 'Ver más', save: 'Guardar', edit: 'Editar', add: 'Agregar',
     offline: 'Sin conexión: confirmar, rechazar y editar el calendario necesitan internet.',
     noServices: 'Aún no tienes servicios publicados. Cuando publiques uno aparecerá aquí.',

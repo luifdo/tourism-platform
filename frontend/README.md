@@ -115,3 +115,13 @@ cd infra && docker compose up -d --build frontend
 - `nginx.conf`: fallback a `index.html` para las rutas de Vue Router; **404** en `/internal`, `/health` y `/metrics`; **404 en JSON** para cualquier `/api/...` que ningún servicio tenga; `index.html`, `sw.js` y el manifiesto sin caché (para que se actualice la PWA) y `/assets/` con hash por un año.
 - Para desarrollar con recarga en caliente: `VITE_API_MOCK=false` en `frontend/.env` y `npm run dev`; el proxy de Vite manda `/api` a `localhost:80` (el gateway, o un túnel SSH a la VM).
 - Pendiente: Content-Security-Policy y los manifiestos de k8s del frontend.
+
+## Panel del prestador (UC19, UC20)
+
+Ruta `/prestador`, solo para el rol **Prestador** (`router.js`; quien tiene otro rol vuelve al inicio, y "Mis reservas" pasa a ser solo del Turista, porque el servicio respondería 403). Dos pestañas:
+
+* **Solicitudes** (`GET /api/bookings/prestador/solicitudes`): por defecto las pendientes, de la más urgente a la menos, con cuenta regresiva hasta `expira_en` y marca de "urgente" (≤ 6 h). **Confirmar** y **Rechazar** (el motivo de 3 a 500 caracteres es obligatorio; libera los cupos). Si la solicitud cambió (la cancelaron, venció el plazo) se muestra el motivo y se recarga la lista. Filtro por estado y por servicio.
+* **Calendario** (`GET/PUT /prestador/calendario/...`): los días del servicio con totales, reservados, libres y tarifa. **Editar un día** envía la versión que se vio (`If-Match`); si cambió en el servidor se muestra **tu cambio frente a lo que hay ahora** (`version_actual` y `actual` del 409) y se elige entre reenviar con la versión nueva o dejar lo que hay. **Abrir un rango** (`POST .../rango`): días de la semana, cupos y tarifa, con la cuenta de días que se abrirían; los que ya existen se omiten. 0 cupos = día cerrado; no se baja de lo ya reservado ni se pasa del aforo oficial (`CUPOS_COMPROMETIDOS`, `SUPERA_AFORO`).
+* Cada intento lleva una `Idempotency-Key` nueva (no una por reintento); `PETICION_EN_PROCESO` e `IDEMPOTENCIA_NO_DISPONIBLE` se reintentan **con la misma clave** hasta 3 veces (INTEGRACION.md §2.3). Los servicios del selector salen de `GET /api/catalog/prestador/servicios`.
+* **Sin conexión**, confirmar, rechazar y editar el calendario se deshabilitan. La Guía §2 prevé editar el calendario sin conexión con la cola de envíos pendientes: **no está hecho**.
+* En modo simulado un prestador atiende todos los servicios de demostración; ve solicitudes de ejemplo y lo que piden los turistas. Lo que hace se refleja en lo que ve el turista (estado de su reserva y cupos y tarifas del día).

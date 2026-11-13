@@ -2,6 +2,7 @@ import { createBookingUseCases } from './application/booking/useCases'
 import { createAuthUseCases } from './application/auth/useCases'
 import { createAssistantUseCases } from './application/assistant/useCases'
 import { createCatalogUseCases } from './application/catalog/useCases'
+import { createProviderUseCases } from './application/provider/useCases'
 import { createHttpBookingGateway } from './infrastructure/booking/httpBookingGateway'
 import { createMockBookingGateway } from './infrastructure/booking/mockBookingGateway'
 import { demoServices } from './infrastructure/booking/demoServices'
@@ -14,7 +15,7 @@ import { idbCatalogCache } from './infrastructure/catalog/idbCatalogCache'
 import { createHttpAuthGateway } from './infrastructure/auth/httpAuthGateway'
 import { CUENTA_DEMO, createMockAuthGateway } from './infrastructure/auth/mockAuthGateway'
 import { sessionStore } from './infrastructure/auth/sessionStore'
-import { getUsuarioId, tokenSession } from './infrastructure/auth/tokenSession'
+import { getRol, getUsuarioId, tokenSession } from './infrastructure/auth/tokenSession'
 import { createAuthorizedFetch } from './infrastructure/auth/authorizedFetch'
 import { createWebLocksRenewal } from './infrastructure/auth/webLocksRenovacion'
 import { clearPersonalData, configurarTransporte } from './lib/offlineQueue'
@@ -53,11 +54,14 @@ configurarTransporte(authorizedFetch) // la cola sin conexión envía con ese mi
 
 /* ---- Reservas (booking-service) ---- */
 const bookingGateway = isMockBackend
-  ? createMockBookingGateway({ servicios: demoServices, clock, turistaId: getUsuarioId })
+  ? createMockBookingGateway({ servicios: demoServices, clock, turistaId: getUsuarioId, rolUsuario: getRol })
   : createHttpBookingGateway({ baseUrl: '/api/bookings', fetchFn: authorizedFetch })
 
 // Solicitar una reserva exige sesión vigente (JWT de iam-service) también con el simulador
 export const bookingUseCases = createBookingUseCases({ gateway: bookingGateway, session: tokenSession, cache: idbBookingCache, clock })
+
+// Panel del prestador (UC19, UC20): el mismo adaptador de reservas implementa su puerto
+export const providerUseCases = createProviderUseCases({ gateway: bookingGateway, session: tokenSession, clock })
 
 /* ---- Asistente (recommendation-service) ---- */
 const assistantGateway = isMockBackend
@@ -68,6 +72,6 @@ const assistantGateway = isMockBackend
 export const assistantUseCases = createAssistantUseCases({ gateway: assistantGateway, session: tokenSession })
 
 /* ---- Catálogo (catalog-service): rutas públicas, sin sesión ---- */
-const catalogGateway = isMockBackend ? createMockCatalogGateway() : createHttpCatalogGateway({ baseUrl: '/api/catalog' })
+const catalogGateway = isMockBackend ? createMockCatalogGateway() : createHttpCatalogGateway({ baseUrl: '/api/catalog', authFetchFn: authorizedFetch }) // solo las rutas del prestador llevan sesión
 
 export const catalogUseCases = createCatalogUseCases({ gateway: catalogGateway, cache: idbCatalogCache, clock })

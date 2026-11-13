@@ -8,6 +8,8 @@
  *   obtenerServicio(id, idioma)                 -> ServicioDetalle                 (CatalogError NO_ENCONTRADO si no existe)
  *   nombresServicios(ids, idioma)               -> { id, nombre, activo }[]        (los ids que no existen no vienen)
  *   registrarIntencionVisita(id)                -> void                            ("Cómo llegar")
+ *   serviciosPrestador({ pagina, tamano }, idioma) -> { items: ServicioPrestador[], pagina, tamano, total }   (exige sesión de Prestador)
+ *       ServicioPrestador { id, nombre, categoria, zona, activo, capacidadDiaria, tarifaBase }
  *   mapaServicios({ bbox, zoom, categorias, idioma }) -> PuntoMapa[]
  *   Los errores se lanzan como CatalogError (domain/catalog/errors.js).
  *
@@ -24,7 +26,7 @@
  * Clock        (puerto de salida)  now() -> Date
  */
 export const CATALOG_GATEWAY_METHODS = Object.freeze([
-  'buscarServicios', 'obtenerServicio', 'nombresServicios', 'registrarIntencionVisita', 'mapaServicios',
+  'buscarServicios', 'obtenerServicio', 'nombresServicios', 'registrarIntencionVisita', 'mapaServicios', 'serviciosPrestador',
 ])
 
 export function assertCatalogGateway(gateway) {

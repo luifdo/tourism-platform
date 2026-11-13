@@ -60,6 +60,17 @@ export function createCatalogUseCases({ gateway, cache, clock }) {
       try { await gateway.registrarIntencionVisita(id); return true } catch { return false }
     },
 
+    /** UC18 · los servicios del prestador con sesión (incluye los inactivos). Los lee todos, de a 100, para el selector del panel. */
+    async misServicios({ idioma = 'es' } = {}) {
+      const items = []
+      for (let pagina = 1; pagina <= 20; pagina++) {
+        const r = await gateway.serviciosPrestador({ pagina, tamano: 100 }, idioma)
+        items.push(...r.items)
+        if (items.length >= r.total || !r.items.length) break
+      }
+      return items
+    },
+
     /** UC16 · pública. Servicios (y grupos de servicios) que caen en la vista del mapa. */
     puntosDelMapa({ bbox, zoom, categorias = [] }, { idioma = 'es' } = {}) {
       return gateway.mapaServicios({ bbox, zoom, categorias: normalizarBusqueda({ categorias }).categorias, idioma })

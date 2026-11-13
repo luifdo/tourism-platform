@@ -9,6 +9,7 @@ const gw = (extra = {}) => ({
   nombresServicios: vi.fn(async (ids) => ids.map((id) => ({ id, nombre: `N ${id}`, activo: true }))),
   registrarIntencionVisita: vi.fn(async () => {}),
   mapaServicios: vi.fn(async () => []),
+  serviciosPrestador: vi.fn(async () => ({ items: [], pagina: 1, tamano: 100, total: 0 })),
   ...extra,
 })
 const memoria = (inicial = null) => { let v = inicial; return { read: vi.fn(async () => v), write: vi.fn(async (x) => { v = x }) } }
@@ -143,5 +144,23 @@ describe('casos de uso del catálogo', () => {
     const g = gw()
     await crear(g).puntosDelMapa({ bbox: [-75, 10, -73, 12], zoom: 10, categorias: ['PLAYA', 'X'] }, { idioma: 'en' })
     expect(g.mapaServicios).toHaveBeenCalledWith({ bbox: [-75, 10, -73, 12], zoom: 10, categorias: ['PLAYA'], idioma: 'en' })
+  })
+  describe('misServicios (UC18)', () => {
+    it('lee todas las páginas de a 100 hasta completar el total', async () => {
+      const g = gw({ serviciosPrestador: vi.fn(async ({ pagina }) => ({ items: Array.from({ length: pagina === 3 ? 20 : 100 }, (_, i) => ({ id: `${pagina}-${i}` })), pagina, tamano: 100, total: 220 })) })
+      const todos = await crear(g).misServicios({ idioma: 'en' })
+      expect(todos).toHaveLength(220)
+      expect(g.serviciosPrestador).toHaveBeenCalledTimes(3)
+      expect(g.serviciosPrestador).toHaveBeenCalledWith({ pagina: 1, tamano: 100 }, 'en')
+    })
+    it('sin servicios devuelve la lista vacía y no insiste', async () => {
+      const g = gw()
+      expect(await crear(g).misServicios()).toEqual([])
+      expect(g.serviciosPrestador).toHaveBeenCalledTimes(1)
+    })
+    it('el error del servicio (403, 401) se propaga', async () => {
+      const g = gw({ serviciosPrestador: vi.fn().mockRejectedValue(new CatalogError('ERROR', 'no', { status: 403 })) })
+      expect((await falla(crear(g).misServicios())).status).toBe(403)
+    })
   })
 })

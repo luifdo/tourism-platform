@@ -154,4 +154,33 @@ describe('adaptador HTTP del catálogo', () => {
       expect(e).toMatchObject({ code: 'ERROR', status: 502 })
     })
   })
+  describe('serviciosPrestador (UC18, exige sesión)', () => {
+    const editable = { id: 's1', nombre: { es: 'Cascadas', en: 'Waterfalls' }, categoria: 'NATURALEZA', categoria_etiqueta: 'Naturaleza', zona: { codigo: 'minca', nombre: 'Minca' }, activo: false, capacidad_aforo_diario: 15, tarifa_base: 75000 }
+
+    it('usa el fetch autenticado (no el público) y pide /prestador/servicios', async () => {
+      const publico = vi.fn(async () => respuesta({ items: [], total: 0 }))
+      const autenticado = vi.fn(async () => respuesta({ items: [editable], pagina: 1, tamano: 100, total: 1 }))
+      const gw = createHttpCatalogGateway({ baseUrl: '/api/catalog', fetchFn: publico, authFetchFn: autenticado })
+      await gw.serviciosPrestador({ pagina: 1, tamano: 100 }, 'es')
+      expect(autenticado.mock.calls[0][0]).toBe('/api/catalog/prestador/servicios?pagina=1&tamano=100')
+      expect(publico).not.toHaveBeenCalled()
+      await gw.buscarServicios({ pagina: 1, tamano: 12 })
+      expect(publico).toHaveBeenCalledTimes(1) // las rutas públicas siguen sin sesión
+      expect(autenticado).toHaveBeenCalledTimes(1)
+    })
+
+    it('elige el nombre en el idioma pedido (viene en los dos), conserva los inactivos y trae el aforo', async () => {
+      const gw = createHttpCatalogGateway({ baseUrl: '/api/catalog', authFetchFn: async () => respuesta({ items: [editable, { ...editable, id: 's2', nombre: { es: 'Solo es' } }], pagina: 1, tamano: 100, total: 2 }) })
+      const es = await gw.serviciosPrestador({}, 'es')
+      const en = await gw.serviciosPrestador({}, 'en')
+      expect(es.items[0]).toEqual({ id: 's1', nombre: 'Cascadas', categoria: 'NATURALEZA', categoriaEtiqueta: 'Naturaleza', zona: { codigo: 'minca', nombre: 'Minca' }, activo: false, capacidadDiaria: 15, tarifaBase: 75000 })
+      expect(en.items[0].nombre).toBe('Waterfalls')
+      expect(en.items[1].nombre).toBe('Solo es') // sin traducción, el español
+    })
+
+    it('un 403 (no es prestador) es un error del catálogo con su estado', async () => {
+      const gw = createHttpCatalogGateway({ baseUrl: '/api/catalog', authFetchFn: async () => respuesta({ error: 'PROHIBIDO', message: 'no', correlation_id: 'c' }, { status: 403 }) })
+      expect(await falla(gw.serviciosPrestador({}, 'es'))).toMatchObject({ status: 403 })
+    })
+  })
 })

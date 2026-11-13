@@ -7,6 +7,9 @@ import { sessionStore } from './sessionStore.js'
  */
 export const getUsuarioId = (store = sessionStore) => store.load()?.usuario?.id ?? null
 
+/** Rol de la sesión (Turista, Prestador, Entidad o Admin). Sin sesión, Turista: es el rol por defecto de quien no ha ingresado. */
+export const getRol = (store = sessionStore) => store.load()?.usuario?.rol ?? 'Turista'
+
 export const tokenSession = Object.freeze({
   isAuthenticated: (store = sessionStore, ahora = new Date()) => sesionActiva(store.load(), ahora),
 })

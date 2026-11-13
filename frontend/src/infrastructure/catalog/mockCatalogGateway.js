@@ -65,6 +65,17 @@ export function createMockCatalogGateway({ servicios = DEMO_SERVICIOS, esperaMs 
       if (!buscar(id)) throw new CatalogError(CODIGOS.NO_ENCONTRADO, 'Servicio no encontrado.', { status: 404 })
     },
 
+    /** El simulador le da al prestador con sesión todos los servicios de demostración (no hay dueños distintos). */
+    async serviciosPrestador({ pagina = 1, tamano = 100 } = {}, idioma) {
+      await sleep(esperaMs)
+      const l = lang(idioma)
+      const todos = servicios.map((s) => ({
+        id: s.id, nombre: s[l].nombre, categoria: s.categoria, categoriaEtiqueta: CATEGORIAS_DEMO[s.categoria][l],
+        zona: s.zona, activo: true, capacidadDiaria: s.capacidadDiaria, tarifaBase: s.tarifaBase,
+      }))
+      return { items: todos.slice((pagina - 1) * tamano, pagina * tamano), pagina, tamano, total: todos.length }
+    },
+
     async mapaServicios({ bbox, categorias = [], idioma }) {
       await sleep(esperaMs)
       const [minLon, minLat, maxLon, maxLat] = bbox

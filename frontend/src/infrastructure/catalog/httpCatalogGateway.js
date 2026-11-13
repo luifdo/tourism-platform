@@ -51,11 +51,12 @@ const aPunto = (f) => {
  * Adaptador HTTP del puerto CatalogGateway: habla con el catalog-service a través del Gateway (Traefik),
  * siguiendo contracts/openapi/catalog.yaml. Son rutas públicas: no lleva Authorization.
  */
-export function createHttpCatalogGateway({ baseUrl = '/api/catalog', fetchFn = (...a) => fetch(...a) } = {}) {
-  async function http(method, path, { query = [], idioma = 'es' } = {}) {
+export function createHttpCatalogGateway({ baseUrl = '/api/catalog', fetchFn = (...a) => fetch(...a), authFetchFn = fetchFn } = {}) {
+  // `authFetchFn` (fetch autenticado) solo lo usan las rutas del prestador; las públicas van sin Authorization
+  async function http(method, path, { query = [], idioma = 'es', autenticada = false } = {}) {
     const qs = query.length ? '?' + new URLSearchParams(query.filter(([, v]) => v != null && v !== '')) : ''
     let res
-    try { res = await fetchFn(`${baseUrl}${path}${qs}`, { method, headers: { Accept: 'application/json', 'Accept-Language': idioma } }) }
+    try { res = await (autenticada ? authFetchFn : fetchFn)(`${baseUrl}${path}${qs}`, { method, headers: { Accept: 'application/json', 'Accept-Language': idioma } }) }
     catch { throw new CatalogError(CODIGOS.SIN_CONEXION, 'No hay conexión con el servidor.') }
     if (res.status === 204) return null
     const data = await res.json().catch(() => null)
@@ -90,6 +91,21 @@ export function createHttpCatalogGateway({ baseUrl = '/api/catalog', fetchFn = (
 
     async registrarIntencionVisita(id) {
       await http('POST', `/servicios/${encodeURIComponent(id)}/intencion-visita`)
+    },
+
+    /** UC18 · GET /prestador/servicios (Bearer): incluye inactivos; `nombre` viene en los dos idiomas ({ es, en }). */
+    async serviciosPrestador({ pagina = 1, tamano = 100 } = {}, idioma = 'es') {
+      const data = await http('GET', '/prestador/servicios', { idioma, autenticada: true, query: [['pagina', pagina], ['tamano', tamano]] })
+      if (!Array.isArray(data.items)) throw invalida()
+      const texto = (t) => (typeof t === 'string' ? t : t?.[idioma] ?? t?.es ?? t?.en ?? '')
+      return {
+        items: data.items.filter((s) => typeof s?.id === 'string').map((s) => ({
+          id: s.id, nombre: texto(s.nombre), categoria: s.categoria, categoriaEtiqueta: s.categoria_etiqueta ?? s.categoria,
+          zona: s.zona?.nombre ? { codigo: s.zona.codigo, nombre: s.zona.nombre } : null, activo: s.activo !== false,
+          capacidadDiaria: num(s.capacidad_aforo_diario), tarifaBase: num(s.tarifa_base) ?? 0,
+        })),
+        pagina: data.pagina ?? pagina, tamano: data.tamano ?? tamano, total: data.total ?? data.items.length,
+      }
     },
 
     async mapaServicios({ bbox, zoom, categorias = [], idioma }) {

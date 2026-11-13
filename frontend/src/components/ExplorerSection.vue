@@ -1,20 +1,33 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { level } from '../data/mock'
+import { isMockBackend } from '../composition'
+import { CATEGORIAS, nivelOcupacion } from '../domain/catalog/rules'
 import { useCatalog } from '../lib/useCatalog'
+import { degradado } from '../ui/format'
 
-const { t, tm, rt, n } = useI18n()
-const { items, source, load } = useCatalog()
-onMounted(load)
-const filter = ref('all')
-const cats = ['all', 'Playa', 'Naturaleza', 'Cultura']
+const { t, te, tm, rt, n, locale, d } = useI18n()
+const { estado, cargar, masResultados } = useCatalog()
 
-const list = computed(() => items.value.filter((e) => filter.value === 'all' || e.cat === filter.value))
+const categoria = ref('all') // 'all' o un código de categoría del contrato
+const texto = ref('') // lo que se está escribiendo
+const buscado = ref('') // lo que se buscó al enviar el formulario
+const cats = ['all', ...CATEGORIAS]
+
+const filtros = () => ({ texto: buscado.value, categorias: categoria.value === 'all' ? [] : [categoria.value] })
+const recargar = () => cargar(filtros(), locale.value)
+onMounted(recargar)
+watch([categoria, buscado, locale], recargar)
+const buscar = () => { buscado.value = texto.value.trim() }
+
 const stats = computed(() => tm('explorer.stats').map((s) => ({ n: rt(s.n), l: rt(s.l) })))
 const cop = (v) => n(v, { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
 const bar = { ok: 'bg-ok', mid: 'bg-warn', high: 'bg-danger' }
 const txt = { ok: 'text-ok', mid: 'text-warn', high: 'text-danger' }
+const etiquetaFiltro = (c) => (c === 'all' ? t('explorer.filters.all') : te(`explorer.filters.${c}`) ? t(`explorer.filters.${c}`) : c)
+const errorTexto = computed(() => t(`explorer.errors.${te(`explorer.errors.${estado.error}`) ? estado.error : 'generic'}`))
+const hayMas = computed(() => estado.items.length < estado.total)
+const fecha = computed(() => (estado.actualizadoEn ? d(estado.actualizadoEn, { dateStyle: 'medium', timeStyle: 'short' }) : ''))
 </script>
 
 <template>
@@ -26,69 +39,85 @@ const txt = { ok: 'text-ok', mid: 'text-warn', high: 'text-danger' }
           <h2 class="text-[clamp(34px,4.6vw,60px)] font-bold leading-[1.1] tracking-[-.025em] text-navy-deep text-balance">{{ t('explorer.title') }}</h2>
           <p class="mt-4 text-lg leading-relaxed text-muted">{{ t('explorer.lead') }}</p>
         </div>
-        <div class="flex flex-wrap gap-2" role="group" aria-label="Categorías">
+        <div class="flex flex-wrap gap-2" role="group" :aria-label="t('explorer.categories')">
           <button
-            v-for="c in cats" :key="c" type="button" :aria-pressed="filter === c"
+            v-for="c in cats" :key="c" type="button" :aria-pressed="categoria === c"
             class="rounded-full border px-5 py-2.5 text-sm font-medium transition"
-            :class="filter === c ? 'border-navy bg-navy text-white shadow-cta' : 'border-sand/40 bg-cream text-ink-control hover:border-teal'"
-            @click="filter = c"
-          >{{ t(`explorer.filters.${c}`) }}</button>
+            :class="categoria === c ? 'border-navy bg-navy text-white shadow-cta' : 'border-sand/40 bg-cream text-ink-control hover:border-teal'"
+            @click="categoria = c"
+          >{{ etiquetaFiltro(c) }}</button>
         </div>
       </div>
 
-      <!-- Buscador multicriterio (RF-02) -->
-      <form class="glass mt-9 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 rounded-panel p-3.5 shadow-elevated" @submit.prevent>
-        <label class="rounded-xl border border-border-input bg-white px-4 py-2 transition focus-within:border-teal focus-within:shadow-[0_0_0_3px_rgba(93,154,146,.15)]">
+      <!-- Buscador por texto (RF-02): nombre y descripción, en el idioma de la interfaz -->
+      <form class="glass mt-9 flex flex-wrap gap-3 rounded-panel p-3.5 shadow-elevated" role="search" @submit.prevent="buscar">
+        <label class="min-w-[220px] flex-1 rounded-xl border border-border-input bg-white px-4 py-2 transition focus-within:border-teal focus-within:shadow-[0_0_0_3px_rgba(93,154,146,.15)]">
           <span class="block font-mono text-[10px] font-medium uppercase tracking-[.12em] text-teal-hover">{{ t('explorer.search.what') }}</span>
-          <input type="text" :placeholder="t('explorer.search.whatPh')" class="mt-0.5 w-full bg-transparent text-[15px] text-ink-control outline-none placeholder:text-[#64777E]" />
+          <input v-model="texto" type="search" maxlength="200" :placeholder="t('explorer.search.whatPh')" class="mt-0.5 w-full bg-transparent text-[15px] text-ink-control outline-none placeholder:text-[#64777E]" />
         </label>
-        <div v-for="k in ['zone', 'fee', 'date']" :key="k" class="rounded-xl border border-border-input bg-white px-4 py-2">
-          <span class="block font-mono text-[10px] font-medium uppercase tracking-[.12em] text-teal-hover">{{ t(`explorer.search.${k}`) }}</span>
-          <span class="mt-0.5 block text-[15px] text-ink-control">{{ t(`explorer.search.${k}V`) }}</span>
-        </div>
-        <button type="submit" class="min-h-14 rounded-full bg-navy px-5 font-medium text-white shadow-cta transition hover:-translate-y-0.5 hover:bg-blue">{{ t('explorer.search.go') }}</button>
+        <button type="submit" class="min-h-14 rounded-full bg-navy px-8 font-medium text-white shadow-cta transition hover:-translate-y-0.5 hover:bg-blue">{{ t('explorer.search.go') }}</button>
       </form>
 
-      <div class="mt-10 grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-6">
+      <p v-if="estado.desdeCache" class="mt-4 rounded-xl bg-warn-bg px-4 py-2.5 text-sm text-warn" role="status">{{ t('explorer.cached', { when: fecha }) }}</p>
+
+      <div v-if="estado.cargando" class="mt-10 grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-6" role="status" :aria-label="t('explorer.loading')">
+        <div v-for="k in 3" :key="k" class="h-[420px] animate-pulse rounded-card bg-cream" />
+      </div>
+
+      <div v-else-if="estado.error && !estado.items.length" class="mt-10 rounded-panel border border-danger/30 bg-danger-bg p-6 text-danger" role="alert">
+        <p>{{ errorTexto }}</p>
+        <button type="button" class="mt-3 font-semibold underline" @click="recargar">{{ t('explorer.retry') }}</button>
+      </div>
+
+      <div v-else class="mt-10 grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-6">
         <article
-          v-for="e in list" :key="e.id"
+          v-for="e in estado.items" :key="e.id"
           class="group flex flex-col overflow-hidden rounded-card border border-sand/30 bg-cream shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"
         >
-          <div class="relative h-56" :style="{ background: `linear-gradient(135deg, ${e.from}, ${e.to})` }">
+          <div class="relative h-44" :style="{ background: degradado(e.categoria) }">
             <div class="absolute left-3 top-3 flex gap-1.5 font-mono text-xs">
-              <span class="rounded-full bg-white/90 px-2.5 py-1 text-ink-control">{{ t(`explorer.filters.${e.cat}`) }}</span>
-              <span class="rounded-full bg-navy-darkest/85 px-2.5 py-1 text-white">{{ e.km }} km</span>
+              <span class="rounded-full bg-white/90 px-2.5 py-1 text-ink-control">{{ e.categoriaEtiqueta }}</span>
+              <span v-if="e.calificacion" class="rounded-full bg-navy-darkest/85 px-2.5 py-1 text-white" :title="t('explorer.reviews', { n: e.totalResenas })">★ {{ e.calificacion.toFixed(1) }}</span>
             </div>
-            <span class="absolute bottom-3 left-3 font-mono text-[10px] tracking-widest text-white/80">FOTO</span>
           </div>
           <div class="flex flex-1 flex-col p-5">
             <p class="flex items-center gap-1.5 font-mono text-xs text-muted">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" /></svg>
-              {{ t('explorer.rnt') }} · {{ e.zone }}
+              {{ t('explorer.rnt') }}<template v-if="e.zona"> · {{ e.zona.nombre }}</template>
             </p>
-            <h3 class="mt-2 text-xl font-bold leading-snug tracking-tight text-navy-darkest">{{ t(`items.${e.id}.name`) }}</h3>
-            <p class="mt-2 line-clamp-2 text-[15px] leading-relaxed text-muted">{{ t(`items.${e.id}.desc`) }}</p>
-            <div class="mt-4 rounded-xl border border-sand/30 bg-white px-3.5 py-3">
+            <h3 class="mt-2 text-xl font-bold leading-snug tracking-tight text-navy-darkest">{{ e.nombre }}</h3>
+            <p class="mt-2 text-[15px] leading-relaxed text-muted">{{ e.tipoEtiqueta }}</p>
+
+            <!-- El aforo en vivo solo lo conoce el simulador: el catálogo real no lo publica -->
+            <div v-if="e.ocupacion != null" class="mt-4 rounded-xl border border-sand/30 bg-white px-3.5 py-3">
               <div class="flex justify-between font-mono text-xs text-muted">
                 <span>{{ t('explorer.aforo') }}</span>
-                <span class="font-semibold" :class="txt[level(e.aforo)]">{{ e.aforo }}% ({{ t(`explorer.status.${level(e.aforo)}`) }})</span>
+                <span class="font-semibold" :class="txt[nivelOcupacion(e.ocupacion)]">{{ e.ocupacion }}% ({{ t(`explorer.status.${nivelOcupacion(e.ocupacion)}`) }})</span>
               </div>
-              <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-cream" role="progressbar" :aria-valuenow="e.aforo" aria-valuemin="0" aria-valuemax="100">
-                <div class="h-full rounded-full" :class="bar[level(e.aforo)]" :style="{ width: e.aforo + '%' }" />
+              <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-cream" role="progressbar" :aria-valuenow="e.ocupacion" aria-valuemin="0" aria-valuemax="100">
+                <div class="h-full rounded-full" :class="bar[nivelOcupacion(e.ocupacion)]" :style="{ width: e.ocupacion + '%' }" />
               </div>
             </div>
+
             <div class="mt-auto flex items-center justify-between border-t border-sand/30 pt-4 mt-5">
               <div>
                 <p class="font-mono text-[10px] uppercase tracking-[.12em] text-muted">{{ t('explorer.fee') }}</p>
-                <p class="text-lg font-semibold tabular-nums text-ink">{{ cop(e.fee) }}</p>
+                <p class="text-lg font-semibold tabular-nums text-ink">{{ cop(e.tarifaBase) }}</p>
+                <p v-if="e.unidadEtiqueta" class="text-xs text-muted">{{ e.unidadEtiqueta }}</p>
               </div>
               <RouterLink :to="{ name: 'service', params: { id: e.id } }" class="rounded-full bg-navy px-5 py-2.5 text-sm font-medium text-white shadow-cta transition hover:bg-blue">{{ t('explorer.details') }}</RouterLink>
             </div>
           </div>
         </article>
-        <p v-if="!list.length" class="text-muted">{{ t('explorer.empty') }}</p>
+        <p v-if="!estado.items.length" class="text-muted">{{ buscado ? t('explorer.emptySearch') : t('explorer.empty') }}</p>
       </div>
-      <p v-if="source === 'demo'" class="mt-4 font-mono text-[11px] text-muted/80">{{ t('explorer.mock') }}</p>
+
+      <div v-if="hayMas && !estado.cargando" class="mt-8 text-center">
+        <button type="button" class="rounded-full border border-navy px-8 py-3 font-medium text-navy transition hover:bg-cream disabled:opacity-50" :disabled="estado.cargandoMas" @click="masResultados(filtros(), locale)">{{ estado.cargandoMas ? t('explorer.loading') : t('explorer.more') }}</button>
+        <p v-if="estado.error" class="mt-3 text-sm text-danger" role="alert">{{ errorTexto }}</p>
+      </div>
+
+      <p v-if="isMockBackend" class="mt-4 font-mono text-[11px] text-muted/80">{{ t('explorer.mock') }}</p>
 
       <div class="mt-14 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-8">
         <div v-for="s in stats" :key="s.n + s.l">

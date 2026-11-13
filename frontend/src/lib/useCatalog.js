@@ -1,34 +1,49 @@
-import { ref } from 'vue'
-import { db } from '../infrastructure/storage/idb'
-import { experiences as demo } from '../data/mock'
+import { computed, reactive, readonly } from 'vue'
+import { catalogUseCases } from '../composition'
 
 /*
- * Catálogo con respaldo local (RF-01 + RNF-13):
- *   1. Intenta GET /api/catalog/buscar (el Service Worker lo mantiene en caché).
- *   2. Si falla, usa la última copia guardada en IndexedDB y muestra su fecha.
- *   3. Si no hay copia, muestra los datos de ejemplo.
+ * Estado reactivo del explorador para la interfaz. La lógica (normalizar la búsqueda, guardar la portada para
+ * verla sin conexión) está en el caso de uso; aquí solo se guarda lo que se pinta. Compartido: la barra de
+ * "sin conexión" muestra la misma fecha de actualización.
  */
-// Estado compartido: la barra de "sin conexión" muestra la misma fecha de actualización
-const items = ref(demo)
-const updatedAt = ref(null)
-const source = ref('demo') // 'live' | 'cache' | 'demo'
+const estado = reactive({
+  items: [], total: 0, pagina: 1,
+  cargando: false, cargandoMas: false,
+  error: null, // código del error del catálogo
+  desdeCache: false, actualizadoEn: null,
+})
+let solicitud = 0 // una búsqueda nueva descarta la respuesta de la anterior
 
 export function useCatalog() {
-  async function load() {
+  async function cargar(filtros, idioma) {
+    const mia = ++solicitud
+    estado.cargando = true; estado.cargandoMas = false; estado.error = null
     try {
-      const res = await fetch('/api/catalog/buscar', { headers: { Accept: 'application/json' } })
-      if (!res.ok || !(res.headers.get('content-type') || '').includes('json')) throw new Error('catálogo no disponible')
-      const data = await res.json()
-      items.value = data.items ?? data
-      updatedAt.value = Date.now()
-      source.value = 'live'
-      await db.put('kv', { items: items.value, updatedAt: updatedAt.value }, 'catalogo')
-      return
-    } catch { /* sin red o sin Gateway */ }
-    try {
-      const saved = await db.get('kv', 'catalogo')
-      if (saved) { items.value = saved.items; updatedAt.value = saved.updatedAt; source.value = 'cache' }
-    } catch { /* IndexedDB no disponible */ }
+      const r = await catalogUseCases.explorar({ ...filtros, pagina: 1 }, { idioma })
+      if (mia !== solicitud) return
+      Object.assign(estado, { items: r.items, total: r.total, pagina: 1, desdeCache: r.desdeCache, actualizadoEn: r.actualizadoEn })
+    } catch (e) {
+      if (mia !== solicitud) return
+      Object.assign(estado, { items: [], total: 0, error: e.code ?? 'ERROR' })
+    } finally {
+      if (mia === solicitud) estado.cargando = false
+    }
   }
-  return { items, updatedAt, source, load }
+
+  async function masResultados(filtros, idioma) {
+    if (estado.cargando || estado.cargandoMas || estado.items.length >= estado.total) return
+    const mia = solicitud
+    estado.cargandoMas = true; estado.error = null
+    try {
+      const r = await catalogUseCases.explorar({ ...filtros, pagina: estado.pagina + 1 }, { idioma })
+      if (mia !== solicitud) return
+      estado.items = [...estado.items, ...r.items]; estado.pagina += 1; estado.total = r.total
+    } catch (e) {
+      if (mia === solicitud) estado.error = e.code ?? 'ERROR'
+    } finally {
+      if (mia === solicitud) estado.cargandoMas = false
+    }
+  }
+
+  return { estado: readonly(estado), cargar, masResultados, updatedAt: computed(() => estado.actualizadoEn) }
 }

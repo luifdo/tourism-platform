@@ -22,7 +22,7 @@ npm run build && npm run preview   # prueba de la PWA y del modo sin conexión (
 
 * `vite.config.js`: Workbox precarga la aplicación (sin el video del hero) y guarda el catálogo (`/api/catalog/`, *stale-while-revalidate*) y solo las teselas OSM ya vistas.
 * `src/lib/offlineQueue.js`: cola en IndexedDB para formularios diferidos. Cada envío lleva `Idempotency-Key`, las ediciones llevan `If-Match`; un 409 queda como conflicto y un 401 pide iniciar sesión. `clearLocalData()` debe llamarse al cerrar sesión.
-* `src/lib/useCatalog.js`: catálogo en vivo, o última copia guardada con su fecha, o datos de ejemplo.
+* `src/lib/useCatalog.js`: estado del explorador. La lógica está en `application/catalog`: catálogo en vivo o, si no hay red o el catálogo no responde, la última portada guardada con su fecha.
 * Solicitar y confirmar reservas requieren conexión y se deshabilitan sin ella.
 
 ## Reservas (UC10–UC13)
@@ -30,7 +30,7 @@ npm run build && npm run preview   # prueba de la PWA y del modo sin conexión (
 * Rutas: `/servicios/:id` (ficha + reserva en 4 pasos) y `/mis-reservas`.
 * `src/lib/api.js` implementa el cliente de `contracts/openapi/booking.yaml` (`Idempotency-Key` al solicitar, `If-Match` al modificar, errores con el formato `Error`).
 * Mientras no exista el Gateway, `VITE_API_MOCK=true` (archivo `.env`, copiado de `.env.example`; si falta, por defecto es simulado) usa `src/lib/mockBookings.js`, un servicio simulado en el navegador que respeta las reglas del contrato y de la Guía Técnica del Módulo 3. Para usar el Gateway real: `VITE_API_MOCK=false`.
-* Pendiente con el backend real: la ficha del servicio sale de `src/data/mock.js` (reemplazar por `GET /api/catalog/servicios/{id}`) y falta el login (UC2) para obtener el JWT.
+* Con `VITE_API_MOCK=false` el catálogo sale de `catalog-service` (`/api/catalog/buscar`, `/servicios/{id}`, `/servicios/nombres`, `/mapa/servicios` y `/servicios/{id}/intencion-visita`): explorador con búsqueda por texto y por categoría y paginación, ficha con alertas y aviso de pagos, mapa con los servicios de la vista, nombres en *Mis reservas* y "Cómo llegar". **El catálogo real no publica el aforo en vivo** (la saturación es de analítica, solo para Admin): la barra de aforo solo aparece con el simulador. Un servicio sin fotos usa un degradado por categoría; el listado no trae imágenes.
 
 ## Instalación como app (PWA)
 
@@ -50,6 +50,7 @@ src/
 ├── application/booking/     Casos de uso (UC10–UC13) y PUERTOS: BookingGateway, Session, BookingCache, Clock.
 ├── infrastructure/          ADAPTADORES que implementan los puertos:
 │   ├── booking/             httpBookingGateway (Gateway real), mockBookingGateway (simulado), idbBookingCache
+│   ├── catalog/             httpCatalogGateway (Gateway real), mockCatalogGateway + demoCatalogo (simulado), idbCatalogCache
 │   ├── auth/                tokenSession (JWT en localStorage)
 │   └── storage/             idb (IndexedDB)
 ├── composition.js           Raíz de composición: único lugar que elige qué adaptador implementa cada puerto

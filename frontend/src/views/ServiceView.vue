@@ -4,8 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { catalogUseCases } from '../composition'
 import { CODIGOS } from '../domain/catalog/errors'
 import { nivelOcupacion } from '../domain/catalog/rules'
+import { seccionesDeAtributos } from '../domain/catalog/atributos'
 import { degradado, urlMapa } from '../ui/format'
 import BookingWidget from '../components/BookingWidget.vue'
+import ResenasServicio from '../components/reviews/ResenasServicio.vue'
 
 const props = defineProps({ id: { type: String, required: true } })
 const { t, n, locale } = useI18n()
@@ -31,7 +33,13 @@ const cop = (v) => n(v, { style: 'currency', currency: 'COP', maximumFractionDig
 const bar = { ok: 'bg-ok', mid: 'bg-warn', high: 'bg-danger' }
 const nivelAlerta = { INFORMATIVA: 'bg-sand/15 text-ink-control', PREVENTIVA: 'bg-warn-bg text-warn', CRITICA: 'bg-danger-bg text-danger' }
 const pagoClase = (a) => (a.importante ? 'border-warn/40 bg-warn-bg text-warn' : 'border-sand/40 bg-sand/10 text-ink-control')
-const portada = computed(() => servicio.value?.imagenes?.[0] ?? null)
+const secciones = computed(() => seccionesDeAtributos(servicio.value?.atributos, servicio.value?.etiquetasPorCodigo))
+// Galería: la ficha trae todas las fotos; la grande es la elegida (la primera al abrir o al cambiar de servicio)
+const fotoActiva = ref(0)
+watch(servicio, () => { fotoActiva.value = 0 })
+const fotos = computed(() => servicio.value?.imagenes ?? [])
+const portada = computed(() => fotos.value[fotoActiva.value] ?? null)
+const duracion = (min) => (min >= 60 ? `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''}` : `${min} min`)
 const enlaceMapa = computed(() => (servicio.value ? urlMapa(servicio.value.ubicacion) : '#'))
 // "Cómo llegar": cuenta la intención de visita (indicador aparte) y abre el punto en OpenStreetMap
 const comoLlegar = () => catalogUseCases.comoLlegar(props.id)
@@ -63,6 +71,14 @@ const comoLlegar = () => catalogUseCases.comoLlegar(props.id)
               <span v-if="servicio.calificacion" class="rounded-full bg-navy-darkest/85 px-3 py-1 text-white" :title="t('explorer.reviews', { n: servicio.totalResenas })">★ {{ servicio.calificacion.toFixed(1) }}</span>
             </div>
           </div>
+
+          <ul v-if="fotos.length > 1" class="mt-3 flex gap-2 overflow-x-auto pb-1" :aria-label="t('service.gallery')">
+            <li v-for="(u, i) in fotos" :key="u" class="shrink-0">
+              <button type="button" class="block overflow-hidden rounded-xl border-2 transition" :class="i === fotoActiva ? 'border-navy' : 'border-transparent opacity-70 hover:opacity-100'" :aria-label="t('service.photoOf', { n: i + 1, total: fotos.length })" :aria-current="i === fotoActiva" @click="fotoActiva = i">
+                <img :src="u" alt="" class="h-16 w-24 object-cover" loading="lazy" />
+              </button>
+            </li>
+          </ul>
 
           <p class="kicker mt-8 flex items-center gap-2"><span class="size-1.5 rounded-full bg-teal" />{{ servicio.zona?.nombre ?? servicio.tipoEtiqueta }}</p>
           <h1 class="mt-2 text-[clamp(30px,4vw,48px)] font-bold leading-[1.1] tracking-[-.02em] text-navy-darkest text-balance">{{ servicio.nombre }}</h1>
@@ -111,6 +127,35 @@ const comoLlegar = () => catalogUseCases.comoLlegar(props.id)
             <p class="mt-1">{{ servicio.avisoPagos.mensaje }}</p>
           </div>
 
+          <!-- Atributos del servicio (qué incluye, horario, punto de encuentro, qué llevar...): el catálogo los manda por bloques -->
+          <section v-if="secciones.length" class="mt-8" :aria-label="t('service.details')">
+            <h2 class="text-lg font-bold text-navy-darkest">{{ t('service.details') }}</h2>
+            <div class="mt-3 grid gap-4 sm:grid-cols-2">
+              <div v-for="sec in secciones" :key="sec.id" class="rounded-card border border-sand/30 bg-white p-5 shadow-card" :class="{ 'sm:col-span-2': sec.filas.length > 6 }">
+                <h3 class="font-mono text-[11px] uppercase tracking-[.14em] text-teal">{{ t(`attrs.sections.${sec.id}`) }}</h3>
+                <dl class="mt-3 space-y-2.5 text-sm">
+                  <div v-for="f in sec.filas" :key="f.campo">
+                    <dt class="font-mono text-[10px] uppercase tracking-[.1em] text-muted">{{ t(`attrs.fields.${f.campo}`) }}</dt>
+                    <dd class="mt-0.5 text-ink-control">
+                      <!-- Todo es texto plano: lo escribe el prestador y nunca se interpreta como HTML -->
+                      <template v-if="f.clase === 'si-no'">{{ f.valor ? t('attrs.yes') : t('attrs.no') }}</template>
+                      <template v-else-if="f.clase === 'minutos'">{{ duracion(f.valor) }}</template>
+                      <template v-else-if="f.clase === 'dinero'">{{ cop(f.valor) }}</template>
+                      <template v-else-if="f.clase === 'habitaciones'">
+                        <span v-for="(h, i) in f.valor" :key="i" class="block">{{ h.cantidad }} × {{ h.tipo }} · {{ t('attrs.upTo', { n: h.capacidad }) }}</span>
+                      </template>
+                      <template v-else-if="f.clase === 'tarifas'">
+                        <span v-for="(tf, i) in f.valor" :key="i" class="block">{{ tf.visitante }}: {{ cop(tf.valor) }}</span>
+                      </template>
+                      <template v-else-if="Array.isArray(f.valor)">{{ f.valor.join(', ') }}</template>
+                      <template v-else>{{ f.valor }}</template>
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          </section>
+
           <div class="mt-8 grid gap-4 sm:grid-cols-2">
             <div class="rounded-card border border-sand/30 bg-white p-5 shadow-card">
               <h3 class="font-mono text-[11px] uppercase tracking-[.14em] text-teal">{{ t('service.provider') }}</h3>
@@ -128,6 +173,9 @@ const comoLlegar = () => catalogUseCases.comoLlegar(props.id)
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z" /><circle cx="12" cy="10" r="2.5" /></svg>
             {{ t('service.directions') }}
           </a>
+
+          <!-- Reseñas (UC15, UC39): lectura pública, escribir y reportar piden sesión -->
+          <ResenasServicio :key="id" :servicio-id="id" />
         </article>
 
         <aside class="lg:sticky lg:top-[calc(var(--nav-h)+16px)]">

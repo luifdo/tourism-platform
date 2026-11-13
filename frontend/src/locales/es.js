@@ -1,7 +1,7 @@
 export default {
   brand: { name: 'Samaland', alt: 'adventure', tag: 'Turismo regenerativo' },
   nav: {
-    catalog: 'Explorador de experiencias', map: 'Mapa biocultural y aforos', routes: 'Rutas ancestrales', ethics: 'Compromiso ético',
+    reviews: 'Mis reseñas', entityPanel: 'Panel de la Entidad', adminPanel: 'Administración', profile: 'Mi perfil', language: 'Idioma', catalog: 'Explorador de experiencias', map: 'Mapa biocultural y aforos', routes: 'Rutas ancestrales', ethics: 'Compromiso ético',
     reservations: 'Mis reservas', panel: 'Mi panel', install: 'Instalar app', installShort: 'Instalar', assistant: 'Asistente IA', login: 'Iniciar sesión', register: 'Registrarse', menu: 'Menú',
   },
   ticker: { badge: 'Bien público digital', text: 'Sin comisiones comerciales intermedias · Proyecto de la Universidad del Magdalena', live: 'Aforos en vivo' },
@@ -9,7 +9,7 @@ export default {
     eyebrow: 'Turismo sostenible y regenerativo · Santa Marta',
     title: 'Donde la Sierra Sagrada abraza el Mar Caribe',
     lead: 'Explora experiencias operadas con amor y custodia por comunidades locales. Sin tarifas ocultas y con monitoreo de aforo para preservar los ecosistemas.',
-    searchDest: 'Destino o santuario', searchDestPh: 'Bahía Concha, Quebrada Valencia…',
+    searchDest: 'Destino o santuario', searchDestPh: 'Caminata, kayak, buceo…',
     searchWhen: 'Temporada', searchWhenV: 'Cualquier fecha', go: 'Descubrir',
     stats: [
       { k: 'Comisiones', n: '0 %', l: 'La plataforma es gratuita' },
@@ -33,7 +33,7 @@ export default {
     login: {
       title: 'Inicia sesión', lead: 'Accede para solicitar y gestionar tus reservas.', email: 'Correo electrónico', password: 'Contraseña',
       submit: 'Ingresar', submitting: 'Ingresando…', forgot: '¿Olvidaste tu contraseña?', noAccount: '¿No tienes cuenta?', createAccount: 'Crear cuenta',
-      expired: 'Tu sesión expiró. Vuelve a iniciar sesión para continuar.', resetDone: 'Tu contraseña se actualizó. Ya puedes ingresar.',
+      passwordChanged: 'Cambiaste tu contraseña. Ingresa de nuevo con la nueva.', expired: 'Tu sesión expiró. Vuelve a iniciar sesión para continuar.', resetDone: 'Tu contraseña se actualizó. Ya puedes ingresar.',
       needOnline: 'Necesitas conexión para iniciar sesión.', demoTitle: 'Modo demostración',
       demoBody: 'No hay un servidor conectado. Puedes ingresar con una cuenta de ejemplo.', demoUse: 'Usar la cuenta de ejemplo',
     },
@@ -68,8 +68,24 @@ export default {
       generic: 'No pudimos completar la acción. Intenta de nuevo.',
     },
   },
+  attrs: {
+    yes: 'Sí', no: 'No', upTo: 'hasta {n} personas',
+    sections: { comunes: 'Lo esencial', alojamiento: 'Alojamiento', experiencia: 'La experiencia', gastronomia: 'Gastronomía', entrada: 'Entrada', alquiler: 'Alquiler', transporte: 'Transporte', pagos: 'Pagos en el lugar' },
+    fields: {
+      horario: 'Horario', incluye: 'Qué incluye', no_incluye: 'Qué no incluye', idiomas_atencion: 'Idiomas de atención', accesible: 'Accesible (movilidad reducida)', mascotas: 'Admite mascotas', apto_ninos: 'Apto para niños',
+      practicas_sostenibles: 'Prácticas sostenibles', certificacion_sostenible: 'Certificación sostenible',
+      check_in: 'Entrada (check-in)', check_out: 'Salida (check-out)', habitaciones: 'Habitaciones', amenidades: 'Amenidades', desayuno_incluido: 'Desayuno incluido',
+      duracion_minutos: 'Duración', nivel_fisico: 'Nivel físico', punto_encuentro: 'Punto de encuentro', salidas_por_dia: 'Salidas por día', edad_minima: 'Edad mínima', grupo_minimo: 'Grupo mínimo', grupo_maximo: 'Grupo máximo',
+      incluye_guia: 'Incluye guía', idiomas_guia: 'Idiomas del guía', incluye_transporte: 'Incluye transporte', incluye_equipo: 'Incluye equipo', que_llevar: 'Qué llevar', requisitos: 'Requisitos',
+      tipos_cocina: 'Tipos de cocina', opciones_dietarias: 'Opciones dietarias', precio_min_persona: 'Precio mínimo por persona', precio_max_persona: 'Precio máximo por persona', requiere_reserva: 'Requiere reserva', puestos: 'Puestos', domicilio: 'Domicilio',
+      tarifas: 'Tarifas por visitante', temporadas_cierre: 'Temporadas de cierre', reglas: 'Reglas del sitio', servicios_en_sitio: 'Servicios en el sitio',
+      equipos: 'Equipos', deposito: 'Depósito', requiere_documento: 'Requiere documento',
+      origen: 'Origen', destino: 'Destino', capacidad_vehiculo: 'Capacidad del vehículo', horarios_salida: 'Horarios de salida', incluye_chaleco_salvavidas: 'Incluye chaleco salvavidas',
+      senal_internet: 'Señal de internet', medios_pago: 'Medios de pago',
+    },
+  },
   service: {
-    back: 'Volver al catálogo', notFound: 'No encontramos este servicio.', about: 'Sobre la experiencia',
+    gallery: 'Fotos del servicio', photoOf: 'Foto {n} de {total}', details: 'Detalles del servicio',     back: 'Volver al catálogo', notFound: 'No encontramos este servicio.', about: 'Sobre la experiencia',
     loading: 'Cargando el servicio…', error: 'No pudimos cargar este servicio. Inténtalo de nuevo.', retry: 'Reintentar',
     alerts: 'Alertas vigentes', payments: 'Qué dinero llevar', directions: 'Cómo llegar',
     provider: 'Prestador', phone: 'Contacto', rnt: 'RNT', fee: 'Tarifa base', perPerson: 'por persona',
@@ -134,6 +150,7 @@ export default {
     kicker: 'Turismo vivencial auténtico',
     title: 'Explorador de experiencias',
     lead: 'Planea tu destino sin comisiones. Cada servicio lo publica un prestador verificado con Registro Nacional de Turismo.',
+    advanced: { toggle: 'Más filtros', active: 'Hay filtros aplicados', zone: 'Zona', anyZone: 'Todo Santa Marta', priceMin: 'Precio desde (COP)', priceMax: 'Precio hasta (COP)', date: 'Fecha', people: 'Personas', sort: 'Ordenar por', orders: { relevancia: 'Relevancia', precio: 'Precio, de menor a mayor', calificacion: 'Mejor calificados' }, note: 'Con fecha y personas solo salen los servicios con cupo ese día.', clear: 'Quitar filtros' },
     search: { what: 'Qué buscas', whatPh: 'Atractivo, actividad…', go: 'Buscar' },
     categories: 'Categorías',
     filters: { all: 'Todas', PLAYA: 'Playas', NATURALEZA: 'Naturaleza', CULTURA: 'Cultura', GASTRONOMIA: 'Gastronomía', AVENTURA: 'Aventura', ALOJAMIENTO: 'Alojamiento', TRANSPORTE: 'Transporte' },
@@ -166,14 +183,14 @@ export default {
     open: 'Abierto', caution: 'Precaución', saturated: 'Saturado',
     updated: 'Datos de ejemplo · OpenStreetMap', source: 'Mapa © OpenStreetMap',
     aria: 'Mapa de servicios turísticos', empty: 'No hay servicios en esta zona del mapa.', error: 'No pudimos actualizar el mapa. Mueve el mapa para reintentar.',
-    gis: 'Ver visor GIS completo',
+    layers: { title: 'Capas del mapa', zones: 'Zonas y su saturación', alerts: 'Alertas oficiales' },
   },
   routes: {
     kicker: 'Territorio sagrado',
     title: 'Rutas de la Sierra al Litoral',
     lead: 'Tres corredores diseñados para entender la interdependencia entre el agua de la Sierra y el arrecife coralino.',
     label: 'Ruta',
-    itinerary: 'Ver itinerario',
+    itinerary: 'Ver experiencias',
   },
   ethics: {
     kicker: 'Gobernanza ética y transparencia',
@@ -186,8 +203,8 @@ export default {
     cta: 'Solicitar reserva',
   },
   provider: {
-    title: 'Panel del prestador', lead: 'Responde las solicitudes de tus servicios y administra los cupos y las tarifas de cada día.',
-    tabs: { solicitudes: 'Solicitudes', calendario: 'Calendario' },
+    title: 'Panel del prestador', lead: 'Atiende las solicitudes, administra tus calendarios, tus servicios y sus reseñas, mira tus métricas y verifica tu cuenta.',
+    tabs: { solicitudes: 'Solicitudes', calendario: 'Calendario', servicios: 'Mis servicios', resenas: 'Reseñas', metricas: 'Métricas', negocio: 'Mi negocio' },
     loading: 'Cargando…', retry: 'Reintentar', working: 'Enviando…', cancel: 'Cancelar', more: 'Ver más', save: 'Guardar', edit: 'Editar', add: 'Agregar',
     offline: 'Sin conexión: confirmar, rechazar y editar el calendario necesitan internet.',
     noServices: 'Aún no tienes servicios publicados. Cuando publiques uno aparecerá aquí.',
@@ -260,8 +277,8 @@ export default {
     legal: 'Plataforma gratuita · Universidad del Magdalena · Ley 1581 de 2012',
   },
   routeItems: {
-    1: { name: 'Sendero de la Niebla a la Mar', desc: 'Descenso a pie desde San Pedro de la Sierra por fincas cafeteras agroforestales hasta las playas del Parque Tayrona.', meta: '3 días · dificultad media' },
-    2: { name: 'La Danza de las Aguas Vivas', desc: 'Navegación silenciosa en kayak por los meandros del Río Don Diego con avistamiento de aves endémicas.', meta: '1 día · dificultad baja' },
-    3: { name: 'Custodios del Arrecife Coralino', desc: 'Taller práctico de restauración coralina y buceo regenerativo en bahías protegidas, con biólogos y pescadores artesanales.', meta: '2 días · buceo Open Water' },
+    1: { name: 'Sendero de la Niebla a la Mar', desc: 'Descenso a pie desde San Pedro de la Sierra por fincas cafeteras agroforestales hasta las playas del Parque Tayrona.', meta: '3 días · dificultad media', q: 'caminata' },
+    2: { name: 'La Danza de las Aguas Vivas', desc: 'Navegación silenciosa en kayak por los meandros del Río Don Diego con avistamiento de aves endémicas.', meta: '1 día · dificultad baja', q: 'kayak' },
+    3: { name: 'Custodios del Arrecife Coralino', desc: 'Taller práctico de restauración coralina y buceo regenerativo en bahías protegidas, con biólogos y pescadores artesanales.', meta: '2 días · buceo Open Water', q: 'buceo' },
   },
 }

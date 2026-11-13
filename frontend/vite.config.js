@@ -39,27 +39,27 @@ export default defineConfig({
       },
       workbox: {
         // La aplicación se sirve "cache first"; el video del hero (5 MB) no se guarda sin conexión
-        globPatterns: ['**/*.{js,css,html,png,jpg,svg,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,png,jpg,svg,webmanifest,woff2}'], // woff2: las fuentes van con la app (autoalojadas)
         globIgnores: ['**/*.mp4'],
         navigateFallback: `${base}index.html`,
         navigateFallbackDenylist: [/\/api\//],
         runtimeCaching: [
           {
-            // Catálogo: stale-while-revalidate (RNF-13). Solo lecturas públicas.
-            urlPattern: ({ url, request }) => request.method === 'GET' && url.pathname.startsWith('/api/catalog/'),
+            // Catálogo PÚBLICO: stale-while-revalidate (RNF-13). Solo las rutas públicas del gateway y solo peticiones SIN sesión: lo
+            // que lleva Authorization es de una persona (métricas, servicios del prestador, analítica de la Entidad...) y esta caché
+            // la sirve a cualquiera, antes de revisar nada, y sobrevive al cierre de sesión. Nombre nuevo (-v2): la caché «catalogo»
+            // de versiones anteriores traía rutas privadas y se borra al arrancar (lib/limpiezaLocal.js).
+            urlPattern: ({ url, request }) =>
+              request.method === 'GET' && !request.headers.has('Authorization')
+              && /^\/api\/catalog\/(servicios(\/[^/]+)?|buscar|zonas|alertas|mapa\/[^/]+)$/.test(url.pathname),
             handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'catalogo', expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 } },
+            options: { cacheName: 'catalogo-publico-v2', expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 } },
           },
           {
             // Mapa: solo las teselas ya vistas (política de uso de OpenStreetMap), nunca descarga masiva
             urlPattern: ({ url }) => url.hostname.endsWith('tile.openstreetmap.org'),
             handler: 'CacheFirst',
             options: { cacheName: 'teselas-osm', expiration: { maxEntries: 150, maxAgeSeconds: 60 * 60 * 24 * 14 }, cacheableResponse: { statuses: [0, 200] } },
-          },
-          {
-            urlPattern: ({ url }) => url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com',
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'fuentes', cacheableResponse: { statuses: [0, 200] } },
           },
         ],
       },

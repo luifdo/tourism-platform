@@ -20,13 +20,16 @@ export const RUTAS = Object.freeze({
   restablecer: '/auth/restablecer', // propuesta
 })
 
-export function createHttpAuthGateway({ baseUrl = '/api/iam', fetchFn = (...a) => fetch(...a), rutas = RUTAS } = {}) {
+// Tiempo máximo de cada llamada a IAM: sin él, una renovación colgada dejaría la sesión esperando para siempre.
+const TIEMPO_MAXIMO_MS = 15_000
+
+export function createHttpAuthGateway({ baseUrl = '/api/iam', fetchFn = (...a) => fetch(...a), rutas = RUTAS, tiempoMaximoMs = TIEMPO_MAXIMO_MS } = {}) {
   async function http(method, path, { body, token } = {}) {
     const headers = { Accept: 'application/json' }
     if (body) headers['Content-Type'] = 'application/json'
     if (token) headers.Authorization = `Bearer ${token}`
     let res
-    try { res = await fetchFn(`${baseUrl}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined }) }
+    try { res = await fetchFn(`${baseUrl}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(tiempoMaximoMs) }) }
     catch { throw new AuthError(C.SIN_CONEXION, 'No hay conexión con el servidor.') }
     if (res.status === 204) return null
     const data = await res.json().catch(() => null)

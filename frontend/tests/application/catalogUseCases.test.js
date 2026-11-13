@@ -10,6 +10,9 @@ const gw = (extra = {}) => ({
   registrarIntencionVisita: vi.fn(async () => {}),
   mapaServicios: vi.fn(async () => []),
   serviciosPrestador: vi.fn(async () => ({ items: [], pagina: 1, tamano: 100, total: 0 })),
+  zonas: vi.fn(async () => [{ codigo: 'taganga', nombre: 'Taganga' }]),
+  mapaZonas: vi.fn(async () => []),
+  mapaAlertas: vi.fn(async () => []),
   ...extra,
 })
 const memoria = (inicial = null) => { let v = inicial; return { read: vi.fn(async () => v), write: vi.fn(async (x) => { v = x }) } }
@@ -26,7 +29,7 @@ describe('casos de uso del catálogo', () => {
     it('normaliza la búsqueda antes de pedirla', async () => {
       const g = gw()
       await crear(g).explorar({ texto: '  mar ', categorias: ['PLAYA', 'X'], pagina: 0 }, { idioma: 'en' })
-      expect(g.buscarServicios).toHaveBeenCalledWith({ texto: 'mar', categorias: ['PLAYA'], pagina: 1, tamano: 12, idioma: 'en' })
+      expect(g.buscarServicios).toHaveBeenCalledWith({ texto: 'mar', categorias: ['PLAYA'], pagina: 1, tamano: 12, idioma: 'en', zona: null, precioMin: null, precioMax: null, fecha: null, personas: null, orden: null })
     })
 
     it('guarda la portada (página 1 sin filtros) para verla sin conexión', async () => {
@@ -162,5 +165,32 @@ describe('casos de uso del catálogo', () => {
       const g = gw({ serviciosPrestador: vi.fn().mockRejectedValue(new CatalogError('ERROR', 'no', { status: 403 })) })
       expect((await falla(crear(g).misServicios())).status).toBe(403)
     })
+  })
+})
+
+describe('filtros del explorador', () => {
+  it('pasa zona, precios, fecha, personas y orden ya normalizados', async () => {
+    const g = gw(); const uc = crear(g)
+    await uc.explorar({ texto: ' kayak ', zona: ' taganga ', precioMin: '200000', precioMax: '50000', fecha: '2026-12-01', personas: '3', orden: 'precio' }, { idioma: 'es' })
+    expect(g.buscarServicios).toHaveBeenCalledWith(expect.objectContaining({ texto: 'kayak', zona: 'taganga', precioMin: 50000, precioMax: 200000, fecha: '2026-12-01', personas: 3, orden: 'precio' }))
+  })
+  it('descarta lo inválido en vez de mandarlo (fecha mal escrita, orden desconocido, personas 0, precio negativo)', async () => {
+    const g = gw(); const uc = crear(g)
+    await uc.explorar({ fecha: '1/12/2026', orden: 'azar', personas: 0, precioMin: -5, precioMax: '' }, { idioma: 'es' })
+    expect(g.buscarServicios).toHaveBeenCalledWith(expect.objectContaining({ fecha: null, orden: null, personas: null, precioMin: null, precioMax: null }))
+  })
+  it('personas sin fecha no se manda (el servicio respondería 400)', async () => {
+    const g = gw(); await crear(g).explorar({ personas: 4 }, { idioma: 'es' })
+    expect(g.buscarServicios).toHaveBeenCalledWith(expect.objectContaining({ personas: null, fecha: null }))
+  })
+  it('una búsqueda con filtros no es la portada: no se guarda para verla sin conexión', async () => {
+    const cache = memoria(); const uc = crear(gw(), cache)
+    await uc.explorar({ zona: 'minca' }, { idioma: 'es' })
+    expect(cache.write).not.toHaveBeenCalled()
+    await uc.explorar({}, { idioma: 'es' })
+    expect(cache.write).toHaveBeenCalledTimes(1)
+  })
+  it('las zonas del filtro vienen del catálogo', async () => {
+    expect(await crear(gw()).zonas('en')).toEqual([{ codigo: 'taganga', nombre: 'Taganga' }])
   })
 })

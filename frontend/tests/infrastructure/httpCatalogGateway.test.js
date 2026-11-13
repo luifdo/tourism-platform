@@ -190,3 +190,17 @@ describe('adaptador HTTP del catálogo', () => {
     })
   })
 })
+
+describe('filtros de /buscar y zonas', () => {
+  it('manda zona, precios, fecha, personas y orden con los nombres del contrato, y omite los vacíos', async () => {
+    const fetchFn = vi.fn(async () => respuesta({ items: [], pagina: 1, tamano: 12, total: 0 }))
+    await crear(fetchFn).buscarServicios({ texto: 'kayak', categorias: [], zona: 'taganga', precioMin: 50000, precioMax: null, fecha: '2026-12-01', personas: 3, orden: 'precio', pagina: 1, tamano: 12, idioma: 'es' })
+    expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/buscar?texto=kayak&zona=taganga&precio_min=50000&fecha=2026-12-01&personas=3&orden=precio&pagina=1&tamano=12')
+  })
+  it('GET /zonas devuelve código y nombre en el idioma pedido', async () => {
+    const fetchFn = vi.fn(async () => respuesta([{ id: 'z1', codigo: 'minca', nombre: 'Minca', centro: { lat: 1, lon: 2 } }, { sin: 'codigo' }]))
+    expect(await crear(fetchFn).zonas('en')).toEqual([{ codigo: 'minca', nombre: 'Minca' }])
+    expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/zonas')
+    expect(fetchFn.mock.calls[0][1].headers['Accept-Language']).toBe('en')
+  })
+})

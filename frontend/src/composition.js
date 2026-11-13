@@ -3,6 +3,9 @@ import { createAuthUseCases } from './application/auth/useCases'
 import { createAssistantUseCases } from './application/assistant/useCases'
 import { createCatalogUseCases } from './application/catalog/useCases'
 import { createProviderUseCases } from './application/provider/useCases'
+import { createAccountUseCases, createAdminUseCases, createEntityUseCases, createOfferUseCases, createReviewUseCases } from './application/gestion/useCases'
+import { createHttpAccountGateway, createHttpAdminGateway, createHttpEntityGateway, createHttpOfferGateway, createHttpReviewGateway } from './infrastructure/gestion/httpGestionGateways'
+import { createMockGestion } from './infrastructure/gestion/mockGestion'
 import { createHttpBookingGateway } from './infrastructure/booking/httpBookingGateway'
 import { createMockBookingGateway } from './infrastructure/booking/mockBookingGateway'
 import { demoServices } from './infrastructure/booking/demoServices'
@@ -13,7 +16,7 @@ import { createHttpCatalogGateway } from './infrastructure/catalog/httpCatalogGa
 import { createMockCatalogGateway } from './infrastructure/catalog/mockCatalogGateway'
 import { idbCatalogCache } from './infrastructure/catalog/idbCatalogCache'
 import { createHttpAuthGateway } from './infrastructure/auth/httpAuthGateway'
-import { CUENTA_DEMO, createMockAuthGateway } from './infrastructure/auth/mockAuthGateway'
+import { CUENTA_DEMO, CUENTAS_DEMO, createMockAuthGateway } from './infrastructure/auth/mockAuthGateway'
 import { sessionStore } from './infrastructure/auth/sessionStore'
 import { getRol, getUsuarioId, tokenSession } from './infrastructure/auth/tokenSession'
 import { createAuthorizedFetch } from './infrastructure/auth/authorizedFetch'
@@ -31,6 +34,8 @@ export const isMockBackend = import.meta.env.VITE_API_MOCK !== 'false'
 
 /** Cuenta de ejemplo del simulador (null con el backend real) */
 export const cuentaDemo = isMockBackend ? CUENTA_DEMO : null
+/** Cuentas de cada rol del simulador (Turista, Prestador, Entidad, Admin); lista vacía con el backend real */
+export const cuentasDemo = isMockBackend ? CUENTAS_DEMO : []
 
 /* ---- Autenticación (iam-service) ---- */
 const authGateway = isMockBackend ? createMockAuthGateway({ clock }) : createHttpAuthGateway({ baseUrl: '/api/iam' })
@@ -75,3 +80,15 @@ export const assistantUseCases = createAssistantUseCases({ gateway: assistantGat
 const catalogGateway = isMockBackend ? createMockCatalogGateway() : createHttpCatalogGateway({ baseUrl: '/api/catalog', authFetchFn: authorizedFetch }) // solo las rutas del prestador llevan sesión
 
 export const catalogUseCases = createCatalogUseCases({ gateway: catalogGateway, cache: idbCatalogCache, clock })
+
+/* ---- Gestión: perfil (UC4), documentos (UC37), oferta (UC17/18/22), reseñas, administración y entidad ---- */
+// El simulador comparte un único estado (cuentas, documentos, reseñas, alertas) entre los puertos
+const mock = isMockBackend
+  ? createMockGestion({ directorio: authGateway.directorio, usuario: () => ({ id: getUsuarioId(), rol: getRol() }), clock })
+  : null
+
+export const accountUseCases = createAccountUseCases({ gateway: mock?.account ?? createHttpAccountGateway({ baseUrl: '/api/iam', fetchFn: authorizedFetch }) })
+export const adminUseCases = createAdminUseCases({ gateway: mock?.admin ?? createHttpAdminGateway({ baseUrl: '/api/iam', fetchFn: authorizedFetch }) })
+export const reviewUseCases = createReviewUseCases({ gateway: mock?.review ?? createHttpReviewGateway({ baseUrl: '/api/reviews', fetchFn: authorizedFetch }) })
+export const offerUseCases = createOfferUseCases({ gateway: mock?.offer ?? createHttpOfferGateway({ baseUrl: '/api/catalog', fetchFn: authorizedFetch }) })
+export const entityUseCases = createEntityUseCases({ gateway: mock?.entity ?? createHttpEntityGateway({ baseUrl: '/api/catalog', fetchFn: authorizedFetch }) })

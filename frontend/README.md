@@ -114,7 +114,8 @@ cd infra && docker compose up -d --build frontend
 - **`VITE_API_MOCK` y `VITE_BASE` se fijan al compilar** (argumentos del build; por defecto `false` y `/`). Todo lo que empieza con `VITE_` queda dentro de los archivos públicos: nunca pongas claves ahí.
 - `nginx.conf`: fallback a `index.html` para las rutas de Vue Router; **404** en `/internal`, `/health` y `/metrics`; **404 en JSON** para cualquier `/api/...` que ningún servicio tenga; `index.html`, `sw.js` y el manifiesto sin caché (para que se actualice la PWA) y `/assets/` con hash por un año.
 - Para desarrollar con recarga en caliente: `VITE_API_MOCK=false` en `frontend/.env` y `npm run dev`; el proxy de Vite manda `/api` a `localhost:80` (el gateway, o un túnel SSH a la VM).
-- Pendiente: Content-Security-Policy y los manifiestos de k8s del frontend.
+- **Content-Security-Policy** (`nginx.conf`): solo código propio (sin scripts en línea ni `eval`); fuentes **autoalojadas** (`@fontsource`, sin terceros), teselas de OpenStreetMap y fotos por https. Además `Permissions-Policy` y `Cross-Origin-Opener-Policy`. `nginx.conf` es una **plantilla**: la imagen sustituye `${CSP_ALMACENAMIENTO}` al arrancar (solo las variables `CSP_*`; las de nginx como `$uri` quedan intactas). En el compose vale `S3_ENDPOINT_PUBLICO`, el mismo origen de las URL firmadas con que el prestador sube fotos; sin esa variable, `http://localhost:8333`. Si cambias el dominio del almacenamiento y no la variable, la subida de fotos queda bloqueada por la política (el navegador lo dice en la consola).
+- Pendiente: los manifiestos de k8s del frontend.
 
 ## Panel del prestador (UC19, UC20)
 
@@ -125,3 +126,46 @@ Ruta `/prestador`, solo para el rol **Prestador** (`router.js`; quien tiene otro
 * Cada intento lleva una `Idempotency-Key` nueva (no una por reintento); `PETICION_EN_PROCESO` e `IDEMPOTENCIA_NO_DISPONIBLE` se reintentan **con la misma clave** hasta 3 veces (INTEGRACION.md §2.3). Los servicios del selector salen de `GET /api/catalog/prestador/servicios`.
 * **Sin conexión**, confirmar, rechazar y editar el calendario se deshabilitan. La Guía §2 prevé editar el calendario sin conexión con la cola de envíos pendientes: **no está hecho**.
 * En modo simulado un prestador atiende todos los servicios de demostración; ve solicitudes de ejemplo y lo que piden los turistas. Lo que hace se refleja en lo que ve el turista (estado de su reserva y cupos y tarifas del día).
+
+## Perfil, oferta, reseñas, administración y Entidad
+
+Toda la API ya existía (`contracts/openapi/`); estas pantallas la usan. Cada área tiene su **puerto** (`application/gestion/ports.js`), sus **casos de uso** (`application/gestion/useCases.js`, que validan lo que se sabe sin red), un **adaptador HTTP** (`infrastructure/gestion/httpGestionGateways.js`, sobre un cliente JSON común en `infrastructure/http/apiClient.js` que traduce los errores de iam, catalog y review a `GestionError`) y un **adaptador simulado** (`infrastructure/gestion/mockGestion.js`) para GitHub Pages. Las reglas puras (formulario de una oferta, reseñas, rangos) están en `domain/gestion/`.
+
+| Rol | Ruta | Qué hace |
+|---|---|---|
+| Todos | `/perfil` | **UC4**: nombre e idioma; cambiar la contraseña (el servicio cierra todas las sesiones: se vuelve a ingresar); borrar la cuenta y los datos (Ley 1581, pide la contraseña). |
+| Turista | `/mis-resenas` y la ficha | **UC15**: servicios que ya disfrutó y puede reseñar, escribir y editar su reseña. **UC39**: reportar una reseña ajena. La lectura (resumen, distribución, aspectos) es pública. |
+| Prestador | `/prestador#servicios` | **UC17/UC18**: crear, editar, desactivar y reactivar ofertas. El formulario cambia con el tipo de oferta (`domain/gestion/servicio.js`), sugiere coordenadas desde una dirección y sube las fotos directo al almacenamiento con una URL firmada. Crear y editar llevan `Idempotency-Key`; editar, `If-Match`. |
+| Prestador | `#resenas`, `#metricas`, `#negocio` | **UC21** responder reseñas (y reportar); **UC22** métricas por servicio; **UC37** subir RNT y RUT (PDF, JPG o PNG de hasta 5 MB) y ver el motivo si se rechazan; perfil comercial (teléfono, dirección, política de cancelación). |
+| Admin | `/admin` | **UC28** cola de prestadores: abrir los documentos (enlace de 5 minutos), aprobar o rechazar con motivo por documento. **UC27** usuarios y roles. **UC29** moderar reseñas reportadas. **UC33** bitácora de auditoría con filtros. |
+| Entidad y Admin | `/entidad` | **UC25** tablero y mapa de calor; **UC23** demanda (barras por estado, día/semana/mes) e intenciones de visita; **UC26** alertas oficiales por zona o servicio; **UC38** reporte CSV (siempre en español, para Excel). |
+
+* Los accesos del menú dependen del rol (`AppNavbar.vue`); las rutas piden el rol y quien tiene otro vuelve al inicio.
+* Un **401 con código propio** (p. ej. `CREDENCIALES_INVALIDAS` al confirmar la contraseña) **no** es sesión vencida; solo `NO_AUTENTICADO` y `TOKEN_INVALIDO` mandan a ingresar.
+* En modo simulado hay una cuenta de ejemplo por rol (misma contraseña, botones en `/ingresar`); el paquete de producción no las trae (`VITE_API_MOCK=false`). El simulador guarda su estado en el navegador; **no** está conectado al catálogo simulado: una oferta nueva no aparece en el explorador de ejemplo.
+* `tests/i18n.test.js` comprueba que español e inglés tengan las mismas claves y que toda clave fija que usa el código exista.
+
+## Explorador y mapa públicos (UC8, UC9, UC16)
+
+* **Buscador de la portada**: lleva al explorador con lo escrito (`/?q=texto#catalogo`); las rutas de «Rutas ancestrales» abren el explorador con una búsqueda real.
+* **Más filtros** (`/api/catalog/buscar`): zona, precio desde/hasta, fecha, personas y orden (relevancia, precio, calificación). Un precio mínimo mayor que el máximo se intercambia; `personas` sin `fecha` no se manda (el servicio respondería 400). Una búsqueda con filtros nunca se guarda como «portada» para verla sin conexión.
+* **Ficha**: atributos del servicio por bloques (`domain/catalog/atributos.js`: qué incluye, horario, punto de encuentro, qué llevar, habitaciones, requisitos…), galería de fotos y reseñas.
+* **Mapa**: capas opcionales de **zonas** (con su nivel de saturación) y de **alertas oficiales**, de `/mapa/zonas` y `/mapa/alertas`.
+* El selector de idioma está en la cinta, en la barra fija (desde tablet) y en el menú del móvil.
+
+**No está hecho:** editar el calendario sin conexión (cola) y subir fotos sin conexión. Las reseñas se probaron contra el servicio real solo en lectura: escribirlas exige una reserva finalizada, que el stack local no genera sin esperar la fecha.
+
+## Seguridad (revisión OWASP Top 10:2025)
+
+* **Service Worker**: solo guarda las rutas **públicas** del catálogo (`servicios`, `buscar`, `zonas`, `alertas`, `mapa`) y solo peticiones **sin** `Authorization`, en la caché `catalogo-publico-v2`. Antes guardaba todo `/api/catalog/`, incluidas métricas, servicios del prestador y analítica de la Entidad, y las servía a quien entrara después; la caché vieja `catalogo` se borra al arrancar (`lib/limpiezaLocal.js`). `tests/lib.limpiezaLocal.test.js` fija qué rutas se cachean y cuáles no.
+* Los tokens siguen en `localStorage` (limitación conocida: un XSS tomaría la sesión). Lo mitigan la CSP sin scripts en línea y que no haya `v-html`/`innerHTML`/`eval` (se vigila con grep en la revisión); el remedio de fondo es una cookie HttpOnly desde IAM.
+* Errores sin atrapar: `app.config.errorHandler`, `unhandledrejection` y `error` muestran un aviso con una referencia (`lib/errorGlobal.js`); los errores de servicio muestran su `correlation_id` cuando no se saben explicar. Las `Idempotency-Key` usan `nuevaClave()`, que no depende de `crypto.randomUUID` (no existe en HTTP no seguro).
+* Las GitHub Actions de `frontend-ci.yml` y `frontend-pages.yml` van fijadas por hash de commit (con la versión en un comentario); las de los demás servicios siguen por etiqueta.
+
+## Portada con scroll (fotogramas, no video)
+
+La portada se mueve con el scroll dibujando en un `canvas` el fotograma que toca (`src/components/HeroScroll.vue`, `src/lib/heroFrames.js`). Antes movía el `currentTime` de un `<video>`; en **iOS con el modo de bajo consumo** (y en cualquier navegador que no deje reproducir sin gesto) el video no se movía nunca. Las imágenes se cargan siempre, en Safari, Chrome y demás.
+
+* 120 cuadros WebP en `public/hero/d/` (1280×720, 5,4 MB) y `public/hero/m/` (406×720, el centro del cuadro, 2,3 MB). Un teléfono en vertical baja solo `m/`; lo demás, `d/`.
+* Se piden por capas (inicio y final, de a 16, de a 8, de a 4, de a 2 y el resto, de a cuatro a la vez): con pocos cuadros el scroll ya mueve la imagen y se afina solo. Mientras no llega ninguno se ve el póster. Con ahorro de datos (`saveData`) solo se piden uno de cada tres; con movimiento reducido, solo el primero.
+* El video original queda en `media-src/hero.mp4` (no se sirve) con las instrucciones para regenerar los cuadros.

@@ -39,6 +39,9 @@ const aDetalle = (s) => ({
   },
   alertas: (s.alertas ?? []).map((a) => ({ id: a.id, nivel: a.nivel, nivelEtiqueta: a.nivel_etiqueta ?? a.nivel, mensaje: a.mensaje, fechaExpiracion: a.fecha_expiracion })),
   etiquetas: Object.values(s.etiquetas ?? {}).filter((e) => typeof e === 'string'),
+  atributos: s.atributos && typeof s.atributos === 'object' ? s.atributos : {},
+  // código fijo -> texto en el idioma pedido (p. ej. NIVEL_FISICO MEDIO -> "Medio"); lo usan los atributos
+  etiquetasPorCodigo: Object.fromEntries(Object.entries(s.etiquetas ?? {}).filter(([, e]) => typeof e === 'string')),
   avisoPagos: s.aviso_pagos ? { importante: !!s.aviso_pagos.importante, recomendacionDinero: s.aviso_pagos.recomendacion_dinero, mensaje: s.aviso_pagos.mensaje } : null,
 })
 
@@ -73,10 +76,19 @@ export function createHttpCatalogGateway({ baseUrl = '/api/catalog', fetchFn = (
   const invalida = () => new CatalogError(CODIGOS.RESPUESTA_INVALIDA, 'La respuesta del catálogo no tiene el formato esperado.')
 
   return {
-    async buscarServicios({ texto, categorias = [], pagina = 1, tamano, idioma }) {
-      const data = await http('GET', '/buscar', { idioma, query: [['texto', texto], ['categoria', categorias.join(',')], ['pagina', pagina], ['tamano', tamano]] })
+    async buscarServicios({ texto, categorias = [], zona, precioMin, precioMax, fecha, personas, orden, pagina = 1, tamano, idioma }) {
+      const data = await http('GET', '/buscar', {
+        idioma,
+        query: [['texto', texto], ['categoria', categorias.join(',')], ['zona', zona], ['precio_min', precioMin], ['precio_max', precioMax], ['fecha', fecha], ['personas', personas], ['orden', orden], ['pagina', pagina], ['tamano', tamano]],
+      })
       if (!Array.isArray(data.items)) throw invalida()
       return { items: data.items.map(aServicio), pagina: data.pagina ?? pagina, tamano: data.tamano ?? tamano, total: data.total ?? data.items.length }
+    },
+
+    async zonas(idioma) {
+      const data = await http('GET', '/zonas', { idioma })
+      if (!Array.isArray(data)) throw invalida()
+      return data.filter((z) => typeof z?.codigo === 'string').map((z) => ({ codigo: z.codigo, nombre: z.nombre ?? z.codigo }))
     },
 
     async obtenerServicio(id, idioma) {
@@ -114,6 +126,24 @@ export function createHttpCatalogGateway({ baseUrl = '/api/catalog', fetchFn = (
       const data = await http('GET', '/mapa/servicios', { idioma, query: [['bbox', bbox.join(',')], ['zoom', Math.round(zoom)], ['categoria', categorias.join(',')]] })
       if (!Array.isArray(data.features)) throw invalida()
       return data.features.map(aPunto).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon))
+    },
+
+    async mapaZonas({ bbox, zoom, idioma }) {
+      const data = await http('GET', '/mapa/zonas', { idioma, query: [['bbox', bbox.join(',')], ['zoom', Math.round(zoom)]] })
+      if (!Array.isArray(data.features)) throw invalida()
+      return data.features.filter((f) => f?.geometry).map((f) => ({
+        codigo: f.properties?.codigo, nombre: f.properties?.nombre ?? f.properties?.codigo, indice: num(f.properties?.indice),
+        nivel: f.properties?.nivel ?? null, nivelEtiqueta: f.properties?.nivel_etiqueta ?? null, geometry: f.geometry,
+      }))
+    },
+
+    async mapaAlertas({ bbox, idioma }) {
+      const data = await http('GET', '/mapa/alertas', { idioma, query: [['bbox', bbox.join(',')]] })
+      if (!Array.isArray(data.features)) throw invalida()
+      return data.features.filter((f) => f?.geometry).map((f) => ({
+        id: f.properties?.id, nivel: f.properties?.nivel, nivelEtiqueta: f.properties?.nivel_etiqueta ?? f.properties?.nivel, mensaje: f.properties?.mensaje ?? '',
+        servicioId: f.properties?.servicio_id ?? null, zona: f.properties?.zona ?? null, geometry: f.geometry,
+      }))
     },
   }
 }

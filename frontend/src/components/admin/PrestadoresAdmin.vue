@@ -40,7 +40,11 @@ const abrirAccion = (p, modo) => Object.assign(accion, { id: p.usuario_id, modo,
 
 async function ver(d) {
   verError.value = ''
-  try { const { url } = await adminUseCases.urlDocumento(d.id); window.open(url, '_blank', 'noopener,noreferrer') }
+  try {
+    const { url } = await adminUseCases.urlDocumento(d.id)
+    if (!/^(https?|blob):/i.test(url)) throw Object.assign(new Error('URL inesperada'), { code: 'ERROR' }) // solo se abre un enlace web o un blob del simulador
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
   catch (e) { if (!sesionVencida(e)) verError.value = mensaje(e, 'admin') }
 }
 async function confirmar(p) {

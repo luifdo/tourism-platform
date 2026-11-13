@@ -42,6 +42,14 @@ jobs:
           VITE_BASE: /
           VITE_API_MOCK: "false"
 
+      # Las cuentas de ejemplo son del simulador: en el paquete que se sirve en producción no deben aparecer.
+      - name: El paquete real no trae cuentas de ejemplo
+        run: |
+          if grep -rqE 'samaland\.demo|maria\.perez@|Tayrona2026' dist; then
+            echo "El paquete compilado contra el gateway real contiene cuentas de ejemplo del simulador." >&2
+            exit 1
+          fi
+
       - name: Compilar con el simulador (Pages)
         run: npm run build
         env:

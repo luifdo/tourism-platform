@@ -15,16 +15,23 @@ const menu = ref(false)
 const userMenu = ref(false)
 const saliendo = ref(false)
 const zonaUsuario = ref(null)
-const cabecera = ref(null)
+const panelMovil = ref(null)
+const botonMenu = ref(null)
 
 // El menú del móvil y el de la cuenta no pueden estar abiertos a la vez (se tapaban entre sí): abrir uno cierra el otro.
 const cerrarTodo = () => { menu.value = false; userMenu.value = false }
 const alternarMenu = () => { userMenu.value = false; menu.value = !menu.value }
 const alternarUsuario = () => { menu.value = false; userMenu.value = !userMenu.value }
-// Un clic fuera de la barra (en Opera y otros el botón no recibe foco al hacer clic, así que el focusout no basta) o Escape lo cierran
-const alClicFuera = (e) => { if (cabecera.value && !cabecera.value.contains(e.target)) cerrarTodo() }
-onMounted(() => document.addEventListener('click', alClicFuera))
-onBeforeUnmount(() => document.removeEventListener('click', alClicFuera))
+// Tocar o hacer clic fuera cierra lo que esté abierto. Se escucha `pointerdown` y no `click`: en iOS/Safari un toque sobre un elemento que
+// no es un botón ni un enlace no genera `click`, y el menú no se cerraba en el móvil; tampoco sirve `focusout` (los botones no toman foco al
+// tocarlos). Cada panel se cierra si el toque cae fuera de él y de su botón, aunque sea dentro de la barra.
+const alTocarFuera = (e) => {
+  const d = e.target
+  if (userMenu.value && !zonaUsuario.value?.contains(d)) userMenu.value = false
+  if (menu.value && !panelMovil.value?.contains(d) && !botonMenu.value?.contains(d)) menu.value = false
+}
+onMounted(() => document.addEventListener('pointerdown', alTocarFuera, { passive: true }))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', alTocarFuera))
 watch(() => route.fullPath, cerrarTodo)
 
 // Accesos según el rol: cada uno tiene su propio panel; el Turista tiene sus reservas y sus reseñas
@@ -67,7 +74,7 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
   </div>
 
   <!-- Barra principal fija -->
-  <header ref="cabecera" class="sticky top-0 z-50 bg-cream/90 px-[clamp(16px,3vw,32px)] backdrop-blur-xl" style="height: var(--nav-h)">
+  <header class="sticky top-0 z-50 bg-cream/90 px-[clamp(16px,3vw,32px)] backdrop-blur-xl" style="height: var(--nav-h)">
     <nav class="mx-auto flex h-full max-w-[1400px] items-center justify-between gap-3 xl:gap-4" aria-label="Principal">
       <RouterLink :to="{ name: 'home' }" class="shrink-0" aria-label="Samaland adventure"><BrandLogo /></RouterLink>
 
@@ -110,13 +117,13 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
           <RouterLink :to="{ name: 'register' }" class="hidden rounded-full bg-navy px-4 py-2 text-[13px] font-semibold text-white shadow-cta transition hover:-translate-y-0.5 hover:bg-blue sm:inline-block">{{ t('auth.menu.register') }}</RouterLink>
         </template>
 
-        <button type="button" class="xl:hidden" :aria-label="t('nav.menu')" :aria-expanded="menu" @click="alternarMenu">
+        <button ref="botonMenu" type="button" class="xl:hidden" :aria-label="t('nav.menu')" :aria-expanded="menu" @click="alternarMenu">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
         </button>
       </div>
     </nav>
 
-    <div v-if="menu" class="absolute inset-x-0 top-full flex flex-col gap-1 border-b border-sand/30 bg-cream p-4 shadow-elevated xl:hidden">
+    <div v-if="menu" ref="panelMovil" class="absolute inset-x-0 top-full flex flex-col gap-1 border-b border-sand/30 bg-cream p-4 shadow-elevated xl:hidden">
       <RouterLink v-for="[k, to] in links" :key="k" :to="to" class="rounded-lg px-3 py-3 font-medium text-ink-control hover:bg-white" @click="menu = false">{{ t(`nav.${k}`) }}</RouterLink>
       <div class="flex items-center justify-between rounded-lg px-3 py-2 font-medium text-ink-control">{{ t('nav.language') }}<LangSwitch grande /></div>
       <template v-if="sesion.autenticado">

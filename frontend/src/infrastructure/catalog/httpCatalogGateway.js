@@ -39,6 +39,9 @@ const aDetalle = (s) => ({
   },
   alertas: (s.alertas ?? []).map((a) => ({ id: a.id, nivel: a.nivel, nivelEtiqueta: a.nivel_etiqueta ?? a.nivel, mensaje: a.mensaje, fechaExpiracion: a.fecha_expiracion })),
   etiquetas: Object.values(s.etiquetas ?? {}).filter((e) => typeof e === 'string'),
+  atributos: s.atributos && typeof s.atributos === 'object' ? s.atributos : {},
+  // código fijo -> texto en el idioma pedido (p. ej. NIVEL_FISICO MEDIO -> "Medio"); lo usan los atributos
+  etiquetasPorCodigo: Object.fromEntries(Object.entries(s.etiquetas ?? {}).filter(([, e]) => typeof e === 'string')),
   avisoPagos: s.aviso_pagos ? { importante: !!s.aviso_pagos.importante, recomendacionDinero: s.aviso_pagos.recomendacion_dinero, mensaje: s.aviso_pagos.mensaje } : null,
 })
 

@@ -1,5 +1,5 @@
 import { CatalogError, CODIGOS } from '../../domain/catalog/errors.js'
-import { CATEGORIAS_DEMO, DEMO_SERVICIOS, REGLA_CANCELACION } from './demoCatalogo.js'
+import { ATRIBUTOS_DEMO, CATEGORIAS_DEMO, DEMO_SERVICIOS, REGLA_CANCELACION } from './demoCatalogo.js'
 
 const normalizar = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 const lang = (idioma) => (idioma === 'en' ? 'en' : 'es')
@@ -26,6 +26,7 @@ function aDetalle(s, idioma) {
     prestador: { id: s.prestador.id, razonSocial: s.prestador.razonSocial, telefono: s.prestador.telefono, politicaCancelacion: s[l].politica },
     alertas: s.alertas.map((a) => ({ id: a.id, nivel: a.nivel, nivelEtiqueta: a.nivelEtiqueta[l], mensaje: a.mensaje[l], fechaExpiracion: a.fechaExpiracion })),
     etiquetas: [], avisoPagos: null,
+    atributos: ATRIBUTOS_DEMO[s.id]?.[l]?.atributos ?? {}, etiquetasPorCodigo: ATRIBUTOS_DEMO[s.id]?.[l]?.etiquetas ?? {},
   }
 }
 

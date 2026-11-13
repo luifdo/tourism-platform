@@ -142,3 +142,13 @@ describe('adaptador HTTP de autenticación (iam-service)', () => {
     })
   })
 })
+
+describe('tiempo máximo de las llamadas a IAM', () => {
+  it('manda una señal de cancelación y una petición colgada se vuelve SIN_CONEXION (la sesión no se da por vencida)', async () => {
+    let signal
+    const fetchFn = (_url, init) => new Promise((_res, rej) => { signal = init.signal; signal.addEventListener('abort', () => rej(signal.reason)) })
+    const gw = createHttpAuthGateway({ fetchFn, tiempoMaximoMs: 20 })
+    await expect(gw.renovar('rt')).rejects.toMatchObject({ code: 'SIN_CONEXION' })
+    expect(signal.aborted).toBe(true)
+  })
+})

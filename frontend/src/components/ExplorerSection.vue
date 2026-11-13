@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { isMockBackend } from '../composition'
 import { CATEGORIAS, nivelOcupacion } from '../domain/catalog/rules'
 import { useCatalog } from '../lib/useCatalog'
@@ -8,16 +9,21 @@ import { degradado } from '../ui/format'
 
 const { t, te, tm, rt, n, locale, d } = useI18n()
 const { estado, cargar, masResultados } = useCatalog()
+const route = useRoute()
 
+// La portada y las rutas llegan con ?q=texto: el texto entra al buscador y se busca
+const deLaUrl = () => (typeof route.query.q === 'string' ? route.query.q.trim().slice(0, 200) : '')
 const categoria = ref('all') // 'all' o un código de categoría del contrato
-const texto = ref('') // lo que se está escribiendo
-const buscado = ref('') // lo que se buscó al enviar el formulario
+const texto = ref(deLaUrl()) // lo que se está escribiendo
+const buscado = ref(deLaUrl()) // lo que se buscó al enviar el formulario
 const cats = ['all', ...CATEGORIAS]
 
 const filtros = () => ({ texto: buscado.value, categorias: categoria.value === 'all' ? [] : [categoria.value] })
 const recargar = () => cargar(filtros(), locale.value)
 onMounted(recargar)
 watch([categoria, buscado, locale], recargar)
+// Ya en la portada, una búsqueda nueva desde arriba cambia ?q= sin volver a montar la sección
+watch(() => route.query.q, () => { texto.value = deLaUrl(); buscado.value = texto.value })
 const buscar = () => { buscado.value = texto.value.trim() }
 
 const stats = computed(() => tm('explorer.stats').map((s) => ({ n: rt(s.n), l: rt(s.l) })))

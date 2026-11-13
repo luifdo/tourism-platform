@@ -5,8 +5,9 @@ import { useRouter } from 'vue-router'
 import { useSession } from '../ui/useSession'
 import BrandLogo from './BrandLogo.vue'
 import InstallButton from './InstallButton.vue'
+import LangSwitch from './LangSwitch.vue'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const router = useRouter()
 const { sesion, salir } = useSession()
 const menu = ref(false)
@@ -26,11 +27,6 @@ async function cerrarSesion() {
   router.push({ name: 'home' })
 }
 
-function setLang(l) {
-  locale.value = l
-  document.documentElement.lang = l
-  try { localStorage.setItem('lang', l) } catch { /* sin almacenamiento */ }
-}
 const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'], ['ethics', '#compromiso']].map(([k, hash]) => [k, { name: 'home', hash }])
 </script>
 
@@ -47,11 +43,7 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12a7 7 0 0114 0M8.5 12a3.5 3.5 0 017 0" /><circle cx="12" cy="12" r="1" /></svg>
         {{ t('ticker.live') }}
       </span>
-      <div role="group" aria-label="Idioma / Language">
-        <button type="button" :aria-pressed="locale === 'es'" :class="locale === 'es' ? 'font-bold text-navy' : 'text-muted'" @click="setLang('es')">ES</button>
-        <span class="mx-1 text-muted">|</span>
-        <button type="button" :aria-pressed="locale === 'en'" :class="locale === 'en' ? 'font-bold text-navy' : 'text-muted'" @click="setLang('en')">EN</button>
-      </div>
+      <LangSwitch />
     </div>
   </div>
 
@@ -65,6 +57,8 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
       </div>
 
       <div class="flex items-center gap-2 sm:gap-3">
+        <!-- También en la barra fija: la cinta de arriba se va al bajar -->
+        <LangSwitch grande />
         <InstallButton />
 
         <!-- Con sesión: acceso a reservas y menú de la cuenta -->
@@ -104,6 +98,7 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
 
     <div v-if="menu" class="absolute inset-x-0 top-full flex flex-col gap-1 border-b border-sand/30 bg-cream p-4 shadow-elevated xl:hidden">
       <RouterLink v-for="[k, to] in links" :key="k" :to="to" class="rounded-lg px-3 py-3 font-medium text-ink-control hover:bg-white" @click="menu = false">{{ t(`nav.${k}`) }}</RouterLink>
+      <div class="flex items-center justify-between rounded-lg px-3 py-2 font-medium text-ink-control">{{ t('nav.language') }}<LangSwitch grande /></div>
       <template v-if="sesion.autenticado">
         <RouterLink :to="{ name: esPrestador ? 'provider' : 'my-bookings' }" class="rounded-lg px-3 py-3 font-medium text-navy hover:bg-white" @click="menu = false">{{ esPrestador ? t('nav.panel') : t('nav.reservations') }}</RouterLink>
         <button type="button" class="rounded-lg px-3 py-3 text-left font-medium text-danger hover:bg-white" :disabled="saliendo" @click="cerrarSesion">{{ t('auth.menu.logout') }}</button>

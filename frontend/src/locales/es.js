@@ -1,7 +1,7 @@
 export default {
   brand: { name: 'Samaland', alt: 'adventure', tag: 'Turismo regenerativo' },
   nav: {
-    catalog: 'Explorador de experiencias', map: 'Mapa biocultural y aforos', routes: 'Rutas ancestrales', ethics: 'Compromiso ético',
+    language: 'Idioma', catalog: 'Explorador de experiencias', map: 'Mapa biocultural y aforos', routes: 'Rutas ancestrales', ethics: 'Compromiso ético',
     reservations: 'Mis reservas', panel: 'Mi panel', install: 'Instalar app', installShort: 'Instalar', assistant: 'Asistente IA', login: 'Iniciar sesión', register: 'Registrarse', menu: 'Menú',
   },
   ticker: { badge: 'Bien público digital', text: 'Sin comisiones comerciales intermedias · Proyecto de la Universidad del Magdalena', live: 'Aforos en vivo' },
@@ -9,7 +9,7 @@ export default {
     eyebrow: 'Turismo sostenible y regenerativo · Santa Marta',
     title: 'Donde la Sierra Sagrada abraza el Mar Caribe',
     lead: 'Explora experiencias operadas con amor y custodia por comunidades locales. Sin tarifas ocultas y con monitoreo de aforo para preservar los ecosistemas.',
-    searchDest: 'Destino o santuario', searchDestPh: 'Bahía Concha, Quebrada Valencia…',
+    searchDest: 'Destino o santuario', searchDestPh: 'Caminata, kayak, buceo…',
     searchWhen: 'Temporada', searchWhenV: 'Cualquier fecha', go: 'Descubrir',
     stats: [
       { k: 'Comisiones', n: '0 %', l: 'La plataforma es gratuita' },
@@ -68,8 +68,24 @@ export default {
       generic: 'No pudimos completar la acción. Intenta de nuevo.',
     },
   },
+  attrs: {
+    yes: 'Sí', no: 'No', upTo: 'hasta {n} personas',
+    sections: { comunes: 'Lo esencial', alojamiento: 'Alojamiento', experiencia: 'La experiencia', gastronomia: 'Gastronomía', entrada: 'Entrada', alquiler: 'Alquiler', transporte: 'Transporte', pagos: 'Pagos en el lugar' },
+    fields: {
+      horario: 'Horario', incluye: 'Qué incluye', no_incluye: 'Qué no incluye', idiomas_atencion: 'Idiomas de atención', accesible: 'Accesible (movilidad reducida)', mascotas: 'Admite mascotas', apto_ninos: 'Apto para niños',
+      practicas_sostenibles: 'Prácticas sostenibles', certificacion_sostenible: 'Certificación sostenible',
+      check_in: 'Entrada (check-in)', check_out: 'Salida (check-out)', habitaciones: 'Habitaciones', amenidades: 'Amenidades', desayuno_incluido: 'Desayuno incluido',
+      duracion_minutos: 'Duración', nivel_fisico: 'Nivel físico', punto_encuentro: 'Punto de encuentro', salidas_por_dia: 'Salidas por día', edad_minima: 'Edad mínima', grupo_minimo: 'Grupo mínimo', grupo_maximo: 'Grupo máximo',
+      incluye_guia: 'Incluye guía', idiomas_guia: 'Idiomas del guía', incluye_transporte: 'Incluye transporte', incluye_equipo: 'Incluye equipo', que_llevar: 'Qué llevar', requisitos: 'Requisitos',
+      tipos_cocina: 'Tipos de cocina', opciones_dietarias: 'Opciones dietarias', precio_min_persona: 'Precio mínimo por persona', precio_max_persona: 'Precio máximo por persona', requiere_reserva: 'Requiere reserva', puestos: 'Puestos', domicilio: 'Domicilio',
+      tarifas: 'Tarifas por visitante', temporadas_cierre: 'Temporadas de cierre', reglas: 'Reglas del sitio', servicios_en_sitio: 'Servicios en el sitio',
+      equipos: 'Equipos', deposito: 'Depósito', requiere_documento: 'Requiere documento',
+      origen: 'Origen', destino: 'Destino', capacidad_vehiculo: 'Capacidad del vehículo', horarios_salida: 'Horarios de salida', incluye_chaleco_salvavidas: 'Incluye chaleco salvavidas',
+      senal_internet: 'Señal de internet', medios_pago: 'Medios de pago',
+    },
+  },
   service: {
-    back: 'Volver al catálogo', notFound: 'No encontramos este servicio.', about: 'Sobre la experiencia',
+    details: 'Detalles del servicio',     back: 'Volver al catálogo', notFound: 'No encontramos este servicio.', about: 'Sobre la experiencia',
     loading: 'Cargando el servicio…', error: 'No pudimos cargar este servicio. Inténtalo de nuevo.', retry: 'Reintentar',
     alerts: 'Alertas vigentes', payments: 'Qué dinero llevar', directions: 'Cómo llegar',
     provider: 'Prestador', phone: 'Contacto', rnt: 'RNT', fee: 'Tarifa base', perPerson: 'por persona',
@@ -173,7 +189,7 @@ export default {
     title: 'Rutas de la Sierra al Litoral',
     lead: 'Tres corredores diseñados para entender la interdependencia entre el agua de la Sierra y el arrecife coralino.',
     label: 'Ruta',
-    itinerary: 'Ver itinerario',
+    itinerary: 'Ver experiencias',
   },
   ethics: {
     kicker: 'Gobernanza ética y transparencia',
@@ -260,8 +276,8 @@ export default {
     legal: 'Plataforma gratuita · Universidad del Magdalena · Ley 1581 de 2012',
   },
   routeItems: {
-    1: { name: 'Sendero de la Niebla a la Mar', desc: 'Descenso a pie desde San Pedro de la Sierra por fincas cafeteras agroforestales hasta las playas del Parque Tayrona.', meta: '3 días · dificultad media' },
-    2: { name: 'La Danza de las Aguas Vivas', desc: 'Navegación silenciosa en kayak por los meandros del Río Don Diego con avistamiento de aves endémicas.', meta: '1 día · dificultad baja' },
-    3: { name: 'Custodios del Arrecife Coralino', desc: 'Taller práctico de restauración coralina y buceo regenerativo en bahías protegidas, con biólogos y pescadores artesanales.', meta: '2 días · buceo Open Water' },
+    1: { name: 'Sendero de la Niebla a la Mar', desc: 'Descenso a pie desde San Pedro de la Sierra por fincas cafeteras agroforestales hasta las playas del Parque Tayrona.', meta: '3 días · dificultad media', q: 'caminata' },
+    2: { name: 'La Danza de las Aguas Vivas', desc: 'Navegación silenciosa en kayak por los meandros del Río Don Diego con avistamiento de aves endémicas.', meta: '1 día · dificultad baja', q: 'kayak' },
+    3: { name: 'Custodios del Arrecife Coralino', desc: 'Taller práctico de restauración coralina y buceo regenerativo en bahías protegidas, con biólogos y pescadores artesanales.', meta: '2 días · buceo Open Water', q: 'buceo' },
   },
 }

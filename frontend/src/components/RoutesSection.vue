@@ -29,7 +29,7 @@ const icons = {
           <p class="mt-3 flex-1 text-[15px] leading-relaxed text-muted">{{ t(`routeItems.${r.id}.desc`) }}</p>
           <div class="mt-6 flex items-center justify-between gap-3 border-t border-sand/30 pt-4 font-mono text-xs">
             <span class="text-muted">{{ t(`routeItems.${r.id}.meta`) }}</span>
-            <a href="#" class="font-semibold text-navy hover:text-teal">{{ t('routes.itinerary') }} →</a>
+            <RouterLink :to="{ name: 'home', query: { q: t(`routeItems.${r.id}.q`) }, hash: '#catalogo' }" class="font-semibold text-navy hover:text-teal">{{ t('routes.itinerary') }} →</RouterLink>
           </div>
         </article>
       </div>

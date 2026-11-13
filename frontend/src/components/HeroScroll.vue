@@ -1,8 +1,14 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 
 const { t, tm, rt } = useI18n()
+const router = useRouter()
+
+// El buscador de la portada lleva al explorador del catálogo con lo escrito (?q=), que es donde se busca de verdad
+const destino = ref('')
+const buscar = () => router.push({ name: 'home', query: destino.value.trim() ? { q: destino.value.trim().slice(0, 200) } : {}, hash: '#catalogo' })
 
 const base = import.meta.env.BASE_URL
 const story = ref(null)
@@ -90,22 +96,14 @@ onBeforeUnmount(() => {
         <h1 class="max-w-[14ch] text-[clamp(32px,min(6.4vw,10.5vh),92px)] font-extrabold leading-[.98] tracking-[-.035em] text-white text-balance">{{ t('hero.title') }}</h1>
         <p class="max-w-[58ch] line-clamp-3 text-[clamp(14px,1.5vw,21px)] leading-relaxed text-white/90 sm:line-clamp-none">{{ t('hero.lead') }}</p>
 
-        <form class="flex w-full max-w-[860px] flex-wrap items-center gap-2 rounded-[28px] border border-sand/30 bg-white p-2 shadow-elevated sm:flex-nowrap sm:rounded-full" @submit.prevent>
+        <form class="flex w-full max-w-[860px] flex-wrap items-center gap-2 rounded-[28px] border border-sand/30 bg-white p-2 shadow-elevated sm:flex-nowrap sm:rounded-full" @submit.prevent="buscar">
           <label class="flex min-w-0 flex-1 items-center gap-3 rounded-full px-3 py-1.5 sm:px-4 sm:py-2">
             <svg class="shrink-0 text-teal" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M15.5 8.5l-2 5-5 2 2-5z" /></svg>
             <span class="min-w-0 flex-1">
               <span class="block font-mono text-[10px] uppercase tracking-[.12em] text-muted">{{ t('hero.searchDest') }}</span>
-              <input type="text" :placeholder="t('hero.searchDestPh')" class="w-full bg-transparent text-[15px] font-medium text-ink outline-none placeholder:text-muted/70" />
+              <input v-model="destino" type="search" maxlength="200" :placeholder="t('hero.searchDestPh')" class="w-full bg-transparent text-[15px] font-medium text-ink outline-none placeholder:text-muted/70" />
             </span>
           </label>
-          <div class="hidden h-10 w-px bg-sand/40 sm:block" />
-          <div class="hidden items-center gap-3 px-4 py-2 md:flex">
-            <svg class="shrink-0 text-teal" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M4 10h16M9 3v4M15 3v4" /></svg>
-            <span>
-              <span class="block font-mono text-[10px] uppercase tracking-[.12em] text-muted">{{ t('hero.searchWhen') }}</span>
-              <span class="block text-[15px] font-medium text-ink">{{ t('hero.searchWhenV') }}</span>
-            </span>
-          </div>
           <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-full bg-navy px-8 py-3 font-semibold text-white shadow-cta transition hover:bg-blue sm:w-auto sm:py-3.5">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
             {{ t('hero.go') }}

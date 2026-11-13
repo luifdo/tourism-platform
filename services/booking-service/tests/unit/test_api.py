@@ -198,6 +198,9 @@ async def test_calendario_del_prestador(cliente):
     r = await cliente.put(f"{url}/2026-11-10", json={"cupos_totales": 12, "tarifa_dia": 90000},
                           headers={**PRESTADOR, "If-Match": '"1"'})
     assert r.status_code == 200 and r.json()["cupos_totales"] == 12 and r.headers["ETag"] == '"2"'
+    assert r.json()["tarifa_dia"] == 90000 and isinstance(r.json()["tarifa_dia"], float)  # número, no "90000.00"
+    r = await cliente.get(f"{BASE}/disponibilidad", params={"servicio_id": SERVICIO, "desde": "2026-11-10", "hasta": "2026-11-10"})
+    assert r.json()["dias"][0]["tarifa_dia"] == 90000.0
     r = await cliente.put(f"{url}/2026-11-10", json={"cupos_totales": 25}, headers={**PRESTADOR, "If-Match": '"2"'})
     assert r.status_code == 422 and r.json()["error"] == "SUPERA_AFORO"
     r = await cliente.post(f"{url}/rango", json={"desde": "2026-12-05", "hasta": "2026-12-07", "cupos_totales": 5},

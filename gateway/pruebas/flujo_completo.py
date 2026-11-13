@@ -3,6 +3,7 @@
 Uso (desde la raíz del repositorio, con la plataforma arriba y el Admin sembrado):
     python gateway/pruebas/flujo_completo.py --entorno compose   # infra/docker-compose.yml (gateway en :80)
     python gateway/pruebas/flujo_completo.py --entorno k3s       # infra/k8s/k3s_local.py (gateway en :8081)
+    python gateway/pruebas/flujo_completo.py --entorno compose --gateway https://<dominio>   # servidor con HTTPS
 
 Recorre iam -> catalog -> booking -> review -> recommendation y los eventos entre ellos: registro y
 aprobación del prestador, documentos en SeaweedFS, servicio publicado, calendario y cupos, reservas y
@@ -167,7 +168,15 @@ def idem() -> dict[str, str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--entorno", choices=["compose", "k3s"], required=True)
-    entorno = Compose() if parser.parse_args().entorno == "compose" else K3s()
+    parser.add_argument(
+        "--gateway",
+        help="URL del gateway si no es la local (p. ej. https://3-141-142-12.sslip.io con HTTPS activo: "
+        "el 80 solo redirige y el certificado no cubre localhost)",
+    )
+    args = parser.parse_args()
+    entorno = Compose() if args.entorno == "compose" else K3s()
+    if args.gateway:
+        entorno.gateway = args.gateway.rstrip("/")
     entorno.iniciar()
     try:
         flujo(entorno)

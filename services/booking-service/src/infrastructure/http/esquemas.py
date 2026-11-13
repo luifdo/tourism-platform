@@ -91,7 +91,8 @@ class PaginaReservas(BaseModel):
 class DiaDisponible(BaseModel):
     fecha: date
     cupos_disponibles: int
-    tarifa_dia: Decimal | None
+    # Número en JSON, como dice booking.yaml (Decimal en el dominio; con Decimal, Pydantic lo envía como texto).
+    tarifa_dia: float | None
 
 
 class Disponibilidad(BaseModel):
@@ -104,7 +105,7 @@ class DiaCalendario(BaseModel):
     cupos_totales: int
     cupos_disponibles: int
     cupos_reservados: int
-    tarifa_dia: Decimal | None
+    tarifa_dia: float | None  # número en JSON (booking.yaml), igual que en DiaDisponible
     version: int
 
     @classmethod

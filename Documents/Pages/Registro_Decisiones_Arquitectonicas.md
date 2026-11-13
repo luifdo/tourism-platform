@@ -25,7 +25,7 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 | [ADR-010](#adr-010-componente-de-inteligencia-artificial) | IA: chatbot sobre la API de Gemini con herramientas de solo lectura | No | Aceptada |
 | [ADR-011](#adr-011-proveedor-del-modelo-de-lenguaje-groq-en-lugar-de-gemini) | Proveedor del modelo de lenguaje: Groq en lugar de Gemini | No | Propuesta |
 | [ADR-012](#adr-012-cifrado-en-reposo-y-en-tránsito) | Cifrado en reposo y en tránsito: en la infraestructura, con lo interno declarado como limitación | No | Aceptada |
-| [ADR-013](#adr-013-decisiones-del-módulo-1-iam) | Decisiones del Módulo 1 (IAM): verificación propia, revocación y refresh en Valkey, bitácora idempotente, outbox y supresión por anonimización | No | Propuesta |
+| [ADR-013](#adr-013-decisiones-del-módulo-1-iam) | Decisiones del Módulo 1 (IAM): verificación propia, revocación y refresh en Valkey, bitácora idempotente, outbox y supresión por anonimización | No | Aceptada |
 
 ---
 
@@ -230,7 +230,7 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 
 ## ADR-013: Decisiones del Módulo 1 (IAM)
 
-* **Estado:** Propuesta el 13 de noviembre de 2026 por Valentina Nieves (Módulo 1). La acepta Luis Fernando Barraza, responsable de la arquitectura. No reemplaza ningún ADR: precisa cómo el Módulo 1 cumple el ADR-007 y el ADR-008.
+* **Estado:** Aceptada el 13 de noviembre de 2026 por Luis Fernando Barraza, responsable de la arquitectura. Propuesta el mismo día por Valentina Nieves (Módulo 1). No reemplaza ningún ADR: precisa cómo el Módulo 1 cumple el ADR-007 y el ADR-008.
 * **Contexto:**
   * El IAM es el punto por el que pasa cada petición protegida: Traefik lo consulta con ForwardAuth (ADR-007). Su latencia y su disponibilidad son las de toda la plataforma.
   * Guarda datos personales bajo la Ley 1581: correos, nombres, documentos tributarios y la bitácora de auditoría (RNF-10, ESC-04).

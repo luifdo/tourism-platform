@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { accountUseCases } from '../composition'
@@ -62,8 +62,10 @@ async function cambiarClave() {
   clave.enviando = true; clave.error = ''; clave.campos = {}
   try {
     await accountUseCases.cambiarContrasena({ actual: clave.actual, nueva: clave.nueva, confirmacion: clave.confirmacion })
-    // El servicio revocó todas las sesiones, también esta
+    // El servicio revocó todas las sesiones, también esta. App.vue manda a ingresar («tu sesión expiró») cuando la sesión vence en
+    // una pantalla protegida; aquí el motivo es otro, así que se espera a que ese aviso salga y se navega después, con el nuestro.
     expirar()
+    await nextTick()
     router.replace({ name: 'login', query: { clave: '1' } })
   } catch (e) {
     if (sesionVencida(e)) return
@@ -76,6 +78,7 @@ async function suprimir() {
   try {
     await accountUseCases.suprimirDatos(baja.password)
     expirar()
+    await nextTick() // ver cambiarClave: el aviso global de sesión vencida no debe ganarle a este destino
     router.replace({ name: 'home' })
   } catch (e) {
     if (sesionVencida(e)) return

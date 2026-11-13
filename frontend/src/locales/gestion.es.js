@@ -40,7 +40,7 @@ export default {
     deleteTitle: 'Borrar mi cuenta y mis datos', deleteBody: 'Es irreversible: eliminamos tus datos personales y se cierran todas tus sesiones. Las reservas y reseñas ya hechas se conservan de forma anónima. Si eres el último administrador, no podrás hacerlo.',
     deleteStart: 'Quiero borrar mi cuenta', deletePassword: 'Escribe tu contraseña para confirmar', deleteConfirm: 'Entiendo que no se puede deshacer.', deleteGo: 'Borrar definitivamente',
     errors: {
-      PASSWORD_ACTUAL_INCORRECTA: 'La contraseña actual no es correcta.', PASSWORD_INCORRECTA: 'La contraseña no es correcta.', PASSWORD_INVALIDA: 'La contraseña nueva no cumple la política (8 a 128 caracteres, con letras y números).',
+      PASSWORD_ACTUAL_INCORRECTA: 'La contraseña actual no es correcta.', CREDENCIALES_INVALIDAS: 'La contraseña no es correcta.', PASSWORD_INCORRECTA: 'La contraseña no es correcta.', PASSWORD_INVALIDA: 'La contraseña nueva no cumple la política (8 a 128 caracteres, con letras y números).',
       NOMBRE_INVALIDO: 'El nombre no es válido.', ULTIMO_ADMIN: 'Eres el último administrador activo: antes de borrar tu cuenta, nombra a otra persona.', USUARIO_NO_ENCONTRADO: 'La cuenta ya no existe.',
     },
   },

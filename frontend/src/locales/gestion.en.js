@@ -40,7 +40,7 @@ export default {
     deleteTitle: 'Delete my account and data', deleteBody: 'This cannot be undone: we erase your personal data and end all your sessions. Past bookings and reviews are kept anonymously. If you are the last administrator you cannot do this.',
     deleteStart: 'I want to delete my account', deletePassword: 'Type your password to confirm', deleteConfirm: 'I understand this cannot be undone.', deleteGo: 'Delete permanently',
     errors: {
-      PASSWORD_ACTUAL_INCORRECTA: 'The current password is not correct.', PASSWORD_INCORRECTA: 'The password is not correct.', PASSWORD_INVALIDA: 'The new password does not meet the policy (8 to 128 characters, with letters and numbers).',
+      PASSWORD_ACTUAL_INCORRECTA: 'The current password is not correct.', CREDENCIALES_INVALIDAS: 'The password is not correct.', PASSWORD_INCORRECTA: 'The password is not correct.', PASSWORD_INVALIDA: 'The new password does not meet the policy (8 to 128 characters, with letters and numbers).',
       NOMBRE_INVALIDO: 'The name is not valid.', ULTIMO_ADMIN: 'You are the last active administrator: name someone else before deleting your account.', USUARIO_NO_ENCONTRADO: 'The account no longer exists.',
     },
   },

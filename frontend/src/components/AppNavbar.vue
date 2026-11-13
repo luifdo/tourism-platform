@@ -65,7 +65,7 @@ const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'],
 
       <div class="flex items-center gap-2 sm:gap-3">
         <!-- También en la barra fija: la cinta de arriba se va al bajar -->
-        <LangSwitch grande />
+        <span class="hidden sm:block"><LangSwitch grande /></span><!-- en el móvil va en el menú -->
         <InstallButton />
 
         <!-- Con sesión: acceso a reservas y menú de la cuenta -->

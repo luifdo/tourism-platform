@@ -12,7 +12,8 @@ export function useGestion() {
   const router = useRouter()
   const { expirar } = useSession()
 
-  const esVencida = (e) => e?.status === 401 || e?.code === 'NO_AUTENTICADO'
+  // Un 401 con un código propio (p. ej. CREDENCIALES_INVALIDAS al confirmar la contraseña) NO es sesión vencida: es un dato mal escrito.
+  const esVencida = (e) => e?.code === 'NO_AUTENTICADO' || e?.code === 'TOKEN_INVALIDO'
 
   /** Texto para el usuario. `ns` es un espacio de nombres propio de la pantalla con códigos específicos (opcional). */
   function mensaje(e, ns) {

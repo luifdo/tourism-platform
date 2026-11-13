@@ -18,11 +18,13 @@ const TTL_RESET_MS = 30 * 60_000
 export const CUENTA_DEMO = /* @__PURE__ */ Object.freeze({ email: 'maria.perez@example.com', password: 'Tayrona2026', nombre: 'María Pérez' })
 
 /** Cuentas de los otros roles del simulador (misma contraseña): para recorrer el panel del prestador, de la Entidad y del Admin. */
+// Cada Object.freeze lleva su propia marca /* @__PURE__ */: sin ella el compilador no puede descartar la lista entera y las
+// cuentas de ejemplo acabarían dentro del paquete de producción (VITE_API_MOCK=false), que no debe traerlas.
 export const CUENTAS_DEMO = /* @__PURE__ */ Object.freeze([
-  Object.freeze({ ...CUENTA_DEMO, rol: 'Turista' }),
-  Object.freeze({ email: 'prestador@samaland.demo', password: 'Tayrona2026', nombre: 'Guías de Taganga', rol: 'Prestador' }),
-  Object.freeze({ email: 'entidad@samaland.demo', password: 'Tayrona2026', nombre: 'Oficina de Turismo', rol: 'Entidad' }),
-  Object.freeze({ email: 'admin@samaland.demo', password: 'Tayrona2026', nombre: 'Administración Samaland', rol: 'Admin' }),
+  /* @__PURE__ */ Object.freeze({ email: 'maria.perez@example.com', password: 'Tayrona2026', nombre: 'María Pérez', rol: 'Turista' }),
+  /* @__PURE__ */ Object.freeze({ email: 'prestador@samaland.demo', password: 'Tayrona2026', nombre: 'Guías de Taganga', rol: 'Prestador' }),
+  /* @__PURE__ */ Object.freeze({ email: 'entidad@samaland.demo', password: 'Tayrona2026', nombre: 'Oficina de Turismo', rol: 'Entidad' }),
+  /* @__PURE__ */ Object.freeze({ email: 'admin@samaland.demo', password: 'Tayrona2026', nombre: 'Administración Samaland', rol: 'Admin' }),
 ])
 
 async function resumen(password, sal) {

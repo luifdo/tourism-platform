@@ -145,7 +145,7 @@ export function createMockGestion({
     }),
     suprimirDatos: (password) => mutar(async () => {
       const u = yo()
-      if (!(await directorio.verificarPassword(u.id, password))) throw err('PASSWORD_INCORRECTA', 'La contraseña no es correcta.', 422)
+      if (!(await directorio.verificarPassword(u.id, password))) throw err('CREDENCIALES_INVALIDAS', 'La contraseña no es correcta.', 401) // igual que el IAM real: 401, pero no es una sesión vencida
       if (u.rol === 'Admin' && (await directorio.todos()).filter((x) => x.rol === 'Admin' && x.activo).length <= 1) throw err('ULTIMO_ADMIN', 'Eres el último administrador.', 409)
       await directorio.suprimir(u.id)
       db.docs = db.docs.filter((d) => d.usuario_id !== u.id)

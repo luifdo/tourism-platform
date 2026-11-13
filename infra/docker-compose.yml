@@ -411,6 +411,9 @@ services:
         VITE_API_MOCK: "false"
         VITE_BASE: /
     image: frontend:local
+    environment:
+      # Origen del almacenamiento de fotos, para la Content-Security-Policy (el navegador sube ahí con una URL firmada)
+      CSP_ALMACENAMIENTO: ${S3_ENDPOINT_PUBLICO:-http://localhost:8333}
 
   # ---------- API Gateway ----------
   # Traefik (ADR-007); en el clúster k3s viene incluido como Ingress. Aquí solo el contenedor: las

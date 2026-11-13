@@ -23,7 +23,11 @@ RUN npm run build
 # ---------- Etapa 2: servir ----------
 # Versión sin privilegios: corre como usuario "nginx" y escucha en el 8080 (como piden los manifiestos de k8s).
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# nginx.conf es una plantilla: la imagen oficial sustituye variables de entorno al arrancar y escribe /etc/nginx/conf.d/default.conf.
+# El filtro deja intactas las variables propias de nginx ($uri, $host...) y solo cambia las que empiezan con CSP_.
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+ENV NGINX_ENVSUBST_FILTER=^CSP_ \
+    CSP_ALMACENAMIENTO=''
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 8080

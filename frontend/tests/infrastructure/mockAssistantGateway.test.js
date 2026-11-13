@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createMockAssistantGateway } from '../../src/infrastructure/assistant/mockAssistantGateway.js'
 import { responderDemo } from '../../src/infrastructure/assistant/demoRespuestas.js'
 import { assertAssistantGateway } from '../../src/application/assistant/ports.js'
-import { experiences } from '../../src/data/mock.js'
+import { DEMO_SERVICIOS } from '../../src/infrastructure/catalog/demoCatalogo.js'
 
 const falla = async (p) => { try { await p } catch (e) { return e } throw new Error('se esperaba un error') }
 let ahora, turista, gw
@@ -28,7 +28,7 @@ describe('asistente simulado como servidor del contrato', () => {
   })
 
   it('solo recomienda servicios que existen en el catálogo simulado', async () => {
-    const ids = new Set(experiences.map((e) => e.id))
+    const ids = new Set(DEMO_SERVICIOS.map((e) => e.id))
     for (const m of ['playa y snorkel', 'cascada y caminata', 'cacao y cultura', 'llueve mucho'])
       for (const r of (await enviar(m)).recomendaciones) expect(ids.has(r.servicio_id)).toBe(true)
   })

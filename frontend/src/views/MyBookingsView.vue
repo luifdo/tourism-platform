@@ -2,13 +2,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { bookingUseCases, isMockBackend as isMock } from '../composition'
+import { bookingUseCases, catalogUseCases, isMockBackend as isMock } from '../composition'
 import { BookingError } from '../domain/booking/errors'
 import { addDays } from '../domain/booking/dates'
 import { ACTIVOS, ESTADOS as estados, decisionCancelar, decisionModificar, lineaDeTiempo } from '../domain/booking/rules'
 import { queue } from '../lib/offlineQueue'
 import { useSession } from '../ui/useSession'
-import { findService } from '../data/mock'
 import { fmtDate } from '../ui/format'
 import StatusBadge from '../components/StatusBadge.vue'
 import Countdown from '../components/Countdown.vue'
@@ -45,7 +44,17 @@ const cancelling = ref(null) // { id, motivo }
 
 const today = () => bookingUseCases.hoy()
 const tomorrow = () => bookingUseCases.manana()
-const name = (r) => { const s = findService(r.servicio_id); return s ? t(`items.${s.id}.name`) : r.servicio_id }
+// Las reservas solo traen `servicio_id`: los nombres se piden a catalog en una sola llamada (INTEGRACION.md §2.6)
+const nombres = ref({}) // { [id]: { nombre, activo } }
+const nombresIncompletos = ref(false)
+const nombresListos = ref(false)
+async function cargarNombres() {
+  const r = await catalogUseCases.nombres(items.value.map((x) => x.servicio_id), { idioma: locale.value })
+  nombres.value = r.porId; nombresIncompletos.value = r.incompleto; nombresListos.value = true
+}
+const existe = (r) => !!nombres.value[r.servicio_id]
+// Un id ausente ya no existe; pero si la consulta falló no se afirma eso
+const name = (r) => nombres.value[r.servicio_id]?.nombre ?? (nombresListos.value && !nombresIncompletos.value ? t('my.serviceGone') : t('my.service'))
 const errText = (e) => {
   const code = e instanceof BookingError ? e.code : 'generic'
   return t(`my.errors.${te(`my.errors.${code}`) ? code : 'generic'}`)
@@ -59,6 +68,7 @@ async function load(reset = true) {
     items.value = reset ? res.items : [...items.value, ...res.items]
     total.value = res.total
     cachedAt.value = res.copiaDe // sin conexión el caso de uso devuelve la última copia guardada
+    cargarNombres() // no bloquea la lista: mientras llegan se ve un nombre genérico
   } catch (e) { if (!sesionVencida(e)) loadError.value = errText(e) }
   finally { loading.value = false }
 }
@@ -127,7 +137,8 @@ const hasMore = computed(() => items.value.length < total.value && !cachedAt.val
         <li v-for="r in items" :key="r.id" class="rounded-panel border border-sand/30 bg-white p-5 shadow-card sm:p-6">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0">
-              <RouterLink :to="{ name: 'service', params: { id: r.servicio_id } }" class="text-lg font-bold leading-snug tracking-tight text-navy-darkest hover:text-navy">{{ name(r) }}</RouterLink>
+              <RouterLink v-if="existe(r) && nombres[r.servicio_id].activo" :to="{ name: 'service', params: { id: r.servicio_id } }" class="text-lg font-bold leading-snug tracking-tight text-navy-darkest hover:text-navy">{{ name(r) }}</RouterLink>
+              <p v-else class="text-lg font-bold leading-snug tracking-tight text-navy-darkest">{{ name(r) }}<span v-if="existe(r)" class="ml-2 font-mono text-[11px] font-normal uppercase tracking-wider text-muted">{{ t('my.inactive') }}</span></p>
               <p class="mt-1 text-sm text-ink-control first-letter:uppercase">{{ fmtDate(r.fecha_reserva, locale) }} · <span>{{ t('my.people', { n: r.numero_personas }, r.numero_personas) }}</span></p>
             </div>
             <StatusBadge :estado="r.estado" />

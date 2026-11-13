@@ -1,12 +1,16 @@
 import { createBookingUseCases } from './application/booking/useCases'
 import { createAuthUseCases } from './application/auth/useCases'
 import { createAssistantUseCases } from './application/assistant/useCases'
+import { createCatalogUseCases } from './application/catalog/useCases'
 import { createHttpBookingGateway } from './infrastructure/booking/httpBookingGateway'
 import { createMockBookingGateway } from './infrastructure/booking/mockBookingGateway'
 import { demoServices } from './infrastructure/booking/demoServices'
 import { idbBookingCache } from './infrastructure/booking/idbBookingCache'
 import { createHttpAssistantGateway } from './infrastructure/assistant/httpAssistantGateway'
 import { createMockAssistantGateway } from './infrastructure/assistant/mockAssistantGateway'
+import { createHttpCatalogGateway } from './infrastructure/catalog/httpCatalogGateway'
+import { createMockCatalogGateway } from './infrastructure/catalog/mockCatalogGateway'
+import { idbCatalogCache } from './infrastructure/catalog/idbCatalogCache'
 import { createHttpAuthGateway } from './infrastructure/auth/httpAuthGateway'
 import { CUENTA_DEMO, createMockAuthGateway } from './infrastructure/auth/mockAuthGateway'
 import { sessionStore } from './infrastructure/auth/sessionStore'
@@ -19,7 +23,7 @@ import { clearPersonalData } from './lib/offlineQueue'
  */
 const clock = { now: () => new Date() }
 
-// VITE_API_MOCK=false conecta con el Gateway real (iam, booking y recommendation); por defecto se usan los simulados.
+// VITE_API_MOCK=false conecta con el Gateway real (iam, catalog, booking y recommendation); por defecto se usan los simulados.
 export const isMockBackend = import.meta.env.VITE_API_MOCK !== 'false'
 
 /** Cuenta de ejemplo del simulador (null con el backend real) */
@@ -50,3 +54,8 @@ const assistantGateway = isMockBackend
 
 // El chat exige sesión de Turista (JWT de iam-service) también con el simulador
 export const assistantUseCases = createAssistantUseCases({ gateway: assistantGateway, session: tokenSession })
+
+/* ---- Catálogo (catalog-service): rutas públicas, sin sesión ---- */
+const catalogGateway = isMockBackend ? createMockCatalogGateway() : createHttpCatalogGateway({ baseUrl: '/api/catalog' })
+
+export const catalogUseCases = createCatalogUseCases({ gateway: catalogGateway, cache: idbCatalogCache, clock })

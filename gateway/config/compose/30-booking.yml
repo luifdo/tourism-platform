@@ -5,14 +5,12 @@ http:
     booking-publicas:
       rule: "Method(`GET`) && Path(`/api/bookings/disponibilidad`)"
       priority: 100
-      entryPoints: [web]
       middlewares: [quitar-identidad]
       service: booking-service
 
     booking-protegidas:
       rule: "PathPrefix(`/api/bookings`)"
       priority: 10
-      entryPoints: [web]
       middlewares: [protegida]
       service: booking-service
 

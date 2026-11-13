@@ -80,19 +80,44 @@ export function rutaSegura(destino, porDefecto = '/') {
 
 /* ---- Sesión ---- */
 
-/** Sesión a partir de la respuesta de POST /login: { access_token, expires_in (s), usuario } */
+/**
+ * Sesión a partir de la respuesta de POST /login o de POST /auth/refresh (traen lo mismo):
+ * { access_token, expires_in (s), refresh_token, refresh_expires_in (s), usuario }.
+ * El access token dura 15 min; el refresh token, 7 días, y cada renovación entrega uno nuevo.
+ */
 export function crearSesion(respuesta, ahora = new Date()) {
+  const t = ahora.getTime()
   return {
     token: respuesta.access_token,
     usuario: respuesta.usuario,
-    expiraEn: ahora.getTime() + respuesta.expires_in * 1000,
+    expiraEn: t + respuesta.expires_in * 1000,
+    refreshToken: respuesta.refresh_token ?? null,
+    refreshExpiraEn: respuesta.refresh_token ? t + (respuesta.refresh_expires_in ?? 0) * 1000 : 0,
   }
 }
 
-/** ¿El token sirve todavía? (con un margen para no usar uno a punto de vencer) */
+/** ¿El access token sirve todavía? (con un margen para no usar uno a punto de vencer) */
 export function sesionVigente(sesion, ahora = new Date(), margenMs = MARGEN_EXPIRACION_MS) {
   return !!sesion?.token && sesion.expiraEn - margenMs > ahora.getTime()
 }
 
-/** Marca la sesión como vencida conservando quién era (sirve para pedir volver a ingresar). */
-export const vencerSesion = (sesion) => ({ ...sesion, token: null, expiraEn: 0 })
+/** ¿Se puede pedir un access token nuevo con el refresh token? (las sesiones guardadas antes del refresh no lo tienen) */
+export function puedeRenovar(sesion, ahora = new Date(), margenMs = MARGEN_EXPIRACION_MS) {
+  return !!sesion?.refreshToken && sesion.refreshExpiraEn - margenMs > ahora.getTime()
+}
+
+/**
+ * 'ninguna' (no hay sesión) · 'vigente' (el access token sirve) · 'renovable' (venció, pero el refresh token
+ * pide otro) · 'vencida' (no hay cómo seguir: hay que ingresar de nuevo).
+ */
+export function estadoSesion(sesion, ahora = new Date()) {
+  if (!sesion) return 'ninguna'
+  if (sesionVigente(sesion, ahora)) return 'vigente'
+  return puedeRenovar(sesion, ahora) ? 'renovable' : 'vencida'
+}
+
+/** ¿La persona sigue dentro? Con el access token vencido pero el refresh vigente, sí: se renueva sola. */
+export const sesionActiva = (sesion, ahora = new Date()) => ['vigente', 'renovable'].includes(estadoSesion(sesion, ahora))
+
+/** Marca la sesión como vencida conservando quién era (sirve para pedir volver a ingresar). Sin refresh: ya no sirve. */
+export const vencerSesion = (sesion) => ({ ...sesion, token: null, expiraEn: 0, refreshToken: null, refreshExpiraEn: 0 })

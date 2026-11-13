@@ -1,5 +1,9 @@
 # Middlewares comunes del gateway (Traefik, proveedor de archivos). Traefik recarga esta carpeta solo.
 # Las mismas piezas, como recursos de Kubernetes, están en ../k3s/.
+#
+# Las rutas NO declaran entryPoints: escuchan en todos los que existan. En local solo hay `web` (HTTP, :80); con
+# infra/docker-compose.https.yml se agrega `websecure` (HTTPS, :443) y `web` pasa a redirigir a él, así que las mismas
+# rutas sirven en los dos modos. El certificado y la redirección son de la configuración ESTÁTICA de Traefik.
 http:
   middlewares:
     # En TODAS las rutas, también en las públicas: los servicios confían en X-Usuario-Id y X-Usuario-Rol,
@@ -48,11 +52,19 @@ http:
         maxRequestBodyBytes: 6291456 # 6 MB
 
     # Subida directa del navegador a SeaweedFS (URL firmada). Origen = la PWA; sin comodines.
+    # HSTS: el navegador solo vuelve por HTTPS. Un día por ahora (dominio provisional); subirlo cuando el dominio sea el definitivo.
+    # Traefik solo lo agrega en las respuestas HTTPS.
+    hsts:
+      headers:
+        stsSeconds: 86400
+
+    # El origen de la PWA con HTTPS sale de DOMINIO_PUBLICO (plantilla del proveedor de archivos; en infra/.env).
     almacenamiento-cors:
       headers:
         accessControlAllowOriginList:
           - http://localhost
           - http://localhost:5173
+          - 'https://{{ env "DOMINIO_PUBLICO" }}'
         accessControlAllowMethods: [GET, PUT, HEAD, OPTIONS]
         accessControlAllowHeaders: [Content-Type, Content-Length]
         accessControlMaxAge: 600

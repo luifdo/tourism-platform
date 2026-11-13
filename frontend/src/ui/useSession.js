@@ -10,16 +10,32 @@ const estado = reactive({ autenticado: false, usuario: null, expirada: false })
 let temporizador = null
 let enlazado = false
 
+const REINTENTO_MS = 30_000 // si renovar falla por algo pasajero (sin red, 503), se vuelve a intentar
+const esperaHasta = (cuando) => Math.min(Math.max(cuando - Date.now(), 0), 2 ** 31 - 1) + 100
+
+/** Renueva el token antes de que venza (o ya, si venció pero el refresh sigue sirviendo), sin esperar a la próxima petición. */
+async function renovarAhora() {
+  try {
+    await authUseCases.renovarSesion()
+    sincronizar()
+  } catch {
+    clearTimeout(temporizador)
+    temporizador = setTimeout(renovarAhora, REINTENTO_MS) // la sesión sigue buena: no se da por vencida
+  }
+}
+
 function sincronizar() {
   let e = authUseCases.estado()
-  if (e.expirada) { authUseCases.invalidarSesion(); e = authUseCases.estado() } // un token vencido no se deja guardado
+  if (e.expirada) { authUseCases.invalidarSesion(); e = authUseCases.estado() } // una sesión que no se puede renovar no se deja guardada
   estado.autenticado = e.autenticado
   estado.usuario = e.usuario
   estado.expirada = e.expirada
   clearTimeout(temporizador)
+  const renovar = authUseCases.renovarEn()
+  if (renovar != null) { temporizador = setTimeout(renovarAhora, esperaHasta(renovar)); return }
+  // Sin refresh token (sesión guardada antes del refresh): al vencer se refleja solo, sin esperar a la próxima petición
   const vence = authUseCases.expiraEn()
-  // El token dura 15 min (sin refresh): al vencer se refleja solo, sin esperar a la próxima petición
-  if (vence) temporizador = setTimeout(sincronizar, Math.min(vence - Date.now(), 2 ** 31 - 1) + 100)
+  if (vence) temporizador = setTimeout(sincronizar, esperaHasta(vence))
 }
 
 function enlazar() {
@@ -28,6 +44,7 @@ function enlazar() {
   sincronizar()
   window.addEventListener('storage', (e) => { if (e.key === 'session.v1') sincronizar() }) // otra pestaña inició o cerró sesión
   document.addEventListener('visibilitychange', () => { if (!document.hidden) sincronizar() }) // volvió a la pestaña
+  window.addEventListener('online', sincronizar) // volvió la red: si el token venció, se renueva antes de reenviar lo pendiente
 }
 enlazar()
 

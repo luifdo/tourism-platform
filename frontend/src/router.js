@@ -8,7 +8,8 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: HomeView },
     { path: '/servicios/:id', name: 'service', component: () => import('./views/ServiceView.vue'), props: true },
-    { path: '/mis-reservas', name: 'my-bookings', component: () => import('./views/MyBookingsView.vue'), meta: { requiresAuth: true } },
+    { path: '/mis-reservas', name: 'my-bookings', component: () => import('./views/MyBookingsView.vue'), meta: { requiresAuth: true, rol: 'Turista' } },
+    { path: '/prestador', name: 'provider', component: () => import('./views/ProviderView.vue'), meta: { requiresAuth: true, rol: 'Prestador' } },
     { path: '/ingresar', name: 'login', component: () => import('./views/LoginView.vue'), meta: { guestOnly: true } },
     { path: '/registro', name: 'register', component: () => import('./views/RegisterView.vue'), meta: { guestOnly: true } },
     { path: '/recuperar', name: 'recover', component: () => import('./views/RecoverView.vue'), meta: { guestOnly: true } },
@@ -29,6 +30,8 @@ router.beforeEach((to) => {
   if (to.meta.requiresAuth && !e.autenticado && !puedeVerGuardado)
     return { name: 'login', query: { redirect: to.fullPath, ...(e.expirada ? { expirada: '1' } : {}) } }
   if (to.meta.guestOnly && e.autenticado) return { path: rutaSegura(to.query.redirect) }
+  // Una pantalla de un rol (el panel del prestador) no la abre quien tiene otro: el servicio igual respondería 403
+  if (to.meta.rol && e.usuario && e.usuario.rol !== to.meta.rol) return { name: 'home' }
 })
 
 export default router

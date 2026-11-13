@@ -41,7 +41,7 @@ watch([date, people], () => { idemKey = uid() })
 
 const day = computed(() => days.value.find((d) => d.fecha === date.value))
 const maxPeople = computed(() => maxPersonas(day.value))
-const rate = computed(() => tarifaDia(day.value, props.service.fee))
+const rate = computed(() => tarifaDia(day.value, props.service.tarifaBase))
 const cop = (v) => n(v, { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
 
 const errKey = (e) => {

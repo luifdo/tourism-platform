@@ -1,7 +1,8 @@
 # SeaweedFS (S3) publicado por el gateway, por nombre de host: la firma de la URL incluye el host, así que
 # no sirve un prefijo. Vive en turismo-datos porque Traefik solo enruta a Services de su propio namespace.
-# El host se cambia al definir el dominio (hoy local: s3.localhost; en la VM, s3.<ip>.sslip.io). Ese mismo valor va
-# en S3_ENDPOINT_PUBLICO e IMAGENES_URL_PUBLICA de los servicios, y el origen de la PWA en la lista de CORS.
+# Sirve cualquier host que empiece por `s3.` (s3.localhost en local, s3.<dominio> en el servidor); el dominio va en
+# S3_ENDPOINT_PUBLICO e IMAGENES_URL_PUBLICA de los servicios. El origen de la PWA de la lista de CORS NO es una plantilla
+# aquí (los CRD no las admiten): hay que poner el dominio definitivo en lugar del provisional.
 # Sin ForwardAuth: la autenticación es la firma. OJO: expone TODO el S3; el acceso anónimo de SeaweedFS debe limitarse
 # a Read:catalogo-imagenes (infra/seaweedfs/s3.json) o los documentos de verificación quedan legibles.
 apiVersion: traefik.io/v1alpha1
@@ -9,7 +10,7 @@ kind: Middleware
 metadata: { name: almacenamiento-cors }
 spec:
   headers:
-    accessControlAllowOriginList: [http://localhost, http://localhost:5173]
+    accessControlAllowOriginList: [http://localhost, http://localhost:5173, https://3-141-142-12.sslip.io]
     accessControlAllowMethods: [GET, PUT, HEAD, OPTIONS]
     accessControlAllowHeaders: [Content-Type, Content-Length]
     accessControlMaxAge: 600
@@ -20,7 +21,7 @@ metadata: { name: almacenamiento }
 spec:
   entryPoints: [web]
   routes:
-    - match: Host(`s3.localhost`)
+    - match: HostRegexp(`^s3\..+$`)
       kind: Rule
       priority: 100
       middlewares: [{ name: almacenamiento-cors }]

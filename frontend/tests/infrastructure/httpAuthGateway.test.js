@@ -17,7 +17,7 @@ describe('adaptador HTTP de autenticación (iam-service)', () => {
   it('implementa el puerto AuthGateway completo', () => expect(assertAuthGateway(crear(vi.fn()))).toBeTruthy())
 
   it('las rutas son las que implementa el servicio', () => {
-    expect(RUTAS).toMatchObject({ registro: '/register', login: '/login', logout: '/logout' })
+    expect(RUTAS).toMatchObject({ registro: '/register', login: '/login', logout: '/logout', refresh: '/auth/refresh' })
   })
 
   it('registrar: POST /api/iam/register con el cuerpo del servicio y devuelve el usuario público', async () => {
@@ -107,6 +107,38 @@ describe('adaptador HTTP de autenticación (iam-service)', () => {
     it('el token inválido (400) se conserva como TOKEN_INVALIDO', async () => {
       const e = await falla(crear(vi.fn(async () => respuesta({ detail: 'x', code: 'TOKEN_INVALIDO' }, 400))).restablecerPassword({ token: 't', password: 'NuevaClave77' }))
       expect(e.code).toBe('TOKEN_INVALIDO')
+    })
+  })
+  describe('renovar (POST /api/iam/auth/refresh)', () => {
+    const nueva = { access_token: 'a2', token_type: 'bearer', expires_in: 900, refresh_token: 'r2', refresh_expires_in: 604800, usuario: { id: 'u1' } }
+
+    it('manda el refresh token en el cuerpo, SIN Authorization (el access token puede haber vencido), y devuelve lo mismo que el login', async () => {
+      const fetchFn = vi.fn(async () => respuesta(nueva))
+      expect(await crear(fetchFn).renovar('r1')).toEqual(nueva)
+      const [url, init] = fetchFn.mock.calls[0]
+      expect(url).toBe('/api/iam/auth/refresh')
+      expect(init.method).toBe('POST')
+      expect(JSON.parse(init.body)).toEqual({ refresh_token: 'r1' })
+      expect(init.headers.Authorization).toBeUndefined()
+    })
+
+    it('el 401 del servicio (vencido, revocado o reutilizado: siempre el mismo cuerpo) es TOKEN_INVALIDO', async () => {
+      const e = await falla(crear(async () => respuesta({ detail: 'Token inválido', code: 'TOKEN_INVALIDO' }, 401)).renovar('r1'))
+      expect(e).toBeInstanceOf(AuthError)
+      expect(e).toMatchObject({ code: 'TOKEN_INVALIDO', status: 401 })
+    })
+
+    it('un 401 sin código también es TOKEN_INVALIDO (no CREDENCIALES_INVALIDAS, que es del login)', async () => {
+      expect((await falla(crear(async () => respuesta(undefined, 401)).renovar('r1'))).code).toBe('TOKEN_INVALIDO')
+    })
+
+    it('el 503 es SERVICIO_NO_DISPONIBLE (pasajero: no se pierde la sesión) y el 422 es VALIDACION', async () => {
+      expect(await falla(crear(async () => respuesta({ detail: 'x', code: 'SERVICIO_NO_DISPONIBLE' }, 503)).renovar('r1'))).toMatchObject({ code: 'SERVICIO_NO_DISPONIBLE', status: 503 })
+      expect(await falla(crear(async () => respuesta({ detail: 'x', code: 'VALIDACION' }, 422)).renovar('r1'))).toMatchObject({ code: 'VALIDACION', status: 422 })
+    })
+
+    it('sin red es SIN_CONEXION', async () => {
+      expect((await falla(crear(async () => { throw new TypeError('Failed to fetch') }).renovar('r1'))).code).toBe('SIN_CONEXION')
     })
   })
 })

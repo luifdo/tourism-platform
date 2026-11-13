@@ -12,14 +12,12 @@ http:
         || PathPrefix(`/api/catalog/mapa/`)))
         || (Method(`POST`) && PathRegexp(`^/api/catalog/servicios/[^/]+/intencion-visita$`))
       priority: 100
-      entryPoints: [web]
       middlewares: [quitar-identidad]
       service: catalog-service
 
     catalog-protegidas:
       rule: "PathPrefix(`/api/catalog`)"
       priority: 10
-      entryPoints: [web]
       middlewares: [protegida]
       service: catalog-service
 

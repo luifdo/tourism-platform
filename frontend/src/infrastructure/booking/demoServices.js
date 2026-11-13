@@ -1,15 +1,15 @@
-import { capacity, experiences } from '../../data/mock.js'
+import { DEMO_SERVICIOS } from '../catalog/demoCatalogo.js'
 
-/** Servicios de demostración del simulador: capacidad diaria, tarifa base y particularidades de cada uno. */
+/** Servicios de demostración del simulador de reservas: capacidad diaria, tarifa base y particularidades de cada uno. */
 export const demoServices = Object.fromEntries(
-  experiences.map((e) => [
-    e.id,
+  DEMO_SERVICIOS.map((s) => [
+    s.id,
     {
-      fee: e.fee,
-      capacidad: capacity[e.id] ?? 10,
+      fee: s.tarifaBase,
+      capacidad: s.capacidadDiaria,
       // La quebrada cierra los lunes; los sábados de Bahía Concha cuestan 20 % más
-      ...(e.id === 'quebrada-valencia' ? { cierra: [1] } : {}),
-      ...(e.id === 'bahia-concha' ? { recargo: { dia: 6, factor: 1.2 } } : {}),
+      ...(s.id === 'quebrada-valencia' ? { cierra: [1] } : {}),
+      ...(s.id === 'bahia-concha' ? { recargo: { dia: 6, factor: 1.2 } } : {}),
     },
   ]),
 )

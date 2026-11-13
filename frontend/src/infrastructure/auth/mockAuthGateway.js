@@ -10,10 +10,12 @@ import { emailValido, evaluarPassword, normalizarEmail, validarRegistro } from '
  */
 const USERS = 'mock.iam.users.v1'
 const RESETS = 'mock.iam.reset.v1'
+const SESIONES = 'mock.iam.sesiones.v1'
 const TTL_TOKEN_S = 900 // igual que jwt_access_token_ttl_minutes = 15
+const TTL_REFRESH_S = 7 * 24 * 3600 // el refresh token dura 7 días
 const TTL_RESET_MS = 30 * 60_000
 
-export const CUENTA_DEMO = Object.freeze({ email: 'maria.perez@example.com', password: 'Tayrona2026', nombre: 'María Pérez' })
+export const CUENTA_DEMO = /* @__PURE__ */ Object.freeze({ email: 'maria.perez@example.com', password: 'Tayrona2026', nombre: 'María Pérez' })
 
 async function resumen(password, sal) {
   const bytes = new TextEncoder().encode(`${sal}:${password}`)
@@ -32,6 +34,7 @@ export function createMockAuthGateway({
   delayMs = 250,
   newId = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`),
   exponerEnlaceDeRecuperacion = true,
+  ttlTokenS = TTL_TOKEN_S, // las pruebas y la demo pueden acortarlo para ver la renovación
 } = {}) {
   const ahora = () => clock.now()
   const espera = (v) => (delayMs ? new Promise((res) => setTimeout(() => res(v), delayMs)) : Promise.resolve(v))
@@ -50,6 +53,20 @@ export function createMockAuthGateway({
       guardar(USERS, lista)
     }
     return lista
+  }
+
+  /** Sesiones de refresh: { refresh, usuarioId, familia, usado, vence }. Una familia es una sesión de punta a punta. */
+  const sesiones = () => leer(SESIONES, [])
+  const revocarFamilia = (familia) => guardar(SESIONES, sesiones().map((s) => (s.familia === familia ? { ...s, revocada: true } : s)))
+  const emitir = (u, familia) => {
+    const t = ahora().getTime()
+    const iat = Math.floor(t / 1000)
+    const refresh = `r-${newId()}`
+    guardar(SESIONES, [...sesiones().filter((s) => s.vence > t), { refresh, usuarioId: u.id, familia, usado: false, revocada: false, vence: t + TTL_REFRESH_S * 1000 }])
+    return {
+      access_token: falso({ sub: u.id, rol: u.rol, sid: familia, jti: newId(), iat, exp: iat + ttlTokenS, iss: 'iam-service' }),
+      token_type: 'bearer', expires_in: ttlTokenS, refresh_token: refresh, refresh_expires_in: TTL_REFRESH_S, usuario: publico(u),
+    }
   }
 
   const falso = (payload) => {
@@ -86,13 +103,28 @@ export function createMockAuthGateway({
       const hash = await resumen(password, u?.sal ?? 'x')
       if (!u || hash !== u.hash) throw new AuthError(C.CREDENCIALES_INVALIDAS, 'Correo o contraseña incorrectos.', { status: 401 })
       if (!u.activo) throw new AuthError(C.CUENTA_INACTIVA, 'La cuenta está desactivada. Contacte al administrador.', { status: 403 })
-      const iat = Math.floor(ahora().getTime() / 1000)
-      const access_token = falso({ sub: u.id, rol: u.rol, jti: newId(), iat, exp: iat + TTL_TOKEN_S, iss: 'iam-service' })
-      return espera({ access_token, token_type: 'bearer', expires_in: TTL_TOKEN_S, usuario: publico(u) })
+      return espera(emitir(u, newId()))
+    },
+
+    /** Igual que el servicio: cada renovación entrega un refresh nuevo y el anterior deja de servir; usarlo otra vez revoca la sesión. */
+    async renovar(refreshToken) {
+      const invalido = new AuthError(C.TOKEN_INVALIDO, 'El token no es válido, expiró o fue revocado.', { status: 401 })
+      if (!refreshToken) throw new AuthError(C.VALIDACION, 'Falta el token.', { status: 422 })
+      const s = sesiones().find((x) => x.refresh === refreshToken)
+      if (!s || s.vence <= ahora().getTime() || s.revocada) throw invalido
+      if (s.usado) { revocarFamilia(s.familia); throw invalido } // reutilizado: se toma como robo
+      const u = (await usuarios()).find((x) => x.id === s.usuarioId)
+      if (!u || !u.activo) { revocarFamilia(s.familia); throw invalido }
+      guardar(SESIONES, sesiones().map((x) => (x.refresh === refreshToken ? { ...x, usado: true } : x)))
+      return espera(emitir(u, s.familia))
     },
 
     async cerrarSesion(token) {
       if (!token) throw new AuthError(C.TOKEN_INVALIDO, 'El token no es válido, expiró o fue revocado.', { status: 401 })
+      try { // el logout con el access token también revoca el refresh de esa sesión (claim `sid`)
+        const { sid } = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+        if (sid) revocarFamilia(sid)
+      } catch { /* token sin sid: nada que revocar */ }
       return espera(undefined)
     },
 

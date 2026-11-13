@@ -12,12 +12,10 @@ const esRecomendacion = (r) => r && typeof r.servicio_id === 'string' && typeof 
  * Adaptador HTTP del puerto AssistantGateway: habla con el recommendation-service a través del Gateway
  * (Traefik), siguiendo contracts/openapi/recommendation.yaml.
  */
-export function createHttpAssistantGateway({ baseUrl = '/api/recommendations', getToken = () => null, fetchFn = (...a) => fetch(...a), timeoutMs = ESPERA_MAXIMA_MS } = {}) {
+export function createHttpAssistantGateway({ baseUrl = '/api/recommendations', fetchFn = (...a) => fetch(...a), timeoutMs = ESPERA_MAXIMA_MS } = {}) {
   return {
     async enviarMensaje({ mensaje, conversacionId, idioma = 'es' }) {
       const headers = { Accept: 'application/json', 'Content-Type': 'application/json', 'Accept-Language': idioma }
-      const token = getToken()
-      if (token) headers.Authorization = `Bearer ${token}`
 
       const control = new AbortController()
       let agotado = false

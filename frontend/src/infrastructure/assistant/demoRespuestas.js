@@ -1,6 +1,6 @@
 /*
  * Conocimiento del asistente simulado: los mismos servicios de demostración del catálogo simulado
- * (data/mock.js), con el nombre, la justificación y las palabras que los activan en cada idioma.
+ * (infrastructure/catalog/demoCatalogo.js), con el nombre, la justificación y las palabras que los activan en cada idioma.
  * El servicio real consulta catalog, booking y review con herramientas; aquí es solo una coincidencia de palabras.
  */
 export const DEMO_CATALOGO = [

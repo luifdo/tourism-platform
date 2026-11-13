@@ -7,14 +7,12 @@ http:
         Method(`GET`) && (PathRegexp(`^/api/reviews/servicios/[^/]+/(resenas|resumen)$`)
         || PathRegexp(`^/api/reviews/resenas/[^/]+$`))
       priority: 100
-      entryPoints: [web]
       middlewares: [quitar-identidad]
       service: review-service
 
     review-protegidas:
       rule: "PathPrefix(`/api/reviews`)"
       priority: 10
-      entryPoints: [web]
       middlewares: [protegida]
       service: review-service
 

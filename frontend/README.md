@@ -96,3 +96,16 @@ En modo simulado (`VITE_API_MOCK=true`) hay una cuenta de ejemplo (`maria.perez@
 npm test          # dominio, casos de uso (con adaptadores falsos), adaptadores y regla de dependencias
 npm run test:watch
 ```
+
+## Producción (contenedor)
+
+`frontend/Dockerfile` compila la PWA con Node y la sirve con Nginx (sin privilegios, puerto 8080). En el compose de `infra/` es el servicio `frontend`, al que Traefik manda todo lo que no es de un servicio.
+
+```bash
+cd infra && docker compose up -d --build frontend
+```
+
+- **`VITE_API_MOCK` y `VITE_BASE` se fijan al compilar** (argumentos del build; por defecto `false` y `/`). Todo lo que empieza con `VITE_` queda dentro de los archivos públicos: nunca pongas claves ahí.
+- `nginx.conf`: fallback a `index.html` para las rutas de Vue Router; **404** en `/internal`, `/health` y `/metrics`; **404 en JSON** para cualquier `/api/...` que ningún servicio tenga; `index.html`, `sw.js` y el manifiesto sin caché (para que se actualice la PWA) y `/assets/` con hash por un año.
+- Para desarrollar con recarga en caliente: `VITE_API_MOCK=false` en `frontend/.env` y `npm run dev`; el proxy de Vite manda `/api` a `localhost:80` (el gateway, o un túnel SSH a la VM).
+- Pendiente: Content-Security-Policy y los manifiestos de k8s del frontend.

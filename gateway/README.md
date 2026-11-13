@@ -27,7 +27,7 @@ La fuente de verdad es el `security` de cada contrato de `contracts/openapi/`; u
 | `Host(s3.localhost)` → `seaweedfs:8333` | todo (la autenticación es la firma de la URL) |
 | `/` (lo demás) → frontend | todo |
 
-Todo lo demás pasa por ForwardAuth (`GET /api/iam/auth/verificar`). **Nunca se enrutan** `/internal`, `/health` ni `/metrics`: caen en el frontend. Prometheus y Blackbox consultan los Services por dentro del clúster.
+Todo lo demás pasa por ForwardAuth (`GET /api/iam/auth/verificar`). **Nunca se enrutan** `/internal`, `/health` ni `/metrics`: caen en el frontend, cuyo Nginx responde 404. Prometheus y Blackbox consultan los Services por dentro del clúster.
 
 ## Reglas de seguridad (las pide el IAM y lo repiten catálogo y reservas)
 
@@ -51,7 +51,7 @@ python validar_k3s.py                   # kustomize + CRD de Traefik + igualdad 
 
 ## Usarlo
 
-* **docker compose** (`infra/`): `docker compose up -d`. Traefik escucha en el puerto 80 y recarga `config/compose/` solo. El frontend todavía no está en el compose: la ruta `/` apunta al servidor de desarrollo del anfitrión (`npm run dev`, puerto 5173).
+* **docker compose** (`infra/`): `docker compose up -d`. Traefik escucha en el puerto 80 y recarga `config/compose/` solo. La ruta `/` apunta al contenedor `frontend` del compose (Nginx, puerto 8080, `frontend/Dockerfile`), compilado con `VITE_API_MOCK=false`. Para desarrollar con recarga en caliente se usa `npm run dev` (puerto 5173), cuyo proxy de Vite manda `/api` a este gateway.
 * **k3d / k3s:** `kubectl apply -k gateway/config/k3s` (namespaces `turismo-app`, `turismo-datos` y `kube-system`, ya definidos en `infra/k8s/`).
 
 ## Lo que no está hecho o no se pudo comprobar
@@ -61,7 +61,7 @@ python validar_k3s.py                   # kustomize + CRD de Traefik + igualdad 
 * **TLS** (cert-manager, ACME) y los **dominios**: faltan hasta que exista la VM (`sslip.io`). El host de SeaweedFS (`s3.localhost`) y el origen de CORS de la PWA se cambian entonces, y deben coincidir con `S3_ENDPOINT_PUBLICO` e `IMAGENES_URL_PUBLICA` de los servicios.
 * **`X-Correlation-ID`:** Traefik lo reenvía pero no lo genera (haría falta un plugin). Los servicios generan uno si falta (catalog lo hace; confirmar los demás).
 * **SeaweedFS expuesto:** el gateway publica todo el S3. Antes de abrirlo hay que limitar el acceso anónimo a `Read:catalogo-imagenes` (C-46, `infra/seaweedfs/s3.json`) o los documentos de verificación quedan legibles sin firma.
-* **Frontend en k3s:** falta el Service `frontend` (puerto 80), su Dockerfile y su NetworkPolicy.
-* Una ruta `/api/...` que no existe cae en el frontend y devuelve su HTML con 200, no un 404 en JSON.
+* **Frontend en k3s:** el Dockerfile ya existe, pero faltan el Deployment, el Service `frontend` (puerto 80 hacia el 8080 del contenedor) y su NetworkPolicy.
+* Una ruta `/api/...` que no existe cae en el frontend, pero el Nginx del frontend responde 404 en JSON (no el HTML con 200). Igual `/internal`, `/health` y `/metrics`: 404.
 * `GET /api/iam/auth/verificar` es alcanzable desde fuera (con token válido); solo devuelve la identidad que ya tiene el usuario.
 * No hay CORS en la API: la PWA entra por el mismo origen (en desarrollo, el proxy de Vite envía `/api` al puerto 80).

@@ -1,0 +1,12 @@
+# Lo que no debe entrar al contexto de la imagen: dependencias locales, resultados de compilación y
+# archivos de entorno (el .env del desarrollador no se mete en una imagen).
+node_modules
+dist
+dev-dist
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+tests
+coverage

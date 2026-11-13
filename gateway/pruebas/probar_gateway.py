@@ -37,7 +37,7 @@ REEMPLAZOS = {
     "http://booking-service:8003": f"http://127.0.0.1:{falsos.PUERTOS['booking']}",
     "http://review-service:8004": f"http://127.0.0.1:{falsos.PUERTOS['review']}",
     "http://recommendation-service:8005": f"http://127.0.0.1:{falsos.PUERTOS['recommendation']}",
-    "http://host.docker.internal:5173": f"http://127.0.0.1:{falsos.PUERTOS['frontend']}",
+    "http://frontend:8080": f"http://127.0.0.1:{falsos.PUERTOS['frontend']}",
     "http://seaweedfs:8333": f"http://127.0.0.1:{falsos.PUERTOS['almacenamiento']}",
 }
 

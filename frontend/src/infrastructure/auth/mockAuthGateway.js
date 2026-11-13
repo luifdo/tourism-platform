@@ -13,7 +13,7 @@ const RESETS = 'mock.iam.reset.v1'
 const TTL_TOKEN_S = 900 // igual que jwt_access_token_ttl_minutes = 15
 const TTL_RESET_MS = 30 * 60_000
 
-export const CUENTA_DEMO = Object.freeze({ email: 'maria.perez@example.com', password: 'Tayrona2026', nombre: 'María Pérez' })
+export const CUENTA_DEMO = /* @__PURE__ */ Object.freeze({ email: 'maria.perez@example.com', password: 'Tayrona2026', nombre: 'María Pérez' })
 
 async function resumen(password, sal) {
   const bytes = new TextEncoder().encode(`${sal}:${password}`)

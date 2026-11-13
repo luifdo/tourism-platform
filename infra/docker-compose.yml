@@ -370,6 +370,17 @@ services:
       postgres-preparar: { condition: service_completed_successfully }
       valkey: { condition: service_started }
 
+  # PWA de producción (frontend/Dockerfile): Nginx sirviendo dist/ en el 8080, compilada contra el gateway real.
+  # Traefik le manda todo lo que no es de un servicio (gateway/config/compose/90-frontend.yml). Para desarrollar
+  # el frontend con recarga en caliente no hace falta: `npm run dev` en frontend/ con VITE_API_MOCK=false.
+  frontend:
+    build:
+      context: ../frontend
+      args:
+        VITE_API_MOCK: "false"
+        VITE_BASE: /
+    image: frontend:local
+
   # ---------- API Gateway ----------
   # Traefik (ADR-007); en el clúster k3s viene incluido como Ingress. Aquí solo el contenedor: las
   # rutas y los middlewares son de gateway/config/compose/ y se recargan solos. Sin ellos, todo da 404.
@@ -389,8 +400,6 @@ services:
     ports: ["80:80"]
     volumes:
       - ../gateway/config/compose:/etc/traefik/dinamica:ro
-    # Para llegar al servidor de desarrollo del frontend (npm run dev) desde el contenedor; en Linux hace falta.
-    extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 10s

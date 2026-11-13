@@ -1,7 +1,7 @@
 # Frontend (PWA) · cualquier ruta que no sea de un servicio. Prioridad mínima.
-# El compose todavía no tiene el contenedor del frontend: mientras tanto se apunta al servidor de desarrollo
-# (npm run dev, puerto 5173) del equipo anfitrión. En Linux, el servicio traefik necesita
-#   extra_hosts: ["host.docker.internal:host-gateway"]
+# El contenedor `frontend` del compose (frontend/Dockerfile) sirve la PWA compilada con Nginx en el 8080.
+# Para desarrollar con recarga en caliente no se usa esta ruta: se abre http://localhost:5173 (npm run dev),
+# cuyo proxy de Vite manda /api a este gateway.
 http:
   routers:
     frontend:
@@ -15,4 +15,4 @@ http:
     frontend:
       loadBalancer:
         servers:
-          - url: http://host.docker.internal:5173
+          - url: http://frontend:8080

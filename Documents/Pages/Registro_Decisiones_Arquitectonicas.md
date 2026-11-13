@@ -25,6 +25,7 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 | [ADR-010](#adr-010-componente-de-inteligencia-artificial) | IA: chatbot sobre la API de Gemini con herramientas de solo lectura | No | Aceptada |
 | [ADR-011](#adr-011-proveedor-del-modelo-de-lenguaje-groq-en-lugar-de-gemini) | Proveedor del modelo de lenguaje: Groq en lugar de Gemini | No | Propuesta |
 | [ADR-012](#adr-012-cifrado-en-reposo-y-en-tránsito) | Cifrado en reposo y en tránsito: en la infraestructura, con lo interno declarado como limitación | No | Aceptada |
+| [ADR-013](#adr-013-decisiones-del-módulo-1-iam) | Decisiones del Módulo 1 (IAM): verificación propia, revocación y refresh en Valkey, bitácora idempotente, outbox y supresión por anonimización | No | Propuesta |
 
 ---
 
@@ -224,3 +225,56 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
     * Escribir en el SRS v1.2 (§2.4.5) qué se cifra, dónde y qué queda como limitación.
     * Marcar C-58 como resuelta en la documentación del IAM.
 * **Trazabilidad:** SRS §2.4.5, RNF-09, Ley 1581, C-46, C-58, ADR-003, ADR-005, ADR-007, Plan §7.
+
+---
+
+## ADR-013: Decisiones del Módulo 1 (IAM)
+
+* **Estado:** Propuesta el 13 de noviembre de 2026 por Valentina Nieves (Módulo 1). La acepta Luis Fernando Barraza, responsable de la arquitectura. No reemplaza ningún ADR: precisa cómo el Módulo 1 cumple el ADR-007 y el ADR-008.
+* **Contexto:**
+  * El IAM es el punto por el que pasa cada petición protegida: Traefik lo consulta con ForwardAuth (ADR-007). Su latencia y su disponibilidad son las de toda la plataforma.
+  * Guarda datos personales bajo la Ley 1581: correos, nombres, documentos tributarios y la bitácora de auditoría (RNF-10, ESC-04).
+  * Al implementarlo, el IAM se apartó en varios puntos de lo que fijaban el SRS v1.1, el Plan de Implementación y el Laboratorio 3. Este ADR reúne esas decisiones; el detalle de cada una, con su causa, su efecto y su estado, está en `services/iam-service/docs/cambios-frente-al-srs.md` (C-xx).
+* **Decisión:**
+  1. **Verificación propia para el ForwardAuth** (`GET /api/iam/auth/verificar`), en lugar de que Traefik valide el JWT con el JWKS (C-16):
+     * Comprueba firma RS256, emisor, expiración, tipo y revocación. En el camino feliz solo lee Valkey, nunca PostgreSQL.
+     * 401 `TOKEN_INVALIDO` sin token válido y 403 `ROL_INSUFICIENTE` con rol insuficiente (C-36).
+     * Cada 401 y 403 deja una fila `ACCESS_DENIED` con un motivo interno que no sale en la respuesta, sin el query string y con la plantilla de la ruta (C-23, C-34).
+  2. **Revocación por usuario con `revocado-desde`**, además del `jti` (C-21): un cambio de rol, de estado o de contraseña guarda la hora del cambio, y se rechaza todo token con `iat <=` esa marca. Las llaves del `jti`, del usuario y de la sesión se leen en un solo `MGET`.
+  3. **Refresh token opaco con rotación** (C-20, C-60):
+     * Valor aleatorio, no JWT; Valkey guarda solo su SHA-256.
+     * Cada uso entrega uno nuevo. Un refresh ya rotado revoca la familia y deja `REFRESH_REUTILIZADO`.
+     * El access token lleva el `sid` de la familia, y `verificar` rechaza una sesión revocada en la misma lectura del punto 2.
+     * La rotación es atómica (un script Lua): de dos usos simultáneos, gana uno.
+  4. **Bitácora centralizada de solo `INSERT`, idempotente en la base** (C-04, RNF-10): `UNIQUE(event_id)` con `ON CONFLICT DO NOTHING`, sin Valkey. Triggers y `REVOKE` impiden `UPDATE`, `DELETE` y `TRUNCATE` (C-03).
+  5. **Eventos por outbox con relay en el worker** (C-09), como fija el ADR-008: `prestador.aprobado`, `prestador.suspendido` y `usuario.suprimido` se guardan en la misma transacción que el cambio. `OUTBOX_EVENTOS_RETENIDOS` permite retener un tipo hasta que exista su cola (C-63).
+  6. **Supresión por anonimización, no por borrado** (C-27): datos neutros en la fila, documentos borrados de SeaweedFS y la bitácora intacta. `usuario.suprimido` avisa a catalog para que borre los datos del perfil del prestador (C-63).
+  7. **Otras diferencias con el SRS y el Plan:**
+     * `razon_social` se guarda en `iam_db`, porque viene con el RUT, y viaja en `prestador.aprobado` (C-07). `prestador_id` = `usuario_id` (C-08).
+     * Readiness y liveness en `/health/live`, sin dependencias. `/health`, con PostgreSQL y Valkey, queda para el monitoreo (C-32).
+     * `iam.yaml` se genera desde la app, en OpenAPI 3.1 (C-57).
+     * El cifrado de los datos sensibles va en la infraestructura, según el ADR-012 (C-58).
+* **Alternativas consideradas:**
+  1. *Validar el JWT con el JWKS en el gateway:* descartada; no revoca antes del `exp` ni registra los 401 en la bitácora (ESC-04). *Solo 403, como la Tabla V del SRS:* descartada; la Tabla XXII y ESC-04 piden 401 o 403, y la PWA necesita distinguir "inicie sesión" de "sin permiso" (C-36).
+  2. *Guardar el `jti` en Valkey al cambiar el rol (Laboratorio §4.2):* descartada; el IAM no conoce los `jti` ya emitidos, y el cambio lo hace el Admin, no la sesión afectada.
+  3. *Refresh como JWT con `jti` (Plan §2.3):* descartada; pasaría la firma sin Valkey y `verificar` tendría que excluirlo a mano. *Sin refresh:* descartada; obliga a iniciar sesión cada 15 minutos, también con formularios pendientes (RNF-13).
+  4. *Idempotencia en Valkey con TTL de 24 h (SRS Tabla XV, Laboratorio ACME):* descartada; un evento reentregado después del TTL se duplica, y la marca y la fila se confirman en sistemas distintos.
+  5. *Publicar después del commit, sin outbox:* descartada en el ADR-008; un fallo entre los dos pierde el evento. *Publicar `usuario.suprimido` sin cola enlazada:* descartada; el broker lo confirma y lo descarta.
+  6. *Borrar al usuario:* descartada; la bitácora lo referencia con una llave foránea y debe conservarse (ESC-04). *Solo `prestador.suspendido`:* insuficiente; oculta el perfil pero no borra nada, porque es reversible.
+  7. *`razon_social` solo en catalog (SRS Tabla XVIII):* descartada; catalog la necesita al crear el perfil y quien la conoce es el IAM. *Readiness en `/health` (Plan §7.3):* descartada; una caída de PostgreSQL sacaría a todas las réplicas a la vez. *Contrato escrito a mano en 3.0:* descartada; se desactualiza, y convertirlo a 3.0 es frágil. *Cifrar en el servicio:* descartada en el ADR-012 por la URL firmada.
+* **Consecuencias:**
+  * **Se gana:**
+    * El logout, la desactivación y la detección de robo tienen efecto inmediato en toda la plataforma.
+    * Cada rechazo deja su fila en la bitácora, en una transacción propia (ESC-04). Si PostgreSQL no responde, el 401 o el 403 se mantiene y el fallo queda en el log (C-23).
+    * Ningún evento se pierde entre el commit y RabbitMQ. Un reenvío del relay puede duplicarlo; los consumidores lo descartan por `event_id` (C-04, ADR-008).
+    * La supresión cumple la Ley 1581 sin romper la trazabilidad.
+  * **Valkey pasa a ser dependencia crítica:** si cae, `verificar` responde 503 y nadie entra a las rutas protegidas; tampoco hay login ni refresh (falla cerrado, C-22). Por eso usa `noeviction` (C-60).
+  * **La bitácora crece sin poder borrarse,** y el texto libre que escribe un Admin en ella no se puede suprimir (C-27).
+  * **Respuesta perdida en un refresh:** si la rotación ocurre y la respuesta no llega, el reintento con el refresh viejo se trata como robo y cierra la sesión (C-60). Trabajo futuro: un periodo de gracia de 10 a 30 s para el refresh anterior inmediato, que debilita un poco la detección dentro de esa ventana.
+  * **Revocación inmediata:** un cambio de rol, de estado o de contraseña, y la supresión, cierran todas las sesiones del usuario, también sus refresh, y debe volver a iniciar sesión. La marca va en segundos, así que también cae un token emitido en el mismo segundo del cambio (C-21).
+  * **Liberar un evento retenido antes de que exista su cola lo pierde** (C-63).
+* **Trazabilidad:** RF-09, RF-12, RNF-04, RNF-10, RNF-12, RNF-13, ESC-04, UC1 a UC4, UC6, UC27, UC28, UC33, UC37, Ley 1581, ADR-007, ADR-008, ADR-012, Laboratorio 3 §4.2.
+* **Cambios propuestos a los documentos** (detalle en "Pendiente de reflejar" de `cambios-frente-al-srs.md`):
+  * **SRS v1.2:** C-01, C-02, C-04, C-05, C-06, C-07, C-08, C-17 (con C-29 y C-47), C-20, C-23 (ESC-04), C-27, C-36, C-38, C-39, C-57 y C-58.
+  * **Plan:** §2.3 (C-19, C-21, C-60), §4.1 (C-11, C-12, C-13), §4.3 (C-38, C-40), §7 y §7.4 (C-54), §7.2 (C-61) y §7.3 (C-32).
+  * **Laboratorio 3:** Figuras 1 y 2 y especificación ACME (C-04), Figura 6 (C-31), Figura 10 (C-32) y §4.2 (C-20, C-21, C-60).

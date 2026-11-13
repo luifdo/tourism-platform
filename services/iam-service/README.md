@@ -54,11 +54,11 @@ Métricas en `http://localhost:9101/metrics` (`WORKER_METRICS_PORT`), que tambi�
 * `iam_eventos_publicados_total{event_type}`, `iam_eventos_fallos_publicacion_total`, `iam_outbox_pendientes` e `iam_outbox_antiguedad_segundos`.
 * `iam_outbox_retenidos{event_type}`: eventos que el relay no publica porque su tipo está en `OUTBOX_EVENTOS_RETENIDOS`. No cuentan en `iam_outbox_pendientes` ni en la antigüedad, así que no disparan la alerta de relay atascado.
 
-**Retención (C-63):** `OUTBOX_EVENTOS_RETENIDOS` es la lista de tipos que el relay no publica, separados por comas. Por defecto, y en el ConfigMap, `.env.example` y el compose del monorepo, es `usuario.suprimido`: se retiene hasta que catalog esté desplegado con la cola `catalog.prestadores`. Vacía, no retiene nada. Un tipo que el IAM no publica impide arrancar, para que un error de tipeo no libere nada. Los retenidos quedan en el outbox sin `publicado_en` y nunca se borran. Al arrancar, el worker deja en el log los tipos retenidos y cuántos hay de cada uno. **Para liberarlos:** quitar el tipo de la variable y reiniciar el worker; salen en el orden en que se crearon. Antes, la cola de catalog debe existir: si no, el broker los descarta y se pierden.
+**Retención (C-63):** `OUTBOX_EVENTOS_RETENIDOS` es la lista de tipos que el relay no publica, separados por comas. Por defecto y en `.env.example` es `usuario.suprimido`. En el ConfigMap y en el compose del monorepo está vacía, porque catalog ya consume la cola `catalog.prestadores`. Vacía, no retiene nada. Un tipo que el IAM no publica impide arrancar, para que un error de tipeo no libere nada. Los retenidos quedan en el outbox sin `publicado_en` y nunca se borran. Al arrancar, el worker deja en el log los tipos retenidos y cuántos hay de cada uno. **Para liberarlos:** quitar el tipo de la variable y reiniciar el worker; salen en el orden en que se crearon. Antes, la cola de catalog debe existir: si no, el broker los descarta y se pierden.
 
 ## Integración con otros módulos
 
-Estado comprobado el 2026-10-30 con `infra/docker-compose.yml` (arranque desde volúmenes vacíos y flujo de punta a punta, con la identidad enviada a mano porque aún no hay Traefik). ✅ conectado y probado · ⏳ pendiente.
+Estado al 2026-11-13. El flujo de punta a punta con `infra/docker-compose.yml` (arranque desde volúmenes vacíos) se comprobó el 2026-10-30, con la identidad enviada a mano porque aún no existía el gateway. ✅ conectado y probado · ⏳ pendiente.
 
 | Necesita | De | Para qué | Estado |
 |---|---|---|---|
@@ -66,17 +66,17 @@ Estado comprobado el 2026-10-30 con `infra/docker-compose.yml` (arranque desde v
 | `ip_origen` en `auditoria.registrada` | booking | ESC-04 | ⏳ booking no la envía; catalog y review sí |
 | `X-Correlation-ID` al pedir el contacto | catalog | Cruzar el log con el evento (C-15) | ✅ |
 | Cola `catalog.prestadores` | catalog | Recibir `prestador.aprobado` y `prestador.suspendido` | ✅ |
-| Rutas, ForwardAuth y borrado de `X-Usuario-*` | Traefik (Juan Francisco) | ForwardAuth y borrado de identidad (C-13) | ⏳ `gateway/config` no existe; sin él no hay acceso desde fuera del clúster |
-| Borrar el perfil en `catalog_db` al suprimir datos | catalog | Ley 1581 (C-27) | ✅ catalog consume `usuario.suprimido` en `catalog.prestadores` (`6076a78`); ⏳ el IAM lo retiene hasta que catalog esté desplegado con esa cola (C-63) |
+| Rutas, ForwardAuth y borrado de `X-Usuario-*` | Traefik (Juan Francisco) | ForwardAuth y borrado de identidad (C-13) | ✅ `gateway/config`, en compose y en k3s (#21) |
+| Borrar el perfil en `catalog_db` al suprimir datos | catalog | Ley 1581 (C-27) | ✅ catalog consume `usuario.suprimido` en `catalog.prestadores` (`6076a78`); el IAM lo publica en compose y en k8s (C-63) |
 | Rol, bucket, identidad S3 y llaves JWT en local | `infra/` | Levantar el servicio | ✅ ver "Con el compose del monorepo" |
-| Lo mismo en k3s | `infra/k8s/` | Desplegar | ⏳ `infra/k8s/` no existe |
+| Lo mismo en k3s | `infra/k8s/` | Desplegar | ✅ `infra/k8s/` (#15): `iam-secretos`, identidad y bucket |
 
 | Ofrece | A | Estado |
 |---|---|---|
 | `prestador.aprobado` y `prestador.suspendido` | catalog | ✅ incluida la rehabilitación |
-| `usuario.suprimido` | catalog | ✅ se guarda en el outbox con cada supresión; ⏳ retenido hasta el despliegue de catalog (C-63) |
+| `usuario.suprimido` | catalog | ✅ se guarda en el outbox con cada supresión y se publica en compose y en k8s (C-63) |
 | `GET /internal/usuarios/{id}/contacto` | worker de catalog | ✅ los correos llegan a Mailpit |
-| `GET /api/iam/auth/verificar` | Traefik | ✅ devuelve la identidad; ⏳ falta conectarlo a Traefik |
+| `GET /api/iam/auth/verificar` | Traefik | ✅ devuelve la identidad; es el ForwardAuth del gateway (#21) |
 
 ## Estructura (arquitectura hexagonal)
 
@@ -551,9 +551,9 @@ Una prueba falla si quedó desactualizado: después de cambiar una ruta, un esqu
 Decidido por Luis Fernando el 1 de noviembre (C-61):
 
 * **Nombre de la imagen:** `ghcr.io/luifdo/<servicio>`; para este, `ghcr.io/luifdo/iam-service`. Las kustomizations del IAM (`k8s/base`, `k8s/overlays/local` y `e2e/overlay`) toman ese nombre en el PR de la imagen Alpine (C-62), no en el de este workflow.
-* **Visibilidad del paquete:** pública. La cambia Luis Fernando después de la primera publicación, porque solo el dueño del repositorio puede hacerlo. La imagen no lleva secretos, que llegan por Secrets de Kubernetes, y Trivy la revisa en cada corrida.
+* **Visibilidad del paquete:** pública; la cambió Luis Fernando, porque solo el dueño del repositorio puede hacerlo. La imagen no lleva secretos, que llegan por Secrets de Kubernetes, y Trivy la revisa en cada corrida.
 * **Despliegue:** lo hace Luis Fernando. El CI solo publica `<sha>` y `develop`, sin hacer commits, porque `develop` está protegida. Al desplegar, Luis fija el SHA con `kustomize edit set image` en un PR `deploy(iam-service): <sha>`; volver atrás es revertir ese commit. La etiqueta `develop` queda para pruebas rápidas.
-* **Plantilla:** Luis Fernando copiará este workflow a `templates/` como plantilla para los demás servicios.
+* **Plantilla:** Luis Fernando copió este workflow a `templates/service-template/ci-workflow.yml` como plantilla para los demás servicios (`85dc610`).
 
 ## Despliegue
 
@@ -608,7 +608,7 @@ rm private.pem public.pem
 
 Las réplicas comparten el par. Se crea aparte y no con `secretGenerator` para no copiar llaves dentro de `k8s/`. Por eso, al cambiarlas hay que reiniciar los pods (`kubectl -n turismo-app rollout restart deploy/iam-service`), y los tokens ya emitidos dejan de valer.
 
-Valores **por confirmar** antes de producción, marcados en `k8s/base/configmap.yaml`: `FORWARDED_ALLOW_IPS` (C-56), `S3_ENDPOINT_URL`, `S3_ENDPOINT_PUBLICO` y `PWA_URL`. Y la etiqueta de Blackbox en `k8s/base/networkpolicy.yaml` (C-54).
+Valores **por confirmar** antes de producción, marcados en `k8s/base/configmap.yaml`: `FORWARDED_ALLOW_IPS` (C-56), `S3_ENDPOINT_PUBLICO` y `PWA_URL`. Y la etiqueta de Blackbox en `k8s/base/networkpolicy.yaml` (C-54).
 
 ### Para Juan Francisco (`gateway/`)
 
@@ -683,8 +683,8 @@ spec:
 
 También hace falta:
 
-* Omitir el query string de `/restablecer-contrasena` en los logs de acceso: lleva el token de recuperación (C-28).
-* Que Traefik vea la IP real del cliente: `externalTrafficPolicy: Local` en su Service o `forwardedHeaders.trustedIPs` si hay otro proxy delante. Confirmar también el rango de pods de `FORWARDED_ALLOW_IPS` (C-56).
+* ✅ Omitir el query string de `/restablecer-contrasena` en los logs de acceso, porque lleva el token de recuperación (C-28): hecho en #21.
+* Que Traefik vea la IP real del cliente: `externalTrafficPolicy: Local` ya está configurado (#21), o haría falta `forwardedHeaders.trustedIPs` si hay otro proxy delante. Falta comprobar que llega la IP real, en la VM de AWS (C-56).
 * Que el Blackbox consulte directamente `http://iam-service.turismo-app.svc:8001/health`, porque el gateway no lo enruta, y confirmar su etiqueta `app.kubernetes.io/name` (C-54).
 * Definir los dominios de `PWA_URL` y `S3_ENDPOINT_PUBLICO`. Este último debe llegar a SeaweedFS desde el navegador del Admin, porque va dentro de la firma de la URL (C-30).
 
@@ -705,9 +705,9 @@ Con servicios de un solo uso que no repiten lo ya hecho, y que también funciona
 * `iam-admin`: crea el primer Admin con `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `ADMIN_NOMBRE`.
 * `seaweedfs-init`: crea el bucket `documentos-verificacion`.
 
-Identidades de SeaweedFS en el servicio `seaweedfs` de `infra/docker-compose.yml` (se escriben al arrancar con las claves `S3_IAM_*` y `S3_CATALOG_*` de `infra/.env`): `iam` solo en su bucket y `anonymous` solo en `catalogo-imagenes`, así que un RUT sin firma responde 403 (C-46). `-volume.max` subió a 30 (F-10). Prometheus ya tiene `iam-service` e `iam-worker`.
+Identidades de SeaweedFS en el servicio `seaweedfs` de `infra/docker-compose.yml` (se escriben al arrancar con las claves `S3_IAM_*` y `S3_CATALOG_*` de `infra/.env`): `iam` solo en su bucket y `anonymous` solo en `catalogo-imagenes`, así que un RUT sin firma responde 403 (C-46). `-volume.max` es 150 (F-10, `2089891`). Prometheus ya tiene `iam-service` e `iam-worker`.
 
-**Falta en k3s:** el Secret `iam-secretos`, la identidad y el bucket en `turismo-datos`, y confirmar el nombre del Service de SeaweedFS. También conviene agregar alertas sobre `iam_recuperacion_solicitudes_total{resultado="fallo_smtp"}` y `iam_eventos_consumidos_total{resultado="dlq"}` (C-40, C-50).
+**En k3s,** `infra/k8s/` ya trae el Secret `iam-secretos` (`generar_secretos.py`), la identidad y el bucket en `turismo-datos`, y el Service `seaweedfs.turismo-datos:8333` que usa el ConfigMap. Las alertas sobre `iam_recuperacion_solicitudes_total{resultado="fallo_smtp"}` y `iam_eventos_consumidos_total{resultado="dlq"}` están en `infra/prometheus/alertas.yml` (C-40, C-50).
 
 ## Verificación
 
@@ -726,7 +726,7 @@ Es un entorno de prueba, no de producción; requisitos y opciones en [`e2e/READM
 El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](docs/cambios-frente-al-srs.md): ahí se documenta, con su causa, su efecto y su estado, todo lo que este servicio hace distinto, adicional o pendiente frente al SRS, el Plan, el Laboratorio 3 y `contracts/`. Resumen de lo que más afecta al uso del servicio:
 
 * **El Gateway valida con `verificar` y no con el JWKS** (C-16): así se ven la revocación y los 401 quedan en la bitácora (ESC-04).
-* **Identidad con `X-Usuario-Id` y `X-Usuario-Rol`** (C-13). **Riesgo:** en las rutas sin ForwardAuth un cliente puede enviarlos falsos; el gateway debe eliminarlos y ningún servicio debe leerlos en sus rutas públicas.
+* **Identidad con `X-Usuario-Id` y `X-Usuario-Rol`** (C-13). **Riesgo:** en las rutas sin ForwardAuth un cliente podría enviarlos falsos; el gateway los elimina en todas las rutas (#21), y ningún servicio debe leerlos en sus rutas públicas.
 * **Cada 401 y 403 escribe una fila `ACCESS_DENIED`** (C-23, C-34, C-35), también en el logout, contenida por el rate limiting de Traefik (C-26). Un fallo de la bitácora nunca convierte el rechazo en un 500.
 * **401 para token inválido y 403 `ROL_INSUFICIENTE` para rol insuficiente** (C-36).
 * **Revocación por `jti` y por usuario en Valkey, fallando cerrado** (C-21, C-22): con Valkey caído, `verificar` y las rutas protegidas responden 503.
@@ -742,13 +742,13 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **El motivo de una suspensión no viaja por el bus** (C-41). **Rehabilitar a un Prestador publica `prestador.aprobado` solo si sus dos documentos están aprobados** (C-42).
 * **Los documentos pasan por el IAM y se validan por su contenido** (C-30). **Sin antivirus** (C-44), con las mitigaciones listadas en el registro. **Un documento aprobado no se renueva** (C-45).
 * **El bucket y las credenciales del IAM en k3s los provee `infra/`** (C-46).
-* **La supresión anonimiza y borra los documentos, pero no alcanza a todo** (C-27, C-48): el texto libre y la IP de la bitácora inmutable y la razón social del outbox hasta su purga no se pueden borrar. **Riesgo:** catalog conserva `razon_social`, `telefono` y `direccion` del perfil en `catalog_db`; falta coordinar su borrado.
+* **La supresión anonimiza y borra los documentos, pero no alcanza a todo** (C-27, C-48): el texto libre y la IP de la bitácora inmutable y la razón social del outbox hasta su purga no se pueden borrar. catalog borra `razon_social`, `telefono` y `direccion` del perfil en `catalog_db` al recibir `usuario.suprimido` (C-63).
 * **Recuperación sin enumeración de cuentas** (C-28, C-50): todo corre después de responder `202`. **Costo:** si el correo no sale, el usuario no se entera; solo queda el log y la métrica.
 * **El perfil usa `If-Match` sin `Idempotency-Key`** (C-49), y **el correo y la razón social no se editan** (C-51). **`POST /perfil/contrasena` y el 422** difieren de lo comunicado al frontend (C-52).
 * **Readiness y liveness en `/health/live`, sin dependencias** (C-32, distinto del Plan §7.3): una caída de PostgreSQL o Valkey no saca a todas las réplicas a la vez; `/health` sigue mostrando la falla al monitoreo.
 * **Argon2 en un hilo, con cupos por réplica y sin ocupar conexiones** (C-53). En k3s, 1 cupo para proteger a `verificar` (medido en el registro; una sola corrida en Docker Desktop, se repite en la Fase 5). **Costo:** tras 10 s de espera, los logins válidos reciben `503 SERVICIO_OCUPADO` con `Retry-After: 2` y deben reintentar.
 * **S3 con tope de 9 s e hilos propios** (C-59): si SeaweedFS no responde, la carga y la supresión dan `503` a tiempo y el login sigue. Variables: `S3_HILOS_MAXIMOS` y `S3_TIEMPO_MAXIMO_SEGUNDOS`. **Costo:** cada hilo sigue ocupado unos segundos después del `503`, y una carga puede completarse después de responderlo.
-* **Almacenamiento sin cifrar, propuesta por decidir** (C-58): cifrado en reposo en la infraestructura y TLS en tránsito. Cifrar en el servicio rompería las URL firmadas.
+* **Almacenamiento sin cifrar, decidido en el ADR-012 y por aplicar en la VM** (C-58): cifrado en reposo en la infraestructura y TLS en tránsito. Cifrar en el servicio rompería las URL firmadas.
 * **Salida de red sin restringir, y Blackbox entra directo a `/health`** (C-54). **Migraciones en el initContainer, con candado** y con las mismas credenciales de la app (C-55). **`FORWARDED_ALLOW_IPS` en k3s, por confirmar** (C-56). **`iam.yaml` generado, en OpenAPI 3.1** (C-57).
 * **`anonymous` limitado a `catalogo-imagenes` en las identidades de SeaweedFS** (`infra/docker-compose.yml`; C-46): un documento sin firma responde 403. Hay que mantenerlo igual en k3s.
 * **Contacto interno con 404 si llega por Traefik** (C-15). catalog envía `X-Correlation-ID` en esa llamada, así que su log se cruza con el evento.

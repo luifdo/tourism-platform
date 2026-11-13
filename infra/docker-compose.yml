@@ -42,6 +42,10 @@ x-iam-entorno: &iam-entorno
   # Vacía = no retiene nada: catalog ya consume usuario.suprimido en la cola catalog.prestadores.
   # El valor por defecto del IAM retiene usuario.suprimido, así que no basta con quitar la línea.
   OUTBOX_EVENTOS_RETENIDOS: ""
+  # Proxies de los que se acepta X-Forwarded-For (C-37, C-56): los rangos por defecto de las redes
+  # de Docker. El 8001 solo se publica en 127.0.0.1 (PUERTOS_INTERNOS_IP), así que solo Traefik y
+  # los contenedores de la red llegan al IAM. Sin esto, la bitácora guarda la IP de Traefik.
+  FORWARDED_ALLOW_IPS: "172.16.0.0/12,192.168.0.0/16"
 
 # Variables comunes de catalog-service (API, worker y migraciones). Los hosts son los nombres
 # de los contenedores de este archivo; las credenciales salen de infra/.env.

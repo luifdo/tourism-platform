@@ -18,7 +18,7 @@ data:
   ARGON2_CONCURRENCIA_MAXIMA: "1"
   # Tope de la espera por un cupo; si se pasa, 503 SERVICIO_OCUPADO con Retry-After.
   ARGON2_ESPERA_MAXIMA_SEGUNDOS: "10"
-  # Service de SeaweedFS en turismo-datos: POR CONFIRMAR el nombre con Luis Fernando (C-46).
+  # Service de SeaweedFS en turismo-datos (infra/k8s/datos/seaweedfs.yaml, C-46).
   S3_ENDPOINT_URL: http://seaweedfs.turismo-datos.svc:8333
   # Host que ve el navegador del Admin; va dentro de la firma de la URL. POR CONFIRMAR con Juan
   # Francisco: debe llegar a SeaweedFS y es distinto del origen de la PWA (C-44).
@@ -31,6 +31,6 @@ data:
   # Base del enlace de recuperación (C-28). POR CONFIRMAR el dominio con Juan Francisco.
   PWA_URL: https://turismo-santamarta.gov.co
   WORKER_METRICS_PORT: "9101"
-  # El relay no publica usuario.suprimido (C-63): quitar cuando catalog esté desplegado con la cola
-  # catalog.prestadores (Luis Fernando).
-  OUTBOX_EVENTOS_RETENIDOS: usuario.suprimido
+  # Vacía = no retiene nada: catalog ya consume usuario.suprimido en la cola catalog.prestadores (C-63).
+  # El valor por defecto del IAM retiene usuario.suprimido, así que no basta con quitar la línea.
+  OUTBOX_EVENTOS_RETENIDOS: ""

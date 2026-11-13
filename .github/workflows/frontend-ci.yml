@@ -1,0 +1,54 @@
+name: Frontend · CI
+
+# Comprueba la PWA (frontend/) en cada PR, antes de fusionar. No publica nada: Pages lo hace
+# frontend-pages.yml al integrar en develop.
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Pruebas (dominio, casos de uso, adaptadores y regla de dependencias)
+        run: npm test
+
+      # Los dos modos que se publican: el del servidor (gateway real) y el de Pages (simulado).
+      - name: Compilar contra el gateway real
+        run: npm run build
+        env:
+          VITE_BASE: /
+          VITE_API_MOCK: "false"
+
+      - name: Compilar con el simulador (Pages)
+        run: npm run build
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+          VITE_API_MOCK: "true"
+
+      # La imagen que levanta infra/docker-compose.yml (servicio frontend). Solo si existe el Dockerfile.
+      - name: Construir la imagen de producción
+        if: hashFiles('frontend/Dockerfile') != ''
+        run: docker build -t frontend:ci .

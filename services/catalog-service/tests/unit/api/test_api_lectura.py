@@ -1,6 +1,6 @@
 """API de lectura con dobles de las consultas: contrato HTTP, idioma y formato de errores."""
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.api.dependencies import get_consulta_alertas, get_consulta_servicios, get_consulta_zonas
 from app.application.dto.alerta_vista import AlertaVista
 from app.application.dto.criterios_busqueda import CriteriosBusqueda, OrdenBusqueda
+from app.application.dto.nombre_servicio import NombreServicio
 from app.application.dto.pagina_servicios import PaginaServicios
 from app.application.dto.prestador_publico import PrestadorPublico
 from app.application.dto.servicio_detalle import ServicioDetalle
@@ -36,6 +37,7 @@ from app.domain.value_objects.tipo_servicio import TipoServicio
 from app.main import create_app
 
 SERVICIO_ID = uuid4()
+APAGADO_ID = uuid4()
 MINCA = ZonaResumen(codigo="minca", nombre=TextoTraducido(es="Minca"))
 TAYRONA = ZonaResumen(
     codigo="parque-tayrona",
@@ -88,6 +90,15 @@ class ConsultasFalsas:
     def __init__(self) -> None:
         self.criterios: CriteriosBusqueda | None = None
         self.fallar = False
+        self.ids_nombres: list[UUID] = []
+
+    async def nombres(self, ids: Sequence[UUID]) -> list[NombreServicio]:
+        self.ids_nombres = list(ids)
+        conocidos = {
+            SERVICIO_ID: NombreServicio(SERVICIO_ID, SERVICIO.nombre, activo=True),
+            APAGADO_ID: NombreServicio(APAGADO_ID, TextoTraducido(es="Café cerrado"), activo=False),
+        }
+        return [conocidos[i] for i in ids if i in conocidos]
 
     async def buscar(self, criterios: CriteriosBusqueda) -> PaginaServicios:
         if self.fallar:
@@ -168,6 +179,20 @@ class TestIdioma:
         assert cuerpo["regla_base_cancelacion"].startswith("Platform rule: you can cancel")
         alerta = cuerpo["alertas"][0]
         assert (alerta["nivel_etiqueta"], alerta["mensaje"]) == ("Critical", "Sendero cerrado")
+
+    def test_nombres_en_el_idioma_con_inactivos_y_sin_repetir(
+        self, cliente: TestClient, consultas: ConsultasFalsas
+    ) -> None:
+        ids = [str(SERVICIO_ID), str(APAGADO_ID), str(SERVICIO_ID), str(uuid4())]
+        r = cliente.get(
+            "/api/catalog/servicios/nombres", params={"ids": ids}, headers={"Accept-Language": "en"}
+        )
+        assert r.status_code == 200 and r.headers["content-language"] == "en"
+        assert sorted(r.json()["items"], key=lambda i: i["nombre"]) == [
+            {"id": str(APAGADO_ID), "nombre": "Café cerrado", "activo": False},  # sin inglés
+            {"id": str(SERVICIO_ID), "nombre": "Coffee tour", "activo": True},
+        ]
+        assert len(consultas.ids_nombres) == 3  # el repetido se consulta una vez
 
     def test_zonas_ordenadas_por_nombre_en_el_idioma(self, cliente: TestClient) -> None:
         es = [z["nombre"] for z in cliente.get("/api/catalog/zonas").json()]
@@ -323,6 +348,16 @@ class TestErrores:
         assert r.status_code == 400
         assert r.json()["error"] == "VALIDACION" and r.json()["message"] == mensaje
         assert r.headers["content-language"] == idioma
+
+    @pytest.mark.parametrize(
+        "ids",
+        [[], ["no-es-uuid"], [str(uuid4()) for _ in range(101)]],
+        ids=["sin-ids", "id-invalido", "mas-de-100"],
+    )
+    def test_nombres_con_ids_invalidos(self, cliente: TestClient, ids: list[str]) -> None:
+        r = cliente.get("/api/catalog/servicios/nombres", params={"ids": ids})
+        assert r.status_code == 400
+        assert r.json()["error"] == "VALIDACION"
 
     def test_servicio_inexistente(self, cliente: TestClient) -> None:
         r = cliente.get(f"/api/catalog/servicios/{uuid4()}", headers={"Accept-Language": "en"})

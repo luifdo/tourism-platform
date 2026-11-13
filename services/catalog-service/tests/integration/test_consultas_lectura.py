@@ -254,6 +254,20 @@ class TestDetalle:
         assert await SqlConsultaServicios(sesiones).detalle(datos.apagado, AHORA) is None
 
 
+class TestNombres:
+    async def test_incluye_inactivos_y_omite_los_que_no_existen(
+        self, sesiones: Sesiones, datos: Datos
+    ) -> None:
+        nombres = await SqlConsultaServicios(sesiones).nombres([datos.cafe, datos.apagado, uuid4()])
+        por_id = {n.id: n for n in nombres}
+        assert set(por_id) == {datos.cafe, datos.apagado}
+        assert por_id[datos.cafe].nombre == TextoTraducido(es="Tour del café", en="Coffee tour")
+        assert por_id[datos.cafe].activo is True
+        # El historial de reservas conserva el nombre aunque el servicio ya no se ofrezca.
+        assert por_id[datos.apagado].nombre.es == "Café cerrado"
+        assert por_id[datos.apagado].activo is False
+
+
 class TestZonasYAlertas:
     async def test_centro_cae_dentro_de_cada_zona(self, sesiones: Sesiones) -> None:
         zonas = await SqlConsultaZonas(sesiones).activas()

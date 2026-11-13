@@ -87,6 +87,42 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/ProhibidoPrestador' }
 
+  /servicios/nombres:
+    get:
+      tags: [Catálogo]
+      summary: Nombres de varios servicios por id
+      description: |
+        Ruta pública. La PWA la usa para mostrar el nombre del servicio en las reservas de
+        booking-service y en las reseñas de review-service, que solo guardan `servicio_id`
+        (booking-service/INTEGRACION.md §2.6, opción a).
+        Incluye los servicios inactivos o de prestadores suspendidos, con `activo: false`, para que
+        el historial no pierda el nombre; de ellos solo se da el nombre. Los ids que no existen
+        no aparecen en la respuesta. Un id repetido cuenta una vez.
+      operationId: nombresServicios
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: ids
+          in: query
+          required: true
+          description: Ids de los servicios, repitiendo el parámetro (`ids=…&ids=…`). Entre 1 y 100.
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 100
+            items: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Los servicios encontrados, en cualquier orden.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NombresServicios' }
+        '400': { $ref: '#/components/responses/Validacion' }
+
   /servicios/{servicio_id}:
     parameters:
       - $ref: '#/components/parameters/ServicioIdPath'
@@ -1380,6 +1416,20 @@ components:
         activa: { type: boolean }
         version: { type: integer, minimum: 1 }
 
+    NombresServicios:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/NombreServicio' }
+    NombreServicio:
+      type: object
+      required: [id, nombre, activo]
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string, description: En el idioma pedido. }
+        activo: { type: boolean, description: Falso si el servicio está desactivado o su prestador suspendido. }
     ServicioResumen:
       type: object
       required: [id, nombre, tipo, categoria, ubicacion, tarifa_base, unidad_tarifa]

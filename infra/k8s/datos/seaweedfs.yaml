@@ -30,7 +30,11 @@ spec:
             - -s3.config=/etc/seaweedfs/s3.json
             # Cada colección reserva varios volúmenes: con pocos, una deja a las otras sin dónde
             # escribir (F-10 en services/iam-service/docs/verificacion-fase4.md).
-            - -volume.max=30
+            # En Linux cada volumen nuevo reserva en disco su tamaño máximo aunque esté vacío: con el
+            # de 1024 MB que elige `weed server`, 20 volúmenes llenarían el PVC de 20 Gi. Con 100 MB
+            # por volumen caben 15 GB de datos y el PVC se ocupa a medida que llegan.
+            - -volume.max=150
+            - -master.volumeSizeLimitMB=100
           ports:
             - { name: s3, containerPort: 8333 }
             - { name: master, containerPort: 9333 }

@@ -1,0 +1,15 @@
+# booking-service en el k3s local (infra/k8s/k3s_local.py). Ver iam/kustomization.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: turismo-app
+
+resources:
+  - ../../../../services/booking-service/k8s/base
+
+images:
+  - name: ghcr.io/luifdo/booking-service
+    newName: booking-service
+    newTag: local
+
+components:
+  - ../comun

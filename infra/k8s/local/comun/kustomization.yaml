@@ -1,0 +1,19 @@
+# Ajustes comunes para el k3s local (portátil con ~5 GB para Docker): una réplica por Deployment,
+# sin HPA (escalan al arrancar porque importar FastAPI supera el request de CPU y saturan el nodo)
+# y PDB que no bloquea. Los HPA se prueban aparte, uno a la vez.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - target: { kind: Deployment }
+    patch: |-
+      - { op: replace, path: /spec/replicas, value: 1 }
+  - target: { kind: PodDisruptionBudget }
+    patch: |-
+      - { op: replace, path: /spec/minAvailable, value: 0 }
+  - target: { kind: HorizontalPodAutoscaler }
+    patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata: { name: no-importa }

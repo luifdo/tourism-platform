@@ -1,0 +1,65 @@
+# Reglas de alerta de la plataforma (C-40 y C-50 de services/iam-service/docs/cambios-frente-al-srs.md).
+# Las carga prometheus.yml (rule_files). Pruebas: infra/prometheus/pruebas/alertas_test.yml con promtool.
+#
+# Sin Alertmanager todavía: las alertas se ven en Prometheus (/alerts) y en Grafana. Cuando se agregue,
+# `severidad` es la etiqueta para enrutar.
+#
+# Nota sobre los contadores: la serie de un resultado nuevo ("dlq", "fallo_smtp") aparece con el primer
+# caso ya contado, e increase() no ve ese primer salto. Por eso cada regla suma "creció en la ventana" o
+# "no existía hace una ventana".
+
+groups:
+  - name: eventos
+    rules:
+      # C-40: lo que llega a la DLQ se revisa a mano. Mientras haya mensajes, la alerta sigue activa.
+      - alert: MensajesEnDLQ
+        expr: sum(rabbitmq_detailed_queue_messages{queue="turismo.dead-letter"}) > 0
+        for: 5m
+        labels:
+          severidad: advertencia
+        annotations:
+          resumen: "Hay {{ $value }} mensajes en la DLQ turismo.dead-letter"
+          descripcion: >-
+            Revisarlos en la consola de RabbitMQ (puerto 15672): las cabeceras x-cola, x-intentos y x-error
+            dicen de dónde vienen y por qué fallaron. Si el problema se corrigió, volver a publicarlos con su
+            clave de enrutamiento; los consumidores descartan los event_id repetidos.
+
+      # Qué servicio y qué evento mandaron mensajes a la DLQ en los últimos 10 minutos.
+      - alert: EventoEnviadoADLQ
+        expr: >-
+          sum by (job, cola, event_type) (
+            increase({__name__=~"(iam|catalog|booking|review)_eventos_consumidos_total", resultado="dlq"}[10m])
+          ) > 0
+          or
+          sum by (job, cola, event_type) (
+            {__name__=~"(iam|catalog|booking|review)_eventos_consumidos_total", resultado="dlq"}
+            unless
+            {__name__=~"(iam|catalog|booking|review)_eventos_consumidos_total", resultado="dlq"} offset 10m
+          )
+        labels:
+          severidad: advertencia
+        annotations:
+          resumen: "{{ $labels.job }} mandó {{ $labels.event_type }} de la cola {{ $labels.cola }} a la DLQ"
+          descripcion: >-
+            El evento no cumple el contrato o falló tres veces. Ver el registro del servicio con el
+            correlation_id del mensaje y la alerta MensajesEnDLQ.
+
+  - name: correo
+    rules:
+      # C-50: la recuperación de contraseña responde 202 aunque el correo no salga.
+      - alert: RecuperacionSinCorreo
+        expr: >-
+          sum(increase(iam_recuperacion_solicitudes_total{resultado="fallo_smtp"}[15m])) > 0
+          or
+          sum(
+            iam_recuperacion_solicitudes_total{resultado="fallo_smtp"}
+            unless
+            iam_recuperacion_solicitudes_total{resultado="fallo_smtp"} offset 15m
+          )
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "iam no pudo enviar correos de recuperación de contraseña"
+          descripcion: >-
+            El SMTP rechazó o no respondió. Los usuarios reciben 202 y el correo nunca llega; pueden volver a
+            pedirlo, pero fallará igual hasta que se corrija el SMTP (SMTP_* en iam-secretos e iam-config).

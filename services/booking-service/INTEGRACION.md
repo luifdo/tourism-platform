@@ -43,9 +43,10 @@ Levanta Postgres, RabbitMQ y Valkey, aplica las migraciones (`booking-migracione
    * Una misma clave devuelve siempre la misma respuesta durante 48 h: generar una clave nueva por cada intento del usuario, no por cada reintento.
 4. **Plazo de respuesta.** Mostrar `expira_en` al turista y al prestador. Una solicitud sin respuesta pasa sola a `RECHAZADA` con motivo "Plazo de respuesta vencido" (CronJob cada 15 min).
 5. **Sin conexión:** solicitar, modificar, cancelar, confirmar y rechazar se deshabilitan; solo el calendario del prestador se puede editar sin conexión (Guía §2).
-6. **Nombre del servicio.** La reserva solo trae `servicio_id`. Decisión pendiente del equipo:
-   * **a) (recomendada)** la PWA lo resuelve en catalog con los `servicio_id` de la página; no cambia ningún contrato;
-   * b) catalog agrega `nombre` opcional a `servicio.publicado` y booking lo devuelve como `servicio_nombre` (requiere cambio en catalog y en booking).
+6. **Nombre del servicio.** La reserva solo trae `servicio_id`. **Decidido (2026-11-04): opción a)**, sin cambios en booking ni en los eventos. La PWA pide los nombres a catalog en una sola llamada con los `servicio_id` de la página:
+   * `GET /api/catalog/servicios/nombres?ids=<id>&ids=<id>…` (pública, hasta 100 ids, con `Accept-Language`) → `{"items": [{"id", "nombre", "activo"}]}`.
+   * Incluye los servicios desactivados o de prestadores suspendidos (`activo: false`), así que el historial no pierde el nombre. Un id que no aparece en la respuesta ya no existe: mostrar "Servicio no disponible".
+   * Sirve igual para las reseñas de review (`/turista/pendientes`, `/turista/resenas`), que tampoco traen el nombre.
 
 ## 3. Gateway (Traefik) · @JuanFranG
 

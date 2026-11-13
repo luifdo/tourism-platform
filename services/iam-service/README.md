@@ -705,7 +705,7 @@ Con servicios de un solo uso que no repiten lo ya hecho, y que también funciona
 * `iam-admin`: crea el primer Admin con `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `ADMIN_NOMBRE`.
 * `seaweedfs-init`: crea el bucket `documentos-verificacion`.
 
-Identidades de SeaweedFS en `infra/seaweedfs/s3.json`: `iam` solo en su bucket y `anonymous` solo en `catalogo-imagenes`, así que un RUT sin firma responde 403 (C-46). `-volume.max` subió a 30 (F-10). Prometheus ya tiene `iam-service` e `iam-worker`.
+Identidades de SeaweedFS en el servicio `seaweedfs` de `infra/docker-compose.yml` (se escriben al arrancar con las claves `S3_IAM_*` y `S3_CATALOG_*` de `infra/.env`): `iam` solo en su bucket y `anonymous` solo en `catalogo-imagenes`, así que un RUT sin firma responde 403 (C-46). `-volume.max` subió a 30 (F-10). Prometheus ya tiene `iam-service` e `iam-worker`.
 
 **Falta en k3s:** el Secret `iam-secretos`, la identidad y el bucket en `turismo-datos`, y confirmar el nombre del Service de SeaweedFS. También conviene agregar alertas sobre `iam_recuperacion_solicitudes_total{resultado="fallo_smtp"}` y `iam_eventos_consumidos_total{resultado="dlq"}` (C-40, C-50).
 
@@ -750,6 +750,6 @@ El registro completo y actualizado está en [`docs/cambios-frente-al-srs.md`](do
 * **S3 con tope de 9 s e hilos propios** (C-59): si SeaweedFS no responde, la carga y la supresión dan `503` a tiempo y el login sigue. Variables: `S3_HILOS_MAXIMOS` y `S3_TIEMPO_MAXIMO_SEGUNDOS`. **Costo:** cada hilo sigue ocupado unos segundos después del `503`, y una carga puede completarse después de responderlo.
 * **Almacenamiento sin cifrar, propuesta por decidir** (C-58): cifrado en reposo en la infraestructura y TLS en tránsito. Cifrar en el servicio rompería las URL firmadas.
 * **Salida de red sin restringir, y Blackbox entra directo a `/health`** (C-54). **Migraciones en el initContainer, con candado** y con las mismas credenciales de la app (C-55). **`FORWARDED_ALLOW_IPS` en k3s, por confirmar** (C-56). **`iam.yaml` generado, en OpenAPI 3.1** (C-57).
-* **`anonymous` limitado a `catalogo-imagenes` en `infra/seaweedfs/s3.json`** (C-46): un documento sin firma responde 403. Hay que mantenerlo igual en k3s.
+* **`anonymous` limitado a `catalogo-imagenes` en las identidades de SeaweedFS** (`infra/docker-compose.yml`; C-46): un documento sin firma responde 403. Hay que mantenerlo igual en k3s.
 * **Contacto interno con 404 si llega por Traefik** (C-15). catalog envía `X-Correlation-ID` en esa llamada, así que su log se cruza con el evento.
 * **El 500 de una excepción no controlada sale sin `X-Correlation-ID`** (C-05).

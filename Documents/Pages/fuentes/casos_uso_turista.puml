@@ -4,7 +4,7 @@ left to right direction
 title Casos de uso — Turista
 
 actor "Turista" as Tur
-actor "API de Gemini\n(servicio externo)" as Gem
+actor "API de Groq\n(servicio externo)" as Gem
 
 rectangle "Plataforma Digital de Turismo — Santa Marta" {
   package "Módulo 1: Seguridad & IAM" {

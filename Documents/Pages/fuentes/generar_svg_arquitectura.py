@@ -88,7 +88,7 @@ def arquitectura():
         ("Módulo 2", "Catálogo, GIS & Destino", ["Atractivos · PostGIS · OSM", "Analítica · Alertas · Correos"], "#f0fdf4", "#16a34a", "#14532d", "#15803d", "/api/catalog"),
         ("Módulo 3", "Reservas & Cupos", ["Cupos · Solicitudes", "Máquina de estados"], "#f0fdf4", "#16a34a", "#14532d", "#15803d", "/api/bookings"),
         ("Módulo 4", "Reseñas & Moderación", ["Reseñas · Respuestas", "Reportes · Moderación"], "#f0fdf4", "#16a34a", "#14532d", "#15803d", "/api/reviews"),
-        ("Módulo 5", "IA & Recomendación", ["Chatbot · Herramientas", "Gemini · RNF-08"], "#fdf4ff", "#c026d3", "#701a75", "#a21caf", "/api/recommendations"),
+        ("Módulo 5", "IA & Recomendación", ["Chatbot · Herramientas", "Groq · RNF-08"], "#fdf4ff", "#c026d3", "#701a75", "#a21caf", "/api/recommendations"),
     ]
     MY, MH = 290, 100
     MB = MY + MH + 12
@@ -165,10 +165,10 @@ def arquitectura():
           line(480, LY, 520, LY, "wai", "ai"), t(528, LY + 4, "Herramienta del chatbot", "lbl"),
           line(680, LY, 720, LY, "wdb"), t(728, LY + 4, "Acceso a su propia base de datos", "lbl"),
           line(920, LY, 960, LY, "wext", "ax"), t(968, LY + 4, "Llamada externa", "lbl")]
-    o.append(t(40, 906, "Fuera del clúster: servicios externos (columna derecha). Gemini es la única dependencia propietaria (excepción justificada a la prioridad FOSS, SRS §2.4.1).", "lbl"))
+    o.append(t(40, 906, "Fuera del clúster: servicios externos (columna derecha). Groq es la única dependencia propietaria (ADR-011; excepción justificada a la prioridad FOSS, SRS §2.4.1).", "lbl"))
 
     # Externos
-    ex = [(300, "Google Gemini API", ["Servicio externo de IA", "consumido por M5"], cx[4] + wbox / 2, MY + 50),
+    ex = [(300, "Groq API", ["Servicio externo de IA", "consumido por M5"], cx[4] + wbox / 2, MY + 50),
           (470, "Servidor SMTP", ["Postal o institucional", "correos de M1 y M2"], None, None),
           (620, "OpenStreetMap / Nominatim", ["Geocodificación (M2)", "teselas del mapa (PWA)"], None, None)]
     for y, name, ds, fx, fy in ex:
@@ -203,7 +203,7 @@ def modulos():
          ["Reseñas de reservas finalizadas (RF-14)", "Respuestas públicas de prestadores", "Reporte de contenido inapropiado (UC39)",
           "Moderación manual del Administrador (UC29)", "Consultas para el chatbot"]),
         ("Módulo 5: IA & Recomendación", "#fdf4ff", "#d946ef", "#fae8ff", "#701a75",
-         ["Chatbot en español e inglés", "Integración con Gemini (API externa)", "Herramientas de solo lectura",
+         ["Chatbot en español e inglés", "Integración con Groq (API externa)", "Herramientas de solo lectura",
           "Respuestas justificadas (RNF-08)", "Registro en RECOMENDACION_LOG"]),
         ("Capa transversal", "#f8fafc", "#64748b", "#e2e8f0", "#0f172a",
          ["PWA con caché sin conexión (RNF-13)", "Traefik: TLS, ForwardAuth, rate limiting", "RabbitMQ: eventos y auditoría",

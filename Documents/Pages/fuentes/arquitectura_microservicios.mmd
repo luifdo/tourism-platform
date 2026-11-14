@@ -23,7 +23,7 @@ flowchart TB
             MS2["Módulo 2: Catálogo, GIS & Inteligencia de Destino<br>(Atractivos, OSM, Analítica, Aforos, Alertas, Correos)"]:::msCoreStyle
             MS3["Módulo 3: Reservas & Cupos<br>(Cupos, Solicitudes, Estados)"]:::msCoreStyle
             MS4["Módulo 4: Reseñas & Moderación<br>(Opiniones, Respuestas, Reportes)"]:::msCoreStyle
-            MS5["Módulo 5: IA & Recomendación<br>(Chatbot, Herramientas, Gemini)"]:::msAiStyle
+            MS5["Módulo 5: IA & Recomendación<br>(Chatbot, Herramientas, Groq)"]:::msAiStyle
         end
 
         Broker["RabbitMQ: exchange turismo.eventos<br>(Pub/Sub, colas por consumidor, DLQ)"]:::brokerStyle
@@ -67,11 +67,11 @@ flowchart TB
 
     Obs -.->|"/metrics y sondas /health"| Microservicios
 
-    Gemini["Google Gemini API<br>(servicio externo de IA)"]:::extStyle
+    Groq["Groq API<br>(servicio externo de IA)"]:::extStyle
     SMTP["Servidor SMTP<br>(Postal o institucional)"]:::extStyle
     OSM["OpenStreetMap / Nominatim"]:::extStyle
 
-    MS5 ==>|"HTTPS / API"| Gemini
+    MS5 ==>|"HTTPS / API"| Groq
     MS5 -->|"Herramientas de solo lectura"| MS2 & MS3 & MS4
     MS1 & MS2 -->|"Correo transaccional"| SMTP
     MS2 -->|"Geocodificación"| OSM

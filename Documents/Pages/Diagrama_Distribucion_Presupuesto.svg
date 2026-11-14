@@ -33,7 +33,7 @@
 <rect x="330" y="185" width="790" height="42" rx="6" fill="#ffffff" stroke="#e2e8f0" filter="url(#sh)"/>
 <rect x="342" y="196" width="18" height="20" rx="3" fill="#10b981"/>
 <text x="372" y="203" class="b" text-anchor="start">Servicios de terceros y notificaciones</text>
-<text x="372" y="219" class="s" text-anchor="start">API de Gemini, servidor SMTP</text>
+<text x="372" y="219" class="s" text-anchor="start">API de Groq, servidor SMTP</text>
 <text x="1105" y="211" class="v" text-anchor="end">$1.200  (17%)</text>
 <rect x="330" y="235" width="790" height="42" rx="6" fill="#ffffff" stroke="#e2e8f0" filter="url(#sh)"/>
 <rect x="342" y="246" width="18" height="20" rx="3" fill="#8b5cf6"/>

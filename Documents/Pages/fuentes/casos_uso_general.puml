@@ -8,7 +8,7 @@ actor "Turista" as Tur
 actor "Prestador de\nServicios Turísticos" as Prest
 actor "Entidad de Gestión\ndel Destino" as Ent
 actor "Administrador de\nla Plataforma" as Admin
-actor "Sistema / Servicios externos\n(SMTP, API de Gemini)" as Sys
+actor "Sistema / Servicios externos\n(SMTP, API de Groq)" as Sys
 
 rectangle "Plataforma Digital de Turismo — Santa Marta" {
   package "Módulo 1: Seguridad & IAM" {

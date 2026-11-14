@@ -147,6 +147,14 @@ def pedir(metodo, ruta, cabeceras=None, cuerpo=None, host=None):
     return resultado
 
 
+def inundar(ruta, peticiones=400, hilos=32):
+    """Estados de `peticiones` GET lanzados casi a la vez. En secuencia, el cupo se repone mientras se piden (en un
+    runner lento, 160 peticiones tardan lo bastante para que la ráfaga nunca se agote); en paralelo no."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=hilos) as pool:
+        return list(pool.map(lambda _: pedir("GET", ruta)[0], range(peticiones)))
+
+
 FALSA = {"X-Usuario-Id": "intruso", "X-Usuario-Rol": "Admin"}
 TURISTA = {"Authorization": "Bearer ok-turista"}
 
@@ -389,14 +397,17 @@ def grupo_limites(gateway):
     verificar("las lecturas públicas no gastan el cupo de la intención de visita", estado == 200, str(estado))
 
     gateway.reiniciar()
-    lecturas = [pedir("GET", "/api/catalog/buscar?texto=playa")[0] for _ in range(160)]
-    verificar("lecturas públicas: las primeras 100 pasan y la inundación recibe 429", lecturas[:100] == [200] * 100 and 429 in lecturas, f"{lecturas.count(200)} × 200, {lecturas.count(429)} × 429")
+    lecturas = inundar("/api/catalog/buscar?texto=playa")
+    verificar("lecturas públicas: pasa la ráfaga (unas 100) y el resto de la inundación recibe 429",
+              90 <= lecturas.count(200) <= 140 and lecturas.count(429) >= 200,
+              f"{lecturas.count(200)} × 200, {lecturas.count(429)} × 429, otros: {sorted(set(lecturas) - {200, 429})}")
     gateway.reiniciar()
     for nombre, ruta in (("reservas", "/api/bookings/disponibilidad?servicio_id=a&desde=2026-01-01&hasta=2026-01-02"),
                          ("reseñas", "/api/reviews/servicios/abc/resumen")):
-        lecturas = [pedir("GET", ruta)[0] for _ in range(160)]
+        lecturas = inundar(ruta)
         verificar(f"lecturas públicas de {nombre}: también tienen tope (cada ruta lleva su contador)",
-                  lecturas[:100] == [200] * 100 and 429 in lecturas, f"{lecturas.count(200)} × 200, {lecturas.count(429)} × 429")
+                  90 <= lecturas.count(200) <= 140 and lecturas.count(429) >= 200,
+                  f"{lecturas.count(200)} × 200, {lecturas.count(429)} × 429, otros: {sorted(set(lecturas) - {200, 429})}")
     estado = pedir("GET", "/mis-reservas")[0]
     verificar("el frontend no tiene límite (carga cientos de archivos)", estado == 200, str(estado))
 

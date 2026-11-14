@@ -3,8 +3,8 @@
 
 **Curso:** Arquitectura de Software — Experiencia Final de Diseño  
 **Programa:** Ingeniería de Sistemas — Universidad del Magdalena  
-**Versión:** 1.1 (Especificación Técnica Interna)  
-**Fecha:** Octubre 2026  
+**Versión:** 1.2 (Especificación Técnica Interna; coherencia con la implementación, ver SRS v1.2)  
+**Fecha:** 14 de noviembre de 2026  
 **Documento Complementario de Alto Nivel:** [Especificación de Requerimientos de Software (SRS IEEE 29148)](./Requirements_docIEEE.md)  
 **Decisiones de diseño:** [Registro de Decisiones Arquitectónicas](./Registro_Decisiones_Arquitectonicas.md)  
 
@@ -38,7 +38,7 @@
   * [6.3 Flujo 3: Transacción Atómica de Reserva y Bloqueo de Cupos](#63-flujo-3-transacción-atómica-de-reserva-y-bloqueo-de-cupos)
   * [6.4 Flujo 4: Máquina de Estados, Expiración y Finalización de Reservas](#64-flujo-4-máquina-de-estados-expiración-y-finalización-de-reservas)
   * [6.5 Flujo 5: Publicación, Reporte y Moderación de Reseñas](#65-flujo-5-publicación-reporte-y-moderación-de-reseñas)
-  * [6.6 Flujo 6: Consulta al Chatbot de Recomendaciones con Gemini y Herramientas](#66-flujo-6-consulta-al-chatbot-de-recomendaciones-con-gemini-y-herramientas)
+  * [6.6 Flujo 6: Consulta al Chatbot de Recomendaciones con Groq y Herramientas](#66-flujo-6-consulta-al-chatbot-de-recomendaciones-con-groq-y-herramientas)
   * [6.7 Flujo 7: Analítica de Demanda por Eventos y Alertas Institucionales](#67-flujo-7-analítica-de-demanda-por-eventos-y-alertas-institucionales)
   * [6.8 Flujo 8: Sincronización de Formularios de la PWA sin Conexión](#68-flujo-8-sincronización-de-formularios-de-la-pwa-sin-conexión)
 * [7. Entorno de Ejecución, Despliegue y Observabilidad](#7-entorno-de-ejecución-despliegue-y-observabilidad)
@@ -78,7 +78,7 @@ En la concepción original de la arquitectura se contemplaban 6 microservicios. 
 ### 1.3 Plataforma y Lenguaje
 
 * **Lenguaje y framework:** Los 5 microservicios se escriben en **Python 3.12 con FastAPI**, bajo orientación a objetos y arquitectura hexagonal (ADR-006). Cada servicio es una aplicación HTTP estándar (ASGI) que se ejecuta con Uvicorn dentro de un contenedor; no depende de una plataforma de ejecución concreta, por lo que el mismo código podría ejecutarse en otra plataforma de contenedores o *serverless* sin reescribirse.
-* **Plataforma:** Todos los componentes se despliegan como contenedores en **Kubernetes (k3s)** (ADR-005). Docker Compose se usa solo como entorno de desarrollo local (Sección 7.1).
+* **Plataforma:** Todos los componentes se despliegan como contenedores en **Kubernetes (k3s)**, el entorno objetivo (ADR-005). Docker Compose se usa en desarrollo local y, como limitación del prototipo, en la demostración pública (Secciones 7.1 y 7.2).
 * **Frontend:** **PWA** en Vue.js 3 con Workbox para la operación sin conexión (ADR-004, Sección 6.8).
 
 ---
@@ -175,14 +175,14 @@ services/<servicio>/
   * *Al diseñar el contrato del Módulo 4 ([`review.yaml`](../../contracts/openapi/review.yaml)) se ajustaron cuatro puntos:* (1) **un reporte no oculta la reseña**: entra en la cola del Administrador y pasa a `EN_REVISION` al tercer reporte o si la reporta el prestador dueño (con un solo reporte, cualquiera podía esconder la reseña de un competidor); (2) mientras está en revisión **su puntuación sigue contando** en el promedio, y solo `OCULTA` la quita; (3) **una reseña por turista y servicio**, editable, y el autor es **anónimo** ("Turista verificado" y el mes de la visita); (4) el módulo consume `servicio.publicado` para saber quién es el prestador dueño de cada servicio, sin llamar al catálogo.
 
 #### 5. Módulo 5: IA & Recomendación (AI Recommendation Chatbot)
-* **Responsabilidad Interna:** Chatbot turístico que atiende consultas en lenguaje natural (español e inglés) y entrega recomendaciones personalizadas y justificadas (RNF-08). Usa la API de Gemini como modelo de lenguaje; el equipo no entrena ni aloja ningún modelo.
+* **Responsabilidad Interna:** Chatbot turístico que atiende consultas en lenguaje natural (español e inglés) y entrega recomendaciones personalizadas y justificadas (RNF-08). Usa la API de Groq como proveedor del modelo de lenguaje (ADR-011, reemplazó a Gemini); el equipo no entrena ni aloja ningún modelo. El proveedor es un adaptador detrás del puerto `ModeloDeLenguaje` y se elige por configuración (`LLM_PROVIDER`, `LLM_MODEL`).
 * **Mecanismos Internos:**
-  * **Herramientas de consulta (*tools*):** Funciones de solo lectura que el servicio declara a Gemini y ejecuta cuando el modelo las solicita. Consultan catálogo, disponibilidad, historial del turista, reseñas, capacidad de carga y alertas oficiales a través de los contratos REST de los Módulos 2, 3 y 4.
+  * **Herramientas de consulta (*tools*):** Funciones de solo lectura que el servicio declara al modelo y ejecuta cuando el modelo las solicita. Consultan catálogo, disponibilidad, historial del turista, reseñas, capacidad de carga y alertas oficiales a través de los contratos REST de los Módulos 2, 3 y 4.
   * **Respuestas ancladas en datos:** Lo que el chatbot afirma sobre servicios, precios, disponibilidad o reseñas proviene de las herramientas, no de la memoria del modelo; se descartan los servicios recomendados que no hayan sido consultados.
   * **Identidad controlada por el servidor:** El identificador del turista llega en el encabezado `X-Usuario-Id` que agrega el gateway; el modelo nunca lo decide ni lo recibe como parámetro.
   * **Memoria de sesión:** La conversación reciente (últimos 10 mensajes) se conserva en Valkey con expiración de 24 horas.
   * **Explicabilidad y registro (RNF-08):** Cada recomendación incluye su justificación y se registra en la tabla `recomendacion_log` de `recommendation_db`.
-  * **Aislamiento ante fallos:** Si Gemini no está disponible, solo falla el chatbot; el catálogo y las reservas siguen operando (ESC-01). El Deployment mantiene al menos una réplica activa (RNF-12).
+  * **Aislamiento ante fallos:** Si Groq no está disponible o se supera el límite de solicitudes, solo falla el chatbot (503 `ASISTENTE_NO_DISPONIBLE`); el catálogo y las reservas siguen operando (ESC-01). El Deployment mantiene al menos una réplica activa (RNF-12).
 * **Alcance:** No crea, modifica ni cancela reservas desde el chat; orienta al turista hacia las pantallas de la plataforma. Detalle técnico en la [Guía Técnica del Módulo 5](./Guia_Tecnica_Modulo_IA.md).
 
 ---
@@ -195,7 +195,7 @@ services/<servicio>/
 |---|---|---|---|---|
 | **API Gateway & Ingress** | **Traefik** | v3 | MIT | Terminación TLS, enrutamiento por prefijo, ForwardAuth, Rate Limiting y CORS. Incluido por defecto en k3s. |
 | **Backend (Módulos 1 a 5)** | **Python + FastAPI**, Uvicorn, Pydantic v2, SQLAlchemy 2, aio-pika | Python 3.12 | PSF / MIT / BSD / Apache 2.0 | Microservicios REST orientados a objetos con arquitectura hexagonal. |
-| **Integración de IA (Módulo 5)** | **API de Google Gemini** (SDK `google-genai`) | Modelo configurable por variable de entorno | Términos comerciales de Google (servicio externo, no FOSS) | Modelo de lenguaje con llamada a funciones para el chatbot. |
+| **Integración de IA (Módulo 5)** | **API de Groq** (SDK `groq`, ADR-011) | Modelo abierto configurable con `LLM_MODEL` (por defecto `openai/gpt-oss-120b`) | Términos comerciales de Groq (servicio externo, no FOSS) | Modelo de lenguaje con llamada a funciones para el chatbot. |
 | **Base de Datos Relacional / GIS / Documental** | **PostgreSQL + PostGIS** (JSONB) con **CloudNativePG** | PG 16 / PostGIS 3.4 | PostgreSQL / GPL-2.0 / Apache 2.0 | Persistencia ACID de los 5 servicios, consultas geoespaciales y documentos de reseñas. |
 | **Caché en Memoria** | **Valkey** | 8 | BSD-3-Clause | Caché de catálogo, sesiones del chatbot, tokens revocados e idempotencia. |
 | **Almacenamiento de Objetos** | **SeaweedFS** (API S3) | 3.x | Apache 2.0 | Documentos RNT/RUT y respaldos de PostgreSQL. |
@@ -498,7 +498,7 @@ sequenceDiagram
 
 ---
 
-### 6.6 Flujo 6: Consulta al Chatbot de Recomendaciones con Gemini y Herramientas
+### 6.6 Flujo 6: Consulta al Chatbot de Recomendaciones con Groq y Herramientas
 
 ```mermaid
 sequenceDiagram
@@ -506,7 +506,7 @@ sequenceDiagram
     actor Tur as Turista
     participant GW as Traefik
     participant AI as Módulo 5 (Chatbot)
-    participant Gem as Gemini API
+    participant Gem as Groq API
     participant Core as Módulos 2, 3 y 4
     participant Cache as Valkey
     participant DB as PostgreSQL (recommendation_db)
@@ -515,7 +515,7 @@ sequenceDiagram
     GW->>AI: Reenvía con X-Usuario-Id validado
     AI->>Cache: Recuperar historial reciente de la conversación
     AI->>Gem: Mensaje + historial + herramientas disponibles
-    loop Mientras Gemini solicite herramientas (máx. 6)
+    loop Mientras el modelo solicite herramientas (máx. 6)
         Gem-->>AI: Solicita herramienta (ej. buscar_servicios)
         AI->>Core: Consulta de solo lectura (REST)
         Core-->>AI: Datos reales de la plataforma
@@ -599,7 +599,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Docker Compose **no** es el entorno de despliegue del prototipo: no ofrece escalado automático ni *rolling updates*, que son necesarios para ESC-05 y ESC-08. Para probar esos escenarios en local se usa un clúster k3d (k3s en contenedores).
+Docker Compose **no** es el entorno objetivo del prototipo: no ofrece escalado automático ni *rolling updates*, que son necesarios para ESC-05 y ESC-08. Para probar esos escenarios en local se usa un clúster k3d (k3s en contenedores). Aun así, la demostración pública corre con este compose en la VM de AWS (Sección 7.2).
 
 ---
 
@@ -610,12 +610,17 @@ Docker Compose **no** es el entorno de despliegue del prototipo: no ofrece escal
 Las vistas de despliegue por actor (Turista, Prestador, Entidad y Administrador) están en el [SRS §3.6.5](./Requirements_docIEEE.md#365-despliegue-y-operación).
 
 * **Clúster:** k3s sobre máquinas virtuales Linux de bajo costo. Escenario A (prototipo): 1 nodo de 4 vCPU y 8 GB de RAM. Escenario B (piloto): 3 nodos para alta disponibilidad.
+* **Despliegue real del prototipo (noviembre de 2026):** k3s es el entorno objetivo. La demostración pública corre en una VM de AWS (`tourism-vm`, 2 vCPU y 8 GB) con **Docker Compose** (`infra/docker-compose.yml`):
+  * Usa los mismos Dockerfile de cada servicio. En la VM las imágenes se construyen como `<servicio>:local`; en k3s se usan las de `ghcr.io/luifdo/<servicio>`.
+  * Las rutas de Traefik son equivalentes: `gateway/config/compose/` y `gateway/config/k3s/`.
+  * Los manifiestos de k3s se probaron en k3d (e2e de iam: 12 de 12, con *rolling update* y HPA) y en un k3s dentro de Docker (`infra/k8s/README.md`).
+  * **RNF-12** se cumple en k3d y k3s local, y queda **pendiente en la VM**, donde no hay HPA ni *rolling update* (ADR-005).
 * **Espacios de nombres:**
 
 | Namespace | Contenido |
 |---|---|
 | `kube-system` | Traefik (Ingress de k3s), cert-manager para certificados TLS. |
-| `turismo-app` | `frontend`, los 5 microservicios, los CronJobs del Módulo 3 y el worker del Módulo 2. |
+| `turismo-app` | Los 5 microservicios, los CronJobs del Módulo 3 y los workers de los Módulos 1, 2 y 4. `frontend`: **pendiente**, porque aún no tiene manifiestos de k3s ni NetworkPolicy (solo existe su IngressRoute en `gateway/config/k3s/app/frontend.yaml`). |
 | `turismo-datos` | Clúster PostgreSQL (CloudNativePG), Valkey, RabbitMQ y SeaweedFS. |
 | `observabilidad` | Prometheus, Grafana, Loki y Blackbox exporter. |
 
@@ -633,17 +638,17 @@ Las vistas de despliegue por actor (Turista, Prestador, Entidad y Administrador)
 | `catalog-service` | 2 | 6, 70% | `/health` | Servicio más presionado en temporada alta (ESC-02, ESC-08). |
 | `booking-service` | 2 | 6, 70% | `/health` | Bloqueo por fila; escala sin perder consistencia. |
 | `review-service` | 1 | 3, 75% | `/health` | Su caída no afecta catálogo ni reservas (ESC-01). |
-| `recommendation-service` | 1 | 3, 75% | `/health` | Siempre al menos una réplica activa (RNF-12). |
-| `frontend` | 2 | — | `/` | Archivos estáticos de la PWA. |
+| `recommendation-service` | 2 | 4, 70% | `/health` | Siempre al menos una réplica activa (RNF-12). Valores de `services/recommendation-service/k8s/base/hpa.yaml`. |
+| `frontend` | 2 (previsto) | — | `/` | Archivos estáticos de la PWA. **Pendiente:** no hay manifiestos de k3s del frontend; hoy corre solo en el compose. |
 
-Las sondas de *readiness* se consultan cada 2 segundos con umbral de 2 fallos, de modo que una réplica con problemas sale del enrutamiento en menos de 5 segundos (ESC-01).
+Las sondas de *readiness* se consultan cada 2 segundos con umbral de 2 fallos, de modo que una réplica con problemas debería salir del enrutamiento en menos de 5 segundos (ESC-01). Ese tiempo **no se midió**: las pruebas borran pods, pero no prueban una réplica colgada ni la caída de un nodo (SRS §4.1).
 
 ---
 
 ### 7.4 Red, Secretos y Seguridad
 
-* **Políticas de red (NetworkPolicy):** Por defecto se niega todo el tráfico entrante en `turismo-app` y `turismo-datos`; se permiten explícitamente: Traefik → servicios y frontend; cada servicio → su base de datos, Valkey y RabbitMQ; `recommendation-service` → catalog, booking y review; Prometheus → `/metrics` de todos.
-* **Secretos:** Credenciales de bases de datos, clave privada JWT, `GEMINI_API_KEY` y credenciales SMTP se guardan como `Secret` de Kubernetes; nunca en el repositorio ni en las imágenes.
+* **Políticas de red (NetworkPolicy):** Por defecto se niega todo el tráfico entrante en `turismo-app` y `turismo-datos`; se permiten explícitamente: Traefik → servicios y frontend (la NetworkPolicy del frontend está **pendiente**, junto con sus manifiestos); cada servicio → su base de datos, Valkey y RabbitMQ; `recommendation-service` → catalog, booking y review; Prometheus → `/metrics` de todos.
+* **Secretos:** Credenciales de bases de datos, clave privada JWT, `LLM_API_KEY` (clave de Groq, ADR-011) y credenciales SMTP se guardan como `Secret` de Kubernetes; nunca en el repositorio ni en las imágenes.
 * **Contenedores:** Imágenes `python:3.12-slim`, usuario sin privilegios y sistema de archivos de solo lectura cuando el servicio lo permite.
 
 ---
@@ -656,7 +661,7 @@ Las sondas de *readiness* se consultan cada 2 segundos con umbral de 2 fallos, d
    * conexiones activas a la base de datos y mensajes pendientes por cola de RabbitMQ.
 2. **Sondas de disponibilidad (RNF-01):** El Blackbox exporter consulta cada 15 segundos el `/health` de cada servicio a través del gateway y calcula la disponibilidad mensual.
 3. **Registros:** Los logs en formato JSON (con `X-Correlation-ID`) se recolectan con Loki para seguir una petición entre servicios.
-4. **Dashboards de Grafana:** Estado de salud de los 5 microservicios, réplicas activas del HPA, consumo de CPU y memoria, tiempos de respuesta por ruta crítica y uso de la API de Gemini.
+4. **Dashboards de Grafana:** Estado de salud de los 5 microservicios, réplicas activas del HPA, consumo de CPU y memoria, tiempos de respuesta por ruta crítica y uso de la API de Groq.
 
 ---
 
@@ -676,7 +681,11 @@ Las sondas de *readiness* se consultan cada 2 segundos con umbral de 2 fallos, d
 4. **Pruebas de Rendimiento y Carga (k6):**
    * **ESC-02:** 500 solicitudes por segundo sobre `GET /api/catalog/buscar` durante 10 minutos; criterio $p95 < 2.0$s y 0 errores 5xx.
    * **ESC-08:** Rampa hasta 1.000 solicitudes por segundo sobre catálogo y reservas durante 30 minutos; se registran las réplicas creadas por el HPA y el tiempo en que quedan listas.
-5. **Pruebas de Disponibilidad (ESC-01):** Se eliminan los pods de `review-service` (`kubectl delete pod` y luego `kubectl scale --replicas=0`) mientras k6 consulta catálogo y reservas; se mide el tiempo de aislamiento y la ausencia de errores en las rutas no afectadas.
+   * **Estado (v1.2):** el perfil completo de ESC-02 y ESC-08 **no se midió**. Solo se corrió el perfil `humo` en el Kubernetes de Docker Desktop de un PC (2026-10-24, `services/catalog-service/k6/README.md`):
+     * `buscar.js`: 30 rps durante 1 min, 1.668 peticiones, 0 errores 5xx, mediana de 22 ms y p95 de 1,29 s.
+     * `escalado.js`: rampa a 60 rps durante 3 min, 7.276 peticiones, 0 errores 5xx, mediana de 30 ms y p95 de 228 ms. El HPA subió a 6 réplicas y todas quedaron listas.
+     * Estas cifras indican que el sistema funciona bajo carga baja; no reemplazan la medición en k3s.
+5. **Pruebas de Disponibilidad (ESC-01):** Se eliminan los pods de `review-service` (`kubectl delete pod` y luego `kubectl scale --replicas=0`) mientras k6 consulta catálogo y reservas; se mide el tiempo de aislamiento y la ausencia de errores en las rutas no afectadas. **Estado (v1.2):** en k3d se borraron réplicas de iam sin errores, pero no se probó una réplica colgada ni la caída de un nodo; el aislamiento en menos de 5 s **no se midió**.
 6. **Pruebas de Despliegue (ESC-05, RNF-12):** Actualización de la imagen de `recommendation-service` durante una prueba de carga del núcleo; criterio: 0 errores 5xx en catálogo y reservas.
 7. **Pruebas de Recuperación (ESC-06):** Simulacro de restauración de `booking_db` desde el respaldo, midiendo el RTO.
 8. **Pruebas sin Conexión (ESC-09):** Playwright con el navegador en modo sin conexión: se editan oferta y cupos, se restablece la red y se verifica la sincronización en menos de 60 segundos sin duplicados, y que el catálogo previamente consultado se muestra sin red.

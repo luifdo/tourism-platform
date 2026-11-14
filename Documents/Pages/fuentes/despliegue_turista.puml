@@ -17,7 +17,7 @@ node "Clúster k3s" {
   database "Valkey\n(caché y sesión del chat)" as Vk
 }
 cloud "Servicios externos" {
-  node "Google Gemini API" as Gem
+  node "Groq API" as Gem
   node "OpenStreetMap" as Osm
 }
 

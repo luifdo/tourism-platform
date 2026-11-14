@@ -57,7 +57,7 @@ def donut(cx, cy, r_out, r_in, items, total):
 def presupuesto():
     A = ("Escenario A — Prototipo académico (13 semanas)", 6900, [
         ("Infraestructura cloud", "VM Linux para k3s, almacenamiento y dominio", 4500, "#3b82f6"),
-        ("Servicios de terceros y notificaciones", "API de Gemini, servidor SMTP", 1200, "#10b981"),
+        ("Servicios de terceros y notificaciones", "API de Groq, servidor SMTP", 1200, "#10b981"),
         ("Herramientas de desarrollo", "Colaboración y licencias educativas", 300, "#8b5cf6"),
         ("Contingencia (15%)", "Reserva técnica", 900, "#f59e0b"),
     ])

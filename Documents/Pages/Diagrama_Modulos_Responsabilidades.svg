@@ -62,7 +62,7 @@
 <path d="M 370 346 L 370 318 Q 370 310 378 310 L 682 310 Q 690 310 690 318 L 690 346 Z" fill="#fae8ff"/>
 <text x="386" y="334" class="ct" text-anchor="start" fill="#701a75">Módulo 5: IA &amp; Recomendación</text>
 <text x="388" y="372" class="ci" text-anchor="start" fill="#701a75">• Chatbot en español e inglés</text>
-<text x="388" y="397" class="ci" text-anchor="start" fill="#701a75">• Integración con Gemini (API externa)</text>
+<text x="388" y="397" class="ci" text-anchor="start" fill="#701a75">• Integración con Groq (API externa)</text>
 <text x="388" y="422" class="ci" text-anchor="start" fill="#701a75">• Herramientas de solo lectura</text>
 <text x="388" y="447" class="ci" text-anchor="start" fill="#701a75">• Respuestas justificadas (RNF-08)</text>
 <text x="388" y="472" class="ci" text-anchor="start" fill="#701a75">• Registro en RECOMENDACION_LOG</text>

@@ -73,7 +73,7 @@
 <text x="957.0" y="310" class="nt" text-anchor="middle" fill="#701a75">Módulo 5</text>
 <text x="957.0" y="328" class="nt" text-anchor="middle" fill="#701a75">IA &amp; Recomendación</text>
 <text x="957.0" y="350" class="nd" text-anchor="middle" fill="#a21caf">Chatbot · Herramientas</text>
-<text x="957.0" y="367" class="nd" text-anchor="middle" fill="#a21caf">Gemini · RNF-08</text>
+<text x="957.0" y="367" class="nd" text-anchor="middle" fill="#a21caf">Groq · RNF-08</text>
 <text x="957.0" y="390" class="lbl" text-anchor="middle">contenedor · HPA · /health · /metrics</text>
 <path d="M 133.0 402 L 133.0 600" class="wdb"/>
 <path d="M 339.0 402 L 339.0 600" class="wdb"/>
@@ -136,9 +136,9 @@
 <text x="728" y="870" class="lbl" text-anchor="start">Acceso a su propia base de datos</text>
 <path d="M 920 866 L 960 866" class="wext" marker-end="url(#ax)"/>
 <text x="968" y="870" class="lbl" text-anchor="start">Llamada externa</text>
-<text x="40" y="906" class="lbl" text-anchor="start">Fuera del clúster: servicios externos (columna derecha). Gemini es la única dependencia propietaria (excepción justificada a la prioridad FOSS, SRS §2.4.1).</text>
+<text x="40" y="906" class="lbl" text-anchor="start">Fuera del clúster: servicios externos (columna derecha). Groq es la única dependencia propietaria (ADR-011; excepción justificada a la prioridad FOSS, SRS §2.4.1).</text>
 <rect x="1088" y="300" width="186" height="76" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.8" stroke-dasharray="4,3" filter="url(#sh)"/>
-<text x="1181" y="324" class="nt" text-anchor="middle" fill="#0f172a">Google Gemini API</text>
+<text x="1181" y="324" class="nt" text-anchor="middle" fill="#0f172a">Groq API</text>
 <text x="1181" y="344" class="nd" text-anchor="middle" fill="#475569">Servicio externo de IA</text>
 <text x="1181" y="362" class="nd" text-anchor="middle" fill="#475569">consumido por M5</text>
 <path d="M 1055.0 338 L 1086 338" class="wext" marker-end="url(#ax)"/>

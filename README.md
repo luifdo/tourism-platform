@@ -1,6 +1,6 @@
 # Plataforma Digital de Turismo — Santa Marta
 
-Plataforma para la gestión integrada y sostenible del turismo en Santa Marta, construida con una arquitectura de 5 microservicios en Python + FastAPI, desplegados como contenedores en Kubernetes (k3s) y priorizando el software libre (la API de Gemini del chatbot es la única dependencia propietaria).
+Plataforma para la gestión integrada y sostenible del turismo en Santa Marta, construida con una arquitectura de 5 microservicios en Python + FastAPI, pensados para desplegarse como contenedores en Kubernetes (k3s) y priorizando el software libre (la API de Groq del chatbot es la única dependencia propietaria, ADR-011). La demostración pública corre con Docker Compose en una VM de AWS, con los mismos Dockerfile y rutas de Traefik equivalentes (SRS §3.6.5).
 
 **Curso:** Arquitectura de Software · Ingeniería de Sistemas — Universidad del Magdalena  
 **Documentación:** [`Documents/Pages`](./Documents/Pages/README.md) (SRS, Comparación de Alternativas Arquitectónicas, Registro de Decisiones Arquitectónicas y Plan de Implementación)
@@ -18,7 +18,7 @@ tourism-platform/
 │   ├── catalog-service/           # Módulo 2: Catálogo, GIS & Inteligencia de Destino
 │   ├── booking-service/           # Módulo 3: Reservas & Cupos
 │   ├── review-service/            # Módulo 4: Reseñas & Moderación
-│   └── recommendation-service/    # Módulo 5: IA & Recomendación (chatbot con Gemini)
+│   └── recommendation-service/    # Módulo 5: IA & Recomendación (chatbot con Groq)
 ├── gateway/                       # API Gateway (Traefik)
 ├── frontend/                      # Interfaz web (PWA)
 ├── contracts/                     # contratos REST (OpenAPI) y esquemas de eventos

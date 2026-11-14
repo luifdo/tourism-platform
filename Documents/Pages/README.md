@@ -16,7 +16,7 @@
 | 2 | [Comparación y Selección de Alternativas Arquitectónicas](./Comparacion_Alternativas_Arquitectonicas.md) | Monolito modular vs. microservicios: tabla comparativa ponderada, decisión justificada y análisis de *trade-offs*. | Fase 2: Comparación Arquitectónica |
 | 3 | [Registro de Decisiones Arquitectónicas (ADR)](./Registro_Decisiones_Arquitectonicas.md) | Metodología, estilo, tipo de base de datos, estrategia de conectividad (PWA), plataforma de despliegue (k3s), lenguaje, gateway, mensajería, observabilidad e IA. | Fase 3: Diseño Arquitectónico |
 | 4 | [Plan de Implementación](./Plan_de_Implementacion.md) | Arquitectura interna por módulo, stack, contratos REST y de eventos, DDL, flujos clave, despliegue en k3s y estrategia de pruebas. | Fases 3 y 4 |
-| 5 | [Guía Técnica del Módulo 5 (IA)](./Guia_Tecnica_Modulo_IA.md) | Guion de trabajo interno del chatbot con Gemini y tools: tools, validaciones, pruebas y dependencias con otros módulos. | Apoyo al equipo |
+| 5 | [Guía Técnica del Módulo 5 (IA)](./Guia_Tecnica_Modulo_IA.md) | Guion de trabajo interno del chatbot con Groq y tools: tools, validaciones, pruebas y dependencias con otros módulos. | Apoyo al equipo |
 
 ## Orden de lectura recomendado
 

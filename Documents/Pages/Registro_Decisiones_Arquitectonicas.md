@@ -22,9 +22,9 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 | [ADR-007](#adr-007-api-gateway) | API Gateway: Traefik con ForwardAuth | No | Aceptada |
 | [ADR-008](#adr-008-mensajería-asíncrona-y-auditoría) | Mensajería: RabbitMQ y auditoría asíncrona centralizada en el Módulo 1 | No | Aceptada (actualizada: outbox) |
 | [ADR-009](#adr-009-observabilidad) | Observabilidad: Prometheus, Grafana y Loki | No | Aceptada |
-| [ADR-010](#adr-010-componente-de-inteligencia-artificial) | IA: chatbot sobre la API de Gemini con herramientas de solo lectura | No | Aceptada |
-| [ADR-011](#adr-011-proveedor-del-modelo-de-lenguaje-groq-en-lugar-de-gemini) | Proveedor del modelo de lenguaje: Groq en lugar de Gemini | No | Propuesta |
-| [ADR-012](#adr-012-cifrado-en-reposo-y-en-tránsito) | Cifrado en reposo y en tránsito: en la infraestructura, con lo interno declarado como limitación | No | Aceptada |
+| [ADR-010](#adr-010-componente-de-inteligencia-artificial) | IA: chatbot sobre la API de Gemini con herramientas de solo lectura | No | Reemplazada parcialmente por ADR-011 (proveedor) |
+| [ADR-011](#adr-011-proveedor-del-modelo-de-lenguaje-groq-en-lugar-de-gemini) | Proveedor del modelo de lenguaje: Groq en lugar de Gemini | No | Aceptada |
+| [ADR-012](#adr-012-cifrado-en-reposo-y-en-tránsito) | Cifrado en reposo y en tránsito: en la infraestructura, con lo interno declarado como limitación | No | Aceptada (en curso: falta el cifrado de SeaweedFS) |
 | [ADR-013](#adr-013-decisiones-del-módulo-1-iam) | Decisiones del Módulo 1 (IAM): verificación propia, revocación y refresh en Valkey, bitácora idempotente, outbox y supresión por anonimización | No | Aceptada |
 
 ---
@@ -97,6 +97,8 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
   * *Docker Compose en un solo host:* descartada como entorno de despliegue; no ofrece escalado automático ni *rolling updates*, necesarios para demostrar ESC-05 y ESC-08.
   * *Kubernetes con Knative (escalado a cero):* descartada por ahora; agrega complejidad y arranques en frío que afectan ESC-02 sin un beneficio necesario para el prototipo.
 * **Consecuencias:** Una sola plataforma, FOSS y portable; el Módulo 5 deja de ser un caso especial (Deployment con al menos una réplica). Escalado automático (HPA), autorreparación y actualizaciones sin interrupción. A cambio, el equipo opera el clúster y la elasticidad está limitada por la capacidad de los nodos (R-07).
+  * **Despliegue real del prototipo (noviembre de 2026):** k3s sigue siendo el entorno objetivo. La demostración pública corre en una VM de AWS (`tourism-vm`, 2 vCPU y 8 GB) con **Docker Compose** (`infra/docker-compose.yml`), por falta de memoria para el clúster completo en un solo nodo de 8 GB. Usa los mismos Dockerfile de cada servicio (en la VM se construyen como `<servicio>:local`; k3s usa las imágenes de `ghcr.io/luifdo/<servicio>` que publica el CI) y rutas de Traefik equivalentes (`gateway/config/compose/` y `gateway/config/k3s/`).
+  * Los manifiestos de k3s se probaron en k3d (e2e de iam, 12 de 12, con *rolling update* y HPA) y en un k3s dentro de Docker (`infra/k8s/README.md`). En la VM no hay HPA ni *rolling update*: RNF-12 se cumple en k3d y k3s local, y queda pendiente en la VM.
 * **Trazabilidad:** RNF-01, RNF-02, RNF-12, ESC-01, ESC-05, ESC-08, Plan §7.
 
 ---
@@ -158,7 +160,7 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 
 ## ADR-010: Componente de inteligencia artificial
 
-* **Estado:** Aceptada.
+* **Estado:** Aceptada. **Reemplazada parcialmente por el ADR-011** el 14 de noviembre de 2026: el proveedor del modelo pasa de Gemini a Groq. El resto de la decisión se mantiene.
 * **Contexto:** El enunciado permite elegir entre recomendación personalizada, clasificación de opiniones, predicción de demanda o chatbot basado en información registrada y controlada; la IA es complementaria y debe integrarse de forma desacoplada. Las recomendaciones deben explicarse y no favorecer a un operador.
 * **Decisión:** Chatbot de recomendaciones (Módulo 5) que consume la **API de Gemini** con llamada a funciones y consulta la plataforma solo mediante **herramientas de solo lectura** sobre los Módulos 2, 3 y 4. Registra cada recomendación con su justificación en `recommendation_db` y guarda la sesión en Valkey.
 * **Alternativas consideradas:** *Filtrado híbrido propio entrenado con un dataset sintético:* descartado; exige construir y validar un modelo y un dataset, fuera del foco del curso (R-03). *Modelo abierto alojado por el equipo:* descartado por el costo de GPU y de operación.
@@ -169,7 +171,7 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
 
 ## ADR-011: Proveedor del modelo de lenguaje: Groq en lugar de Gemini
 
-* **Estado:** Propuesta (Alvaro Ospino, responsable del Módulo 5). Si se acepta, reemplaza al ADR-010 **solo en el proveedor**; el resto del ADR-010 (chatbot, herramientas de solo lectura, registro en `recommendation_db`, sesión en Valkey) se mantiene.
+* **Estado:** Aceptada el 14 de noviembre de 2026 por Luis Fernando Barraza, responsable de la arquitectura. Propuesta el 29 de octubre de 2026 por Alvaro Ospino, responsable del Módulo 5; Groq está en uso desde el PR #11 (`LLM_PROVIDER=groq` en `infra/docker-compose.yml` y en el ConfigMap de `recommendation-service`). Reemplaza al ADR-010 **solo en el proveedor**; el resto del ADR-010 (chatbot, herramientas de solo lectura, registro en `recommendation_db`, sesión en Valkey) se mantiene.
 * **Contexto:** Al empezar la integración del Módulo 5 con la API de Gemini, el equipo tuvo dos problemas:
   1. **La API no respondía** a las solicitudes de prueba, así que no se pudo validar el flujo del chatbot.
   2. **Exigía registrar un método de pago** al crear la aplicación, algo que un proyecto académico sin presupuesto para servicios de IA no puede asumir.
@@ -186,7 +188,7 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
   * El plan gratuito tiene **límites de solicitudes** (R-04). Bastan para el desarrollo y las pruebas de calidad (unas 30 conversaciones tipo), pero en producción se revisarían. El servicio responde 503 `ASISTENTE_NO_DISPONIBLE` al superar el límite y el resto de la plataforma sigue operando (ESC-01).
   * **Privacidad (Ley 1581):** la conversación y los resultados de las tools viajan a Groq. Se le envía el mínimo necesario (nunca nombre, correo ni documento), y antes de usarlo con turistas reales hay que revisar sus condiciones de uso y retención de datos.
   * **Impacto en otros módulos:** ninguno. El contrato `recommendation.yaml` no cambia y ningún otro servicio depende del proveedor.
-  * **Documentos a actualizar al aceptarse:** el ADR-010 (estado "Reemplazada parcialmente por ADR-011"), el SRS, el Plan de Implementación (§4 y flujo 6), la Comparación de Alternativas, el README raíz y los diagramas que mencionan Gemini. La Guía Técnica del Módulo 5 y `docs/modulo-ia/` se actualizan en la rama del módulo.
+  * **Documentos actualizados al aceptarse (SRS v1.2):** el ADR-010 (estado "Reemplazada parcialmente por ADR-011"), el SRS, el Plan de Implementación (§2.3, §3.1, flujo 6, §7.4 y §7.5), la Comparación de Alternativas, el README raíz, el índice de `Documents/Pages` y los diagramas que mencionaban Gemini. La Guía Técnica del Módulo 5 ya usaba Groq.
 * **Trazabilidad:** RF-06, RNF-08, UC14, ESC-01, ESC-05, R-04, ADR-010, [Guía Técnica del Módulo 5](./Guia_Tecnica_Modulo_IA.md).
 
 ---
@@ -219,12 +221,12 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
   * **Protege** frente a un disco, un volumen o un respaldo robados, y frente a quien escucha el tráfico entre el usuario y la plataforma.
   * **No protege** frente a quien entra al sistema encendido con credenciales válidas. Eso lo cubren las credenciales por servicio, las NetworkPolicy, el bucket privado (C-46) y la bitácora.
   * La llave de `encryptVolumeData` la guarda el filer de SeaweedFS en su propio almacenamiento. Si se pierde ese volumen, los datos no se recuperan. El respaldo del filer pasa a ser obligatorio.
-  * **Pendiente para cumplirla:**
-    * Probar `-filer.encryptVolumeData` con el despliegue de `infra/` en la VM: subir, leer con URL firmada, respaldar y restaurar.
-    * ~~Confirmar el cifrado de disco del proveedor elegido.~~ Hecho: la VM de AWS (`tourism-vm`) usa un volumen EBS gp3 cifrado, que cubre PostgreSQL, RabbitMQ, Valkey y SeaweedFS (punto 3).
-    * TLS en el borde (punto 1) funcionando en la VM pública: Let's Encrypt y HTTP → HTTPS (`services/iam-service/docs/evidencias/vm-aws.txt`, 7.1-7.2).
-    * Escribir en el SRS v1.2 (§2.4.5) qué se cifra, dónde y qué queda como limitación.
-    * Marcar C-58 como resuelta en la documentación del IAM.
+  * **Estado de la implementación (14 de noviembre de 2026):**
+    * **Hecho, punto 3:** la VM de AWS (`tourism-vm`) usa un volumen EBS gp3 cifrado, que cubre PostgreSQL, RabbitMQ, Valkey y SeaweedFS en reposo.
+    * **Hecho, punto 1:** TLS en el borde en la VM pública, con Let's Encrypt y HTTP → HTTPS (`services/iam-service/docs/evidencias/vm-aws.txt`, 7.1-7.2).
+    * **No aplicado, punto 2:** `-filer.encryptVolumeData` no está en `infra/` (F-01 de `services/iam-service/docs/verificacion-fase4.md`). Falta probarlo en la VM: subir, leer con URL firmada, respaldar y restaurar.
+    * **Hecho:** el SRS v1.2 (§2.4.5) dice qué se cifra, dónde y qué queda como limitación.
+    * **Pendiente:** marcar C-58 como resuelta en la documentación del IAM cuando se aplique el punto 2.
 * **Trazabilidad:** SRS §2.4.5, RNF-09, Ley 1581, C-46, C-58, ADR-003, ADR-005, ADR-007, Plan §7.
 
 ---

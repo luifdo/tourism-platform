@@ -241,3 +241,6 @@ id_ecdsa
 *.key
 # Llaves privadas de los certificados HTTPS (Traefik / Let's Encrypt)
 acme.json
+
+# Configuración local de Claude Code
+.claude/settings.local.json

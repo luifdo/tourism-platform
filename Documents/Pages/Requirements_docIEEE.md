@@ -4,8 +4,8 @@
 **Proyecto:** Plataforma Digital para la Gestión Integrada y Sostenible del Turismo en Santa Marta  
 **Curso:** Arquitectura de Software   
 **Programa:** Ingeniería de Sistemas — Universidad del Magdalena  
-**Versión:** 1.1 (Estructura Estándar ISO/IEC/IEEE 29148:2018)  
-**Fecha:** Octubre 2026  
+**Versión:** 1.2 (Estructura Estándar ISO/IEC/IEEE 29148:2018)  
+**Fecha:** 14 de noviembre de 2026  
 
 
 > * INTEGRANTES:
@@ -26,6 +26,7 @@
 | 1.0.1 | Octubre 2026 | Atención de la retroalimentación del Grupo 2, exclusión justificada de pagos en línea y redefinición del Módulo 5 como chatbot sobre la API de Gemini. |
 | 1.1 | 13 de octubre de 2026 | Revisión de coherencia: despliegue de los 5 microservicios como contenedores en Kubernetes (k3s) con Python y FastAPI; Traefik como API Gateway; RabbitMQ como único broker; persistencia del Módulo 5; auditoría asíncrona; observabilidad; máquina de estados de la reserva; operación con conectividad limitada mediante PWA (RNF-13, ESC-09); reseñas como requerimiento propio (RF-14, UC39); corrección de relaciones UML de casos de uso; diagramas regenerados (despliegue por actor, presupuesto con ambos escenarios); cronograma ajustado a 13 semanas con sustentación del 15 al 17 de noviembre; asignación de componentes por integrante. |
 | 1.1.1 | Octubre 2026 | Ajustes de coherencia: responsable del Módulo 4, equipo de desarrollo como stakeholder, `event_id` único en la bitácora de auditoría. |
+| 1.2 | 14 de noviembre de 2026 | Coherencia con la implementación: Groq como proveedor del chatbot en lugar de Gemini (ADR-011 aceptado; ADR-010 reemplazado en el proveedor); despliegue real del prototipo, con k3s como entorno objetivo y Docker Compose en la VM pública, y RNF-12 cumplido en k3d y k3s local y pendiente en la VM (§2.4.1, §3.6.5); qué se cifra y qué queda como limitación según el ADR-012 (§2.4.5); los 14 eventos de `contracts/events/` y el outbox adoptado (§3.6.2); modelo de datos alineado con las migraciones: ZONA, 7 categorías, estados reales de la reseña, columnas nuevas de usuario y tablas técnicas (§3.7); OpenAPI 3.x (RNF-03, §3.3.3, §3.6.2); estado de la verificación con ESC-01, ESC-02 y ESC-08 no medidos en su perfil completo (§4.1). |
 
 ---
 
@@ -81,20 +82,20 @@ Este documento sirve como acuerdo formal de alto nivel entre el equipo de desarr
 
 ### 1.2 Alcance del sistema
 
-El sistema consiste en el diseño y desarrollo del prototipo funcional de una **Plataforma Digital para la Gestión Integrada y Sostenible del Turismo en Santa Marta**, fundamentada en una **arquitectura de microservicios desacoplada (5 microservicios modulares)**. Los cinco microservicios se desarrollan en **Python con FastAPI**, bajo el paradigma orientado a objetos y una arquitectura hexagonal, se empaquetan como **contenedores** y se despliegan sobre **Kubernetes (k3s)**. La plataforma prioriza el Software Libre y de Código Abierto (FOSS) en todos sus componentes y se complementa con un único servicio externo propietario: la API de Google Gemini para el chatbot de recomendaciones. La interfaz se entrega como una **aplicación web progresiva (PWA)** que conserva el catálogo y los formularios cuando la conexión es intermitente.
+El sistema consiste en el diseño y desarrollo del prototipo funcional de una **Plataforma Digital para la Gestión Integrada y Sostenible del Turismo en Santa Marta**, fundamentada en una **arquitectura de microservicios desacoplada (5 microservicios modulares)**. Los cinco microservicios se desarrollan en **Python con FastAPI**, bajo el paradigma orientado a objetos y una arquitectura hexagonal, se empaquetan como **contenedores** y se despliegan sobre **Kubernetes (k3s)**. La plataforma prioriza el Software Libre y de Código Abierto (FOSS) en todos sus componentes y se complementa con un único servicio externo propietario: la API de Groq para el chatbot de recomendaciones (ADR-011; reemplazó a Google Gemini, previsto hasta la v1.1). La interfaz se entrega como una **aplicación web progresiva (PWA)** que conserva el catálogo y los formularios cuando la conexión es intermitente.
 
 El sistema garantiza atributos de calidad esenciales como escalabilidad elástica, alta disponibilidad, interoperabilidad abierta, seguridad integral (conforme a la Ley 1581 de 2012), mantenibilidad evolutiva y operación con conectividad limitada.
 
 * **Consolidación de Catálogo y Analítica (Módulo 2):** Para maximizar la cohesión del dominio espacial y optimizar la persistencia, la gestión de atractivos, rutas, cartografía GIS, analítica de demanda, monitoreo de capacidad de carga y avisos institucionales se unifican en un único contexto cohesionado (**Módulo 2: Catálogo, GIS & Inteligencia de Destino**).
-* **Desacople del Servicio de Inteligencia Artificial (RF-06):** La inteligencia artificial se incorpora como un chatbot de recomendaciones turísticas, independiente del núcleo transaccional (Módulos 1 a 4). El chatbot consume el modelo de **Google Gemini** mediante su API externa —el equipo no entrena, aloja ni ejecuta un modelo propio— y accede a la información de la plataforma (atractivos, actividades, prestadores y demás datos pertinentes) únicamente a través de **herramientas (*tools*)** controladas que consultan los módulos correspondientes. El desacople se expresa en la integración y en la separación de responsabilidades: la arquitectura se diseña de modo que una indisponibilidad del proveedor de IA no impida consultar el catálogo ni gestionar reservas.
-* **Fuentes de Datos Abiertos y Consumo de IA como Servicio Externo:** OpenStreetMap y el portal nacional de Datos Abiertos de Colombia se emplean como fuentes de información geográfica y estadística para el catálogo y los indicadores del Módulo 2; no se utilizan para entrenar ni alimentar a Gemini. El chatbot consulta la información disponible en la plataforma mediante las herramientas integradas y el modelo se consume como un servicio externo, por lo que no se elabora un dataset sintético para entrenar, ajustar o validar un modelo de recomendación ni se desarrolla un modelo propio.
+* **Desacople del Servicio de Inteligencia Artificial (RF-06):** La inteligencia artificial se incorpora como un chatbot de recomendaciones turísticas, independiente del núcleo transaccional (Módulos 1 a 4). El chatbot consume un modelo de lenguaje abierto mediante la API externa de **Groq** (ADR-011) —el equipo no entrena, aloja ni ejecuta un modelo propio— y accede a la información de la plataforma (atractivos, actividades, prestadores y demás datos pertinentes) únicamente a través de **herramientas (*tools*)** controladas que consultan los módulos correspondientes. El desacople se expresa en la integración y en la separación de responsabilidades: la arquitectura se diseña de modo que una indisponibilidad del proveedor de IA no impida consultar el catálogo ni gestionar reservas.
+* **Fuentes de Datos Abiertos y Consumo de IA como Servicio Externo:** OpenStreetMap y el portal nacional de Datos Abiertos de Colombia se emplean como fuentes de información geográfica y estadística para el catálogo y los indicadores del Módulo 2; no se utilizan para entrenar ni alimentar al modelo de lenguaje. El chatbot consulta la información disponible en la plataforma mediante las herramientas integradas y el modelo se consume como un servicio externo, por lo que no se elabora un dataset sintético para entrenar, ajustar o validar un modelo de recomendación ni se desarrolla un modelo propio.
 * **Operación con Conectividad Limitada (RNF-13):** La PWA conserva en el dispositivo el catálogo ya consultado y guarda los formularios de prestadores y turistas hasta que vuelve la conexión, para enviarlos automáticamente una sola vez (ver Sección 3.6.6).
 
 > [!NOTE]
 > **Alcance Delimitado (Exclusiones Justificadas del Prototipo):**
 > * **Pasarela de Pagos en Línea (UC34 / UC35):** Fuera de alcance en esta iteración. El prototipo opera bajo un modelo de solicitud y confirmación directa de reserva (ver justificación, alternativas evaluadas y *trade-offs* en la [Sección 1.2.1](#121-decisión-de-alcance-exclusión-de-pasarela-de-pagos-en-línea)).
 > * **Registro de Menores de Edad:** Restringido formalmente a mayores de 18 años para resguardar el marco normativo de Habeas Data infantil.
-> * **Modelos de IA propios:** No se entrena, ajusta ni aloja un modelo propio de recomendación, ni se construye un dataset sintético para entrenar, ajustar o validar un modelo. La IA se consume mediante la API de Gemini (ver RF-06).
+> * **Modelos de IA propios:** No se entrena, ajusta ni aloja un modelo propio de recomendación, ni se construye un dataset sintético para entrenar, ajustar o validar un modelo. La IA se consume mediante la API de Groq (ver RF-06 y ADR-011).
 > * **Solicitudes de reserva sin conexión:** La solicitud (UC11) y la confirmación de reservas (UC20) requieren conexión, porque dependen de la disponibilidad de cupos en tiempo real (RF-03).
 > * **Repositorio documental en GitHub:** https://github.com/luifdo/tourism-platform/tree/Documents/Documents/Pages
 
@@ -125,7 +126,7 @@ A continuación se definen los términos, abreviaturas y acrónimos empleados a 
 * **Argon2id:** Algoritmo criptográfico de derivación de claves y hashing de contraseñas, resistente a ataques de canal lateral y optimizado contra ataques basados en GPU/ASIC.
 * **Bounded Context:** Límite conceptual explícito dentro del cual un modelo de dominio particular es aplicable y consistente, propio del Diseño Guiado por el Dominio (DDD).
 * **CDN:** *Content Delivery Network* (Red de Entrega de Contenidos), red distribuida geográficamente de servidores proxy para acelerar la entrega de contenido estático.
-* **Chatbot:** Asistente conversacional que atiende consultas del usuario en lenguaje natural; en este proyecto, el componente que ofrece recomendaciones turísticas apoyándose en la API de Gemini.
+* **Chatbot:** Asistente conversacional que atiende consultas del usuario en lenguaje natural; en este proyecto, el componente que ofrece recomendaciones turísticas apoyándose en la API de Groq.
 * **CloudNativePG:** Operador de código abierto para ejecutar PostgreSQL en Kubernetes con réplicas, respaldos y restauración declarativos.
 * **Contenedor:** Unidad estándar de empaquetado que incluye una aplicación y sus dependencias, de modo que se ejecuta igual en cualquier entorno (imagen OCI construida con Docker).
 * **CORS:** *Cross-Origin Resource Sharing* (Intercambio de Recursos de Origen Cruzado), mecanismo de seguridad de navegadores web para permitir o restringir peticiones entre diferentes dominios.
@@ -133,8 +134,9 @@ A continuación se definen los términos, abreviaturas y acrónimos empleados a 
 * **FastAPI:** Framework de código abierto (MIT) para construir APIs REST en Python, con validación de datos y generación automática del contrato OpenAPI.
 * **FOSS:** *Free and Open Source Software* (Software Libre y de Código Abierto), software que respeta la libertad de los usuarios y desarrolladores para ejecutar, copiar, distribuir, estudiar, cambiar y mejorar el software.
 * **ForwardAuth:** Mecanismo de Traefik que, antes de enrutar una petición protegida, consulta a un servicio de autenticación (aquí, el Módulo 1) si el token es válido.
-* **Gemini (API de Google Gemini):** Modelo de lenguaje de Google consumido como servicio externo mediante API; el equipo no lo entrena, ajusta ni aloja.
+* **Gemini (API de Google Gemini):** Modelo de lenguaje de Google previsto como proveedor del chatbot hasta la v1.1. Se reemplazó por Groq (ADR-011): su API no respondía en las pruebas y exigía registrar un método de pago.
 * **GIS:** *Geographic Information System* (Sistema de Información Geográfica), sistema para capturar, almacenar, manipular, analizar y presentar datos georreferenciados.
+* **Groq (API de Groq):** Servicio externo que ejecuta modelos de lenguaje abiertos y los expone mediante una API compatible con la de OpenAI, con llamada a funciones. Es el proveedor del chatbot (ADR-011); el modelo se elige por configuración (`LLM_MODEL`) y el equipo no lo entrena, ajusta ni aloja.
 * **Habeas Data:** Derecho fundamental que otorga a toda persona la facultad de conocer, actualizar y rectificar las informaciones que se hayan recogido sobre ellas en bancos de datos.
 * **Herramienta (*tool*):** Función o interfaz controlada, desarrollada por el equipo, que permite al modelo solicitar información específica de la plataforma; el modelo solicita la herramienta y la plataforma la ejecuta.
 * **HPA:** *Horizontal Pod Autoscaler*, componente de Kubernetes que ajusta automáticamente el número de réplicas de un servicio según su carga.
@@ -264,7 +266,7 @@ La plataforma articula sus capacidades a través de un conjunto integrado de fun
 
 1. **Catálogo Unificado y Búsqueda Geoespacial Multicriterio (RF-01, RF-02):** Centralización de atractivos turísticos, actividades culturales y oferta gastronómica/hotelera con navegación georreferenciada sobre mapas abiertos y filtros por zona, precio y categoría.
 2. **Control Atómico de Disponibilidad y Solicitud de Reservas (RF-03, RF-04, RF-05):** Motor transaccional para consulta de cupos en tiempo real, emisión de solicitudes de reserva por parte de turistas y gestión de confirmaciones/cancelaciones por parte de prestadores verificados, bajo una máquina de estados explícita (Sección 3.6.1).
-3. **Recomendación Inteligente Justificada y Dispersión Sostenible (RF-06):** Chatbot de recomendaciones, desacoplado del núcleo transaccional, que consume la API de Gemini y consulta la información de la plataforma mediante herramientas para sugerir actividades personalizadas acompañadas de justificaciones comprensibles, con el propósito de contribuir a la redistribución de visitantes hacia destinos emergentes.
+3. **Recomendación Inteligente Justificada y Dispersión Sostenible (RF-06):** Chatbot de recomendaciones, desacoplado del núcleo transaccional, que consume la API de Groq y consulta la información de la plataforma mediante herramientas para sugerir actividades personalizadas acompañadas de justificaciones comprensibles, con el propósito de contribuir a la redistribución de visitantes hacia destinos emergentes.
 4. **Inteligencia de Negocios y Tableros para Gobernanza del Destino (RF-07, RF-13):** Consolidación analítica de métricas de demanda, cálculo estimativo de presión sobre capacidades de carga y exportación de reportes estructurados (CSV/PDF) para autoridades turísticas.
 5. **Inclusión Digital de Prestadores Comunitarios (RF-08):** Formularios simplificados y asistidos para que pequeños operadores locales y comunitarios publiquen sus servicios sin barreras técnicas, incluso con conectividad intermitente (RNF-13).
 6. **Seguridad Integral, IAM y Auditoría Inmutable (RF-09, RF-12):** Gestión perimetral de identidades con JWT, control estricto de roles (RBAC), verificación documental (RNT, RUT) y registro auditable de eventos críticos de todos los módulos.
@@ -287,7 +289,7 @@ Conforme al estándar ISO/IEC/IEEE 29148:2018, los interesados del sistema se cl
 | **Actor Directo** | **Administrador del Sistema** | Gestor técnico y operativo de la plataforma. | • Control de identidades, roles (RBAC) y permisos.<br>• Verificación de legitimidad de prestadores.<br>• Moderación de reseñas reportadas.<br>• Auditoría de seguridad y monitoreo de desempeño. |
 | **Actor Indirecto / Normativo** | **Ente Regulador** *(Superintendencia de Industria y Comercio - SIC)* | Autoridad de supervisión de datos personales. | • Cumplimiento riguroso de la Ley Estatutaria 1581 de 2012 y Habeas Data.<br>• Trazabilidad de consentimientos informados. |
 | **Actor Indirecto / Externo** | **Servicios de Cartografía Abierta** *(OpenStreetMap / Nominatim)* | Proveedor de infraestructura geoespacial FOSS. | • Geolocalización, cálculo de distancias y visualización de capas de mapas sin costos de licenciamiento comercial. |
-| **Actor Indirecto / Externo** | **Servicio de IA Generativa** *(API de Google Gemini)* | Proveedor externo del modelo de lenguaje que utiliza el chatbot de recomendaciones. | • Generación de respuestas en lenguaje natural y solicitud de las herramientas que requiere cada consulta.<br>• Operación dentro de las condiciones de uso, los límites de solicitudes y los costos de consumo del proveedor. |
+| **Actor Indirecto / Externo** | **Servicio de IA Generativa** *(API de Groq)* | Proveedor externo del modelo de lenguaje que utiliza el chatbot de recomendaciones. | • Generación de respuestas en lenguaje natural y solicitud de las herramientas que requiere cada consulta.<br>• Operación dentro de las condiciones de uso, los límites de solicitudes y los costos de consumo del proveedor. |
 | **Actor Indirecto / Externo** | **Servicio de Notificaciones** *(SMTP: Postal o servidor institucional)* | Proveedor de entrega de correos transaccionales. | • Entrega confiable de correos de confirmación de reserva y avisos de seguridad. |
 | **Actor Indirecto / Interno** | **Equipo de Desarrollo** *(5 integrantes del proyecto)* | Construye, despliega y mantiene los 5 microservicios, el gateway y la PWA. | • Descomposición clara en módulos y responsables por carpeta.<br>• Contratos REST y de eventos estables.<br>• Despliegue reproducible en k3s.<br>• Documentación de decisiones (ADR) para sustentar el diseño. |
 
@@ -301,10 +303,10 @@ Conforme al estándar ISO/IEC/IEEE 29148:2018, los interesados del sistema se cl
 #### 2.4.1 Restricciones Técnicas
 * **Arquitectura de Microservicios:** Implementación de los 5 microservicios desacoplados definidos en la Sección 3.6 (el Módulo 2 consolida Catálogo, GIS e Inteligencia de Destino).
 * **Lenguaje y Paradigma:** Todos los microservicios se desarrollan en Python con FastAPI, bajo el paradigma orientado a objetos y una arquitectura hexagonal (puertos y adaptadores). Cada servicio es una aplicación HTTP estándar empaquetada como contenedor, sin dependencias de una plataforma de ejecución específica.
-* **Plataforma de Despliegue:** Los microservicios, el API Gateway, el broker y los almacenes de datos se despliegan como contenedores sobre Kubernetes (k3s). Docker Compose se utiliza únicamente como entorno de desarrollo local.
-* **Consumo de IA mediante API:** El chatbot de recomendaciones (RF-06) utiliza la API de Google Gemini como servicio externo; no se despliega ni se entrena un modelo propio. Por tratarse de un servicio propietario, constituye la única excepción a la prioridad de software libre.
+* **Plataforma de Despliegue:** Los microservicios, el API Gateway, el broker y los almacenes de datos se despliegan como contenedores sobre Kubernetes (k3s), que es el entorno objetivo. Docker Compose se usa en desarrollo local y, como limitación del prototipo, en la demostración pública (ver Sección 3.6.5).
+* **Consumo de IA mediante API:** El chatbot de recomendaciones (RF-06) utiliza la API de Groq como servicio externo (ADR-011); no se despliega ni se entrena un modelo propio. Por tratarse de un servicio propietario, constituye la única excepción a la prioridad de software libre.
 * **Persistencia Políglota FOSS:** Uso de motores de datos de código abierto bajo el principio *Database-per-Service*: PostgreSQL (con PostGIS para datos espaciales y JSONB para documentos), Valkey en memoria y almacenamiento de objetos compatible con S3 (SeaweedFS).
-* **Integración Abierta:** Prohibición del uso de APIs privativas de mapas con costos por consumo (ej. Google Maps API); uso estricto del ecosistema OpenStreetMap. Esta restricción aplica a servicios de cartografía y geocodificación; no alcanza al consumo de la API de Gemini para el chatbot.
+* **Integración Abierta:** Prohibición del uso de APIs privativas de mapas con costos por consumo (ej. Google Maps API); uso estricto del ecosistema OpenStreetMap. Esta restricción aplica a servicios de cartografía y geocodificación; no alcanza al consumo de la API de Groq para el chatbot.
 * **Compatibilidad Multiplataforma:** Interfaz web responsiva (PWA) compatible con navegadores móviles y de escritorio modernos sin requerir instalación de aplicativos nativos.
 * **Conectividad Limitada:** La interfaz debe seguir siendo útil con conexión intermitente: catálogo consultable sin conexión y formularios conservados hasta que vuelva la conexión (RNF-13).
 
@@ -324,10 +326,25 @@ Conforme al estándar ISO/IEC/IEEE 29148:2018, los interesados del sistema se cl
 
 #### 2.4.5 Restricciones Normativas y Legales
 * **Ley 1581 de 2012 (Protección de Datos Personales):** Consentimiento informado previo, almacenamiento cifrado de datos sensibles y derecho de actualización/supresión (Habeas Data).
+  * **Qué se cifra y dónde (ADR-012, estado al 14 de noviembre de 2026):**
+
+    | Dato o canal | Protección | Dónde | Estado |
+    |---|---|---|---|
+    | Contraseñas | Hash Argon2id | `iam_db` | Implementado |
+    | Tokens de recuperación y refresh tokens | Solo su SHA-256 | Valkey | Implementado |
+    | Tráfico entre el usuario y la plataforma, incluidas las URL firmadas de SeaweedFS | TLS en el borde (Traefik con Let's Encrypt, HTTP → HTTPS) | VM pública | Implementado |
+    | PostgreSQL, RabbitMQ, Valkey y SeaweedFS en reposo | Disco cifrado (volumen EBS gp3 cifrado) | VM de AWS (`tourism-vm`) | Implementado |
+    | Documentos RUT y RNT, imágenes y respaldos de PostgreSQL | Cifrado de volúmenes de SeaweedFS (`-filer.encryptVolumeData`) | SeaweedFS | **No aplicado** (F-01 de `verificacion-fase4.md`); hoy solo los cubre el disco cifrado |
+
+  * **Limitaciones del prototipo:**
+    * Dentro del clúster o del host, los servicios hablan sin TLS con PostgreSQL, RabbitMQ, Valkey y SeaweedFS. Las NetworkPolicy en k3s y la red interna del compose limitan quién llega a cada uno.
+    * Los datos personales (correos, nombres, reservas y reseñas) no llevan cifrado por columna en PostgreSQL.
+    * El cifrado de disco protege frente a un disco, un volumen o un respaldo robados. No protege frente a quien entra al sistema encendido con credenciales válidas; eso lo cubren las credenciales por servicio, el bucket privado (C-46) y la bitácora.
+    * Ambas limitaciones quedan como trabajo futuro, con las condiciones del ADR-012.
 * **Ley General de Turismo (Ley 300 de 1996 / Ley 2068 de 2020):** Exigencia del Registro Nacional de Turismo (RNT) como requisito de verificación para prestadores comerciales.
 
 #### 2.4.6 Restricciones Éticas en Inteligencia Artificial
-* **Transparencia Ética (RNF-08):** Toda recomendación turística generada por el chatbot debe acompañarse de una justificación comprensible para el usuario final, basada en la información consultada en la plataforma y en los criterios pertinentes de la respuesta (preferencias expresadas, ubicación, categoría, entre otros). La justificación explica la respuesta entregada; no constituye una garantía de infalibilidad ni una auditoría del modelo de Gemini.
+* **Transparencia Ética (RNF-08):** Toda recomendación turística generada por el chatbot debe acompañarse de una justificación comprensible para el usuario final, basada en la información consultada en la plataforma y en los criterios pertinentes de la respuesta (preferencias expresadas, ubicación, categoría, entre otros). La justificación explica la respuesta entregada; no constituye una garantía de infalibilidad ni una auditoría del modelo de lenguaje.
 * **Equidad y Neutralidad:** Las recomendaciones del chatbot no deben aplicar criterios discriminatorios ni favorecer comercialmente a ningún operador sobre otro.
 
 ---
@@ -339,7 +356,7 @@ Conforme al estándar ISO/IEC/IEEE 29148:2018, los interesados del sistema se cl
 3. **Dependencia del Servicio de Transporte de Correo (SMTP):** El despacho de correos electrónicos transaccionales de confirmación de reserva (UC36, RF-11) y restablecimiento de credenciales depende de la conectividad con un servidor de correo saliente SMTP (Postal, servidor FOSS, o el servidor institucional).
 4. **Dependencia de Verificación Administrativa Humana:** La activación pública de las ofertas de prestadores depende del proceso de revisión y validación manual de los documentos de acreditación legal (RNT, RUT) por parte del rol Administrador del Sistema.
 5. **Dependencia de Información Oficial de Destino:** La calibración de los límites de aforo y alertas institucionales asume la provisión periódica de lineamientos de capacidad de carga por parte de la Entidad de Gestión (INDETUR, Corpoteyrona, Parques Nacionales Naturales).
-6. **Dependencia del Servicio Externo de IA (API de Google Gemini):** El chatbot depende de la disponibilidad de la API de Gemini y se asumen credenciales de acceso vigentes. Se consideran aspectos de diseño, no fallos confirmados: la dependencia de la disponibilidad del proveedor, los límites de solicitudes, los costos de consumo y la latencia de las consultas. El núcleo transaccional se diseña para seguir operando ante una indisponibilidad del servicio de IA. Dado que la conversación y los resultados de las herramientas viajan a un servicio externo, al modelo se le envía el mínimo de información necesaria (nunca el nombre, el correo ni el documento del turista) y, antes de enviar información de turistas reales, se deben revisar las condiciones de uso de datos del plan de Gemini utilizado (Ley 1581 de 2012).
+6. **Dependencia del Servicio Externo de IA (API de Groq):** El chatbot depende de la disponibilidad de la API de Groq y se asume una clave de acceso vigente (`LLM_API_KEY`). Se consideran aspectos de diseño, no fallos confirmados: la dependencia de la disponibilidad del proveedor, los límites de solicitudes del plan gratuito, los costos de consumo si se pasara a un plan de pago y la latencia de las consultas. Al superar el límite, el chatbot responde 503 `ASISTENTE_NO_DISPONIBLE` (ADR-011). El núcleo transaccional se diseña para seguir operando ante una indisponibilidad del servicio de IA. Dado que la conversación y los resultados de las herramientas viajan a un servicio externo, al modelo se le envía el mínimo de información necesaria (nunca el nombre, el correo ni el documento del turista) y, antes de enviar información de turistas reales, se deben revisar las condiciones de uso y retención de datos del plan de Groq utilizado (Ley 1581 de 2012).
 7. **Dependencia de la Infraestructura de Cómputo:** El prototipo asume la disponibilidad de al menos una máquina virtual Linux de bajo costo (Escenario A) para el clúster k3s, y de tres nodos en el piloto institucional (Escenario B). La capacidad de escalado horizontal está limitada por los recursos de esos nodos.
 8. **Dependencia de Capacidades del Navegador:** La operación sin conexión (RNF-13) asume navegadores con soporte de Service Worker e IndexedDB. Donde no exista la API *Background Sync*, la PWA reintenta el envío al detectar la reconexión o al volver a abrir la aplicación.
 
@@ -358,7 +375,7 @@ A continuación se detalla la especificación completa de los requerimientos fun
 | **RF-03** | Consultar la disponibilidad actualizada de cupos de un servicio. | **Must** | Módulo 3: Reservas & Cupos | Turista | El calendario refleja en tiempo real los cupos habilitados por el prestador. |
 | **RF-04** | Registrar solicitudes de reserva de actividades o servicios turísticos y gestionar su ciclo de vida según la máquina de estados de la Sección 3.6.1. | **Must** | Módulo 3: Reservas & Cupos | Turista, Prestador | Se genera una reserva en estado `Solicitada` visible en el panel del turista y del prestador; solo se permiten las transiciones definidas. |
 | **RF-05** | Permitir a los prestadores registrar y actualizar su oferta y cupos. | **Must** | Módulos 2 y 3 | Prestador | Un prestador verificado crea y edita servicios visualizándose inmediatamente en el catálogo. |
-| **RF-06** | Ofrecer recomendaciones turísticas personalizadas y justificadas mediante un chatbot que consume la API de Gemini y consulta la información de la plataforma a través de herramientas. | **Should** | Módulo 5: IA & Recomendación | Turista | El usuario recibe sugerencias basadas en su consulta y preferencias, construidas con datos consultados en la plataforma, junto con la justificación (RNF-08). |
+| **RF-06** | Ofrecer recomendaciones turísticas personalizadas y justificadas mediante un chatbot que consume la API de Groq y consulta la información de la plataforma a través de herramientas. | **Should** | Módulo 5: IA & Recomendación | Turista | El usuario recibe sugerencias basadas en su consulta y preferencias, construidas con datos consultados en la plataforma, junto con la justificación (RNF-08). |
 | **RF-07** | Generar tableros e indicadores agregados de demanda y aforo para planificación. | **Should** | Módulo 2: Catálogo, GIS & Destino | Entidad | La entidad visualiza gráficos de demanda por zonas y estimación de concentración turística. |
 | **RF-08** | Incorporación asistida y sin barreras técnicas para prestadores comunitarios. | **Should** | Módulos 1 y 2 | Prestador | El formulario de registro y carga de servicios no requiere más de 3 pasos sencillos. |
 | **RF-09** | Gestión de identidades, control de acceso RBAC y bitácora de auditoría. | **Must** | Módulo 1: Seguridad & IAM | Admin | Intentos de acceso no autorizados devuelven HTTP 403 y quedan registrados en la bitácora. |
@@ -377,7 +394,7 @@ A continuación se detalla la especificación completa de los requerimientos fun
 * **Prestador de Servicios Turísticos (`Prest`):** Actor comercial verificado que administra servicios, cupos y atiende reservas.
 * **Entidad de Gestión del Destino (`Entidad`):** Actor gubernamental o institucional que analiza métricas y emite avisos oficiales.
 * **Administrador (`Admin`):** Custodio técnico de la seguridad, roles, moderación y observabilidad.
-* **Sistema / Servicios Externos (`SysExt`):** Proveedor de mapas OSM, servidor de correo SMTP y proveedor de IA (API de Gemini).
+* **Sistema / Servicios Externos (`SysExt`):** Proveedor de mapas OSM, servidor de correo SMTP y proveedor de IA (API de Groq).
 
 #### 3.2.2 Matriz Detallada de Casos de Uso
 
@@ -398,7 +415,7 @@ Las relaciones siguen la semántica UML: `«include»` indica que el caso base *
 | **UC11** | Solicitar reserva de actividad o servicio | Turista | `<<include>>` UC2, `<<include>>` UC10; requiere conexión | Módulo 3: Reservas & Cupos |
 | **UC12** | Cancelar / modificar solicitud de reserva | Turista | `<<include>>` UC13; modificar solo en estado `Solicitada` | Módulo 3: Reservas & Cupos |
 | **UC13** | Consultar historial de reservas propias | Turista | - | Módulo 3: Reservas & Cupos |
-| **UC14** | Recibir recomendaciones personalizadas justificadas mediante chatbot | Turista | Invoca herramientas de solo lectura sobre UC8, UC9, UC10, UC13, UC15, UC24 y UC26; consume la API de Gemini | Módulo 5: IA & Recomendación |
+| **UC14** | Recibir recomendaciones personalizadas justificadas mediante chatbot | Turista | Invoca herramientas de solo lectura sobre UC8, UC9, UC10, UC13, UC15, UC24 y UC26; consume la API de Groq | Módulo 5: IA & Recomendación |
 | **UC15** | Calificar y redactar reseña de experiencia | Turista | Precondición: reserva `Finalizada` del servicio; puede ser reportada (UC39) | Módulo 4: Reseñas & Moderación |
 | **UC16** | Visualizar mapa interactivo de atractivos y zonas | Turista, Entidad | Integración OpenStreetMap | Módulo 2: Catálogo, GIS & Destino |
 | **UC17** | Registrar nueva oferta turística | Prestador | `<<include>>` UC2; precondición: prestador aprobado (UC28) | Módulo 2: Catálogo, GIS & Destino |
@@ -476,14 +493,15 @@ La vista general con todos los actores se conserva como referencia en [CasosDeUs
 * **Plataforma de Datos Abiertos de Colombia:**
   * *Protocolo:* HTTPS / REST (Socrata Open Data API - SODA) o ingesta periódica de archivos CSV/JSON.
   * *Finalidad:* Enriquecimiento de indicadores de demanda y calibración de atractivos culturales en el Módulo 2.
-* **API de Google Gemini (Servicio de IA Generativa):**
-  * *Protocolo:* HTTPS / REST.
-  * *Formato:* Mensajes JSON con la consulta del usuario, la declaración de las herramientas disponibles y la respuesta generada.
+* **API de Groq (Servicio de IA Generativa, ADR-011):**
+  * *Protocolo:* HTTPS / REST, API compatible con la de OpenAI (SDK `groq`).
+  * *Formato:* Mensajes JSON con la consulta del usuario, la declaración de las herramientas disponibles (llamada a funciones) y la respuesta generada.
+  * *Configuración:* `LLM_PROVIDER=groq`, `LLM_MODEL` (por defecto `openai/gpt-oss-120b`) y `LLM_API_KEY` como `Secret`.
   * *Finalidad:* Generación de las respuestas del chatbot de recomendaciones (Módulo 5) y solicitud de las herramientas necesarias para consultar información de la plataforma. La ejecución de las herramientas y el acceso a los datos se realizan en la plataforma; el equipo no entrena ni ajusta el modelo con esos datos. Al modelo solo se le envía el mínimo de información necesaria, nunca el nombre, el correo ni el documento del turista.
 
 #### 3.3.3 Interfaces de Comunicación e Integración
 * **API Gateway Perimetral (Traefik):**
-  * *Protocolo:* HTTPS (TLS 1.3) con intercambio de cargas en JSON (RESTful), documentado bajo OpenAPI 3.0.
+  * *Protocolo:* HTTPS (TLS 1.3) con intercambio de cargas en JSON (RESTful), documentado bajo OpenAPI 3.x (ver RNF-03).
   * *Enrutamiento:* Por prefijo de ruta hacia cada microservicio: `/api/iam`, `/api/catalog`, `/api/bookings`, `/api/reviews` y `/api/recommendations`.
   * *Seguridad:* Validación del encabezado `Authorization: Bearer <JWT>` en las rutas protegidas mediante ForwardAuth contra el Módulo 1, Rate Limiting y CORS. Las rutas públicas del catálogo (RF-01) no requieren token.
 * **Bus de Mensajería Asíncrona (Event Bus):**
@@ -499,7 +517,7 @@ La vista general con todos los actores se conserva como referencia en [CasosDeUs
 |---|---|---|---|---|
 | **RNF-01** | **Disponibilidad** | El sistema debe mantener una tasa de disponibilidad operativa $\ge 99.0\%$ durante su ventana de servicio. | **Should** | Monitoreo continuo mediante sondas de salud (`/health`) consultadas por Prometheus. |
 | **RNF-02** | **Escalabilidad** | La arquitectura de microservicios debe escalar horizontalmente ante incrementos de tráfico en temporada alta. | **Must** | Pruebas de carga simulada con herramientas FOSS (k6 / Locust) y escalado automático con HPA. |
-| **RNF-03** | **Interoperabilidad** | La plataforma debe exponer APIs REST documentadas bajo especificación OpenAPI 3.0. | **Must** | Validación con esquemas Swagger/OpenAPI y consumo desacoplado. |
+| **RNF-03** | **Interoperabilidad** | La plataforma debe exponer APIs REST documentadas bajo especificación OpenAPI 3.x. Cinco contratos de `contracts/openapi/` están en 3.0.3; `iam.yaml` está en 3.1.0 porque se genera desde la aplicación (C-57). | **Must** | Validación con esquemas Swagger/OpenAPI y consumo desacoplado. |
 | **RNF-04** | **Seguridad** | Autenticación basada en JWT, cifrado de credenciales con Argon2id y cumplimiento de la Ley 1581 de 2012. | **Must** | Pruebas de vulnerabilidad estática y registro explícito de consentimiento (UC6). |
 | **RNF-05** | **Mantenibilidad** | El desacople entre microservicios debe permitir modificar o desplegar módulos (incluido el componente del chatbot) sin alterar el núcleo. | **Should** | Tiempo estimado de incorporación de un nuevo servicio $\le 5$ días-persona a partir de la plantilla base. |
 | **RNF-06** | **Rendimiento** | El tiempo de respuesta para el 95% de las consultas de catálogo debe ser inferior a 2.0 segundos. | **Must** | Medición de latencia percentil 95 ($p95$) bajo concurrencia controlada. |
@@ -523,7 +541,7 @@ Formato de especificación formal: **Fuente $\rightarrow$ Estímulo $\rightarrow
 | **ESC-02** | **Rendimiento & Carga** | *Fuente:* Turistas concurrentes en temporada de vacaciones. *Estímulo:* 500 solicitudes concurrentes por segundo en búsqueda de catálogo. *Ambiente:* Pico estacional. *Artefacto:* Módulo 2 (Catálogo) + caché Valkey. *Respuesta:* El sistema atiende las consultas apoyándose en caché en memoria. *Medida:* Tiempo de respuesta $p95 < 2.0$ segundos sin errores HTTP 5xx. |
 | **ESC-03** | **Interoperabilidad** | *Fuente:* Desarrollador / Administrador. *Estímulo:* Integración de una nueva fuente de datos abiertos de eventos culturales. *Ambiente:* Mantenimiento evolutivo. *Artefacto:* Módulo 2 (Catálogo). *Respuesta:* Ingesta de datos vía API REST sin modificar la estructura del esquema relacional base. *Medida:* Incorporación funcional completada en $\le 3$ días hábiles. |
 | **ESC-04** | **Seguridad & Auditoría** | *Fuente:* Usuario no autorizado / Atacante externo. *Estímulo:* Intento de acceso a endpoints de reportes institucionales sin token o con rol inválido. *Ambiente:* Operación normal. *Artefacto:* Módulo 1 (IAM), API Gateway y módulo que recibe la petición. *Respuesta:* Bloqueo inmediato de la petición (HTTP 401 sin token válido, HTTP 403 con rol insuficiente) y registro del evento (IP, timestamp, usuario) en la bitácora: el Módulo 1 lo escribe directamente si el rechazo ocurre en la validación del token, y el módulo afectado publica `auditoria.registrada` si el rechazo es por rol. *Medida:* 100% de los accesos indebidos registrados en la bitácora de auditoría inmutable. |
-| **ESC-05** | **Mantenibilidad** | *Fuente:* Equipo de ingeniería. *Estímulo:* Ajuste de la configuración del chatbot (herramientas disponibles, parámetros de consumo o versión del modelo de la API de Gemini). *Ambiente:* Ciclo de desarrollo. *Artefacto:* Módulo 5 (IA). *Respuesta:* Actualización y despliegue del componente del chatbot mediante *rolling update*, sin reiniciar ni alterar los microservicios de Reservas o Catálogo. *Medida:* Cero tiempo de inactividad (*zero-downtime*) en el núcleo transaccional. |
+| **ESC-05** | **Mantenibilidad** | *Fuente:* Equipo de ingeniería. *Estímulo:* Ajuste de la configuración del chatbot (herramientas disponibles, parámetros de consumo o modelo de lenguaje configurado en `LLM_MODEL` o proveedor en `LLM_PROVIDER`). *Ambiente:* Ciclo de desarrollo. *Artefacto:* Módulo 5 (IA). *Respuesta:* Actualización y despliegue del componente del chatbot mediante *rolling update*, sin reiniciar ni alterar los microservicios de Reservas o Catálogo. *Medida:* Cero tiempo de inactividad (*zero-downtime*) en el núcleo transaccional. |
 | **ESC-06** | **Recuperación ante Fallos** | *Fuente:* Administrador del sistema. *Estímulo:* Simulación de corrupción de la base de datos de reservas. *Ambiente:* Prueba de contingencia. *Artefacto:* Respaldos de CloudNativePG en SeaweedFS y PostgreSQL (`booking_db`). *Respuesta:* Restauración del último respaldo programado. *Medida:* Tiempo de recuperación objetivo ($RTO) \le 30$ minutos; pérdida máxima de datos ($RPO) \le 24$ horas. |
 | **ESC-07** | **Usabilidad** | *Fuente:* Turista primerizo. *Estímulo:* Búsqueda, selección y envío de solicitud de reserva para un tour ecológico. *Ambiente:* Dispositivo móvil con conexión estándar 4G. *Artefacto:* Interfaz de usuario web (PWA). *Respuesta:* Navegación guiada en un flujo de 4 pantallas consecutivas sin bloqueos. *Medida:* Tasa de éxito en la tarea $\ge 90\%$ en pruebas de usabilidad asistidas. |
 | **ESC-08** | **Escalabilidad** | *Fuente:* Turistas concurrentes durante temporada alta (vacaciones de fin de año, Semana Santa). *Estímulo:* El tráfico sostenido sobre catálogo y reservas se duplica respecto al escenario ESC-02, pasando de 500 a 1.000 solicitudes por segundo durante al menos 30 minutos. *Ambiente:* Despliegue piloto en temporada alta, con capacidad de nodos aprovisionada para el pico. *Artefacto:* Módulo 2 (Catálogo & GIS) y Módulo 3 (Reservas & Cupos), desplegados en k3s con HPA. *Respuesta:* El HPA incrementa las réplicas únicamente de los servicios presionados, sin reiniciar ni escalar los demás microservicios; al descender la demanda, las réplicas adicionales se liberan. *Medida:* Réplicas adicionales listas en $\le 2$ minutos; la capacidad atendida crece al menos 1,8 veces al duplicar las réplicas; se mantiene $p95 < 2.0$ segundos y tasa de errores HTTP 5xx $< 1\%$ durante todo el pico. |
@@ -535,7 +553,7 @@ Formato de especificación formal: **Fuente $\rightarrow$ Estímulo $\rightarrow
 
 #### 3.6.1 Estilo Arquitectónico Base y Descomposición Modular
 
-Se adopta una **Arquitectura de Microservicios Desacoplada**, organizada en **5 microservicios funcionales bien delimitados (*Bounded Contexts*)**, un **API Gateway perimetral (Traefik)** y una **Capa Transversal de Mensajería, Observabilidad y Presentación (PWA)**. Todos los componentes se ejecutan como contenedores sobre **Kubernetes (k3s)** y priorizan el Software Libre; la única dependencia propietaria es la API de Gemini.
+Se adopta una **Arquitectura de Microservicios Desacoplada**, organizada en **5 microservicios funcionales bien delimitados (*Bounded Contexts*)**, un **API Gateway perimetral (Traefik)** y una **Capa Transversal de Mensajería, Observabilidad y Presentación (PWA)**. Todos los componentes se ejecutan como contenedores sobre **Kubernetes (k3s)** y priorizan el Software Libre; la única dependencia propietaria es la API de Groq (ADR-011).
 
 > [!NOTE]
 > **Justificación de la selección y detalle de implementación:** La comparación entre esta alternativa y un Monolito Modular, con tabla ponderada, decisión justificada y análisis de *trade-offs*, se documenta en [Comparación y Selección de Alternativas Arquitectónicas](./Comparacion_Alternativas_Arquitectonicas.md). Las decisiones de plataforma, lenguaje, gateway, broker, persistencia y conectividad están en el [Registro de Decisiones Arquitectónicas](./Registro_Decisiones_Arquitectonicas.md). El diseño interno (arquitectura hexagonal), los contratos, los flujos y el despliegue en k3s se desarrollan en el [Plan de Implementación y Funcionamiento Interno](./Plan_de_Implementacion.md).
@@ -616,8 +634,8 @@ stateDiagram-v2
   * Consultas para el chatbot: reseñas y calificación de un servicio (UC15).
 
 ##### 5. Módulo 5: Inteligencia Artificial y Recomendación Desacoplada (AI Recommendation Chatbot)
-* **Propósito:** Ofrecer recomendaciones personalizadas de atractivos y actividades mediante un chatbot que consume la API de Gemini, sin penalizar el rendimiento del núcleo transaccional.
-* **Alcance del componente:** Gemini es un servicio externo consumido mediante API; las herramientas, la lógica de negocio y la integración las desarrolla el equipo. No se entrena, ajusta ni aloja un modelo propio. El chatbot es de solo lectura: no crea, modifica ni cancela reservas ni publica contenido, y orienta al turista hacia las pantallas de la plataforma para hacerlo. Sus respuestas se limitan al turismo en Santa Marta y a la plataforma, en español e inglés.
+* **Propósito:** Ofrecer recomendaciones personalizadas de atractivos y actividades mediante un chatbot que consume la API de Groq (ADR-011), sin penalizar el rendimiento del núcleo transaccional.
+* **Alcance del componente:** Groq es un servicio externo consumido mediante API; las herramientas, la lógica de negocio y la integración las desarrolla el equipo. No se entrena, ajusta ni aloja un modelo propio. El chatbot es de solo lectura: no crea, modifica ni cancela reservas ni publica contenido, y orienta al turista hacia las pantallas de la plataforma para hacerlo. Sus respuestas se limitan al turismo en Santa Marta y a la plataforma, en español e inglés.
 * **Persistencia:** El contexto de la conversación (últimos mensajes) se guarda en Valkey con expiración de 24 horas; las recomendaciones entregadas se registran de forma permanente en `RECOMENDACION_LOG`, en su propia base `recommendation_db` (PostgreSQL). No se almacena el texto completo de las conversaciones.
 * **Capacidades previstas (fase de diseño):**
   * Recepción de la consulta del turista en lenguaje natural, con memoria de la conversación dentro de la sesión.
@@ -648,25 +666,33 @@ stateDiagram-v2
 A nivel arquitectónico se adopta un **patrón híbrido**:
 
 1. **Comunicación Síncrona (RESTful sobre HTTPS / JSON):**
-   * Empleada en consultas y operaciones transaccionales directas del usuario (navegación del catálogo, consulta de disponibilidad, autenticación y registro de reservas), así como la interacción con el chatbot de recomendaciones (consulta del turista, invocación de herramientas y consumo de la API de Gemini).
-   * Contratos de interfaz documentados formalmente bajo OpenAPI 3.0.
+   * Empleada en consultas y operaciones transaccionales directas del usuario (navegación del catálogo, consulta de disponibilidad, autenticación y registro de reservas), así como la interacción con el chatbot de recomendaciones (consulta del turista, invocación de herramientas y consumo de la API de Groq).
+   * Contratos de interfaz documentados formalmente bajo OpenAPI 3.x (RNF-03).
 2. **Comunicación Asíncrona Orientada a Eventos (RabbitMQ):**
    * Empleada para tareas desacopladas que no deben bloquear al usuario: correos transaccionales, métricas de demanda, habilitación de reseñas y bitácora de auditoría.
    * Cada consumidor tiene su propia cola, descarta los eventos duplicados por `event_id` y envía a una cola de mensajes fallidos (DLQ) los que no logra procesar tras 3 intentos.
 
+La tabla lista los 14 eventos con esquema en `contracts/events/` (más el sobre común `envelope.v1.json`). Productores y consumidores coinciden con las colas que declara cada servicio.
+
 | Evento | Productor | Consumidor(es) | Efecto |
 |---|---|---|---|
-| `reserva.solicitada` | Módulo 3 | Módulo 2 | Aviso al prestador y métricas de demanda. |
+| `reserva.solicitada` | Módulo 3 | Módulo 2 | Aviso al prestador y métricas de demanda (UC11). |
+| `reserva.modificada` | Módulo 3 | Módulo 2 | Aviso al prestador y métricas de demanda: el turista cambió la fecha o las personas de una reserva `Solicitada` (UC12). |
 | `reserva.confirmada` | Módulo 3 | Módulo 2 | Correo de confirmación al turista (UC36) y métricas. |
-| `reserva.rechazada` | Módulo 3 | Módulo 2 | Correo al turista y métricas. |
-| `reserva.cancelada` | Módulo 3 | Módulo 2 | Correo a la otra parte y métricas. |
-| `reserva.finalizada` | Módulo 3 | Módulo 4, Módulo 2 | Habilita la reseña del turista; métricas de ocupación. |
-| `resena.publicada` | Módulo 4 | Módulo 2 | Calificación promedio y métricas del prestador (UC22). |
-| `prestador.aprobado` | Módulo 1 | Módulo 2 | Crea el perfil del prestador y habilita la publicación de ofertas (UC17). |
+| `reserva.rechazada` | Módulo 3 | Módulo 2 | Correo al turista y métricas (UC20 o plazo de 48 h vencido). |
+| `reserva.cancelada` | Módulo 3 | Módulo 2 | Correo a la otra parte y métricas (UC12). |
+| `reserva.finalizada` | Módulo 3 | Módulo 4, Módulo 2 | Habilita la reseña del turista (RF-14); métricas de ocupación. |
+| `disponibilidad.actualizada` | Módulo 3 | Módulo 2 | Proyección de cupos por servicio y día para filtrar la búsqueda y el mapa por fecha y personas (UC8, UC16, UC19). |
+| `servicio.publicado` | Módulo 2 | Módulo 3, Módulo 4 | Módulo 3: proyección `servicio_ref` (dueño y aforo). Módulo 4: dueño del servicio, para responder y reportar reseñas (UC17, UC18, UC21). |
+| `resena.publicada` | Módulo 4 | Módulo 2 | Calificación promedio y métricas del prestador (UC15, UC22; también al volver a publicar una reseña oculta, UC29). |
+| `resena.ocultada` | Módulo 4 | Módulo 2 | Quita la reseña de la calificación promedio (UC29). |
+| `prestador.aprobado` | Módulo 1 | Módulo 2 | Crea o reactiva el perfil del prestador y habilita la publicación de ofertas (UC17, UC28). |
+| `prestador.suspendido` | Módulo 1 | Módulo 2 | Desactiva el perfil y sus servicios, que dejan de mostrarse (UC27, UC28). |
+| `usuario.suprimido` | Módulo 1 | Módulo 2 | Borra los datos personales de `PRESTADOR_PERFIL` (razón social, teléfono y dirección) tras la supresión de la cuenta (UC6, Ley 1581). Cualquier servicio que guarde datos personales del usuario debe consumirlo. |
 | `auditoria.registrada` | Módulos 2, 3 y 4 | Módulo 1 | Inserción en la bitácora inmutable (RNF-10). |
 
 > [!NOTE]
-> **Auditoría asíncrona:** El Módulo 1 escribe sus propios eventos de auditoría en la misma transacción que la acción auditada, de modo que no pueden perderse. Los demás módulos publican `auditoria.registrada` con confirmación del broker; si se requiere garantía total de entrega se adoptará el patrón *outbox* (ver [Registro de Decisiones Arquitectónicas](./Registro_Decisiones_Arquitectonicas.md), ADR-008). El Módulo 5 no participa en el bus: obtiene los datos bajo demanda mediante sus herramientas.
+> **Auditoría y entrega de eventos:** El Módulo 1 escribe sus propios eventos de auditoría en la misma transacción que la acción auditada. Todos los productores usan el patrón *outbox* (ADR-008, ADR-013): el evento se guarda en la misma transacción que el cambio y un *worker* lo publica con confirmación del broker, así que un fallo entre el commit y la publicación no lo pierde. Los consumidores descartan los duplicados en su propia base: por `event_id` (tabla `evento_procesado` en los Módulos 2 y 4, `UNIQUE(event_id)` en la bitácora del Módulo 1) o por versión (la proyección `servicio_ref` del Módulo 3 solo aplica una versión mayor). El Módulo 5 no participa en el bus: obtiene los datos bajo demanda mediante sus herramientas (ver [Registro de Decisiones Arquitectónicas](./Registro_Decisiones_Arquitectonicas.md)).
 
 ---
 
@@ -688,13 +714,13 @@ En el prototipo, las cinco bases son bases lógicas separadas dentro de un mismo
 
 #### 3.6.4 Stack Tecnológico de Referencia
 
-La plataforma prioriza el **Software Libre y de Código Abierto (FOSS)**, con licencias permisivas (MIT, Apache 2.0, BSD) y estándares abiertos. La API de Gemini es el único servicio externo propietario y se rige por las condiciones comerciales y de uso de Google:
+La plataforma prioriza el **Software Libre y de Código Abierto (FOSS)**, con licencias permisivas (MIT, Apache 2.0, BSD) y estándares abiertos. La API de Groq es el único servicio externo propietario y se rige por las condiciones comerciales y de uso de Groq (ADR-011):
 
 | Capa Arquitectónica | Tecnología de Referencia | Licencia | Rol en el Sistema |
 |---|---|---|---|
 | **Perímetro & Gateway** | Traefik (Ingress de k3s) | MIT | Reverse proxy, terminación TLS, ForwardAuth, Rate Limiting y CORS. |
 | **Backend (M1 a M5)** | Python 3.12 + FastAPI, SQLAlchemy, Pydantic, aio-pika | PSF / MIT | Microservicios orientados a objetos con arquitectura hexagonal, empaquetados como contenedores. |
-| **Integración de IA (M5)** | API de Google Gemini (servicio externo) | Términos comerciales de Google (no FOSS) | Modelo de lenguaje del chatbot; el servicio expone las herramientas de consulta de la plataforma. No incluye un modelo propio. |
+| **Integración de IA (M5)** | API de Groq (servicio externo, SDK `groq`) con un modelo abierto (`LLM_MODEL`) | Términos comerciales de Groq (no FOSS) | Modelo de lenguaje del chatbot; el servicio expone las herramientas de consulta de la plataforma. No incluye un modelo propio. |
 | **Persistencia Relacional / GIS / Documental** | PostgreSQL 16 + PostGIS 3.4 (JSONB), CloudNativePG | PostgreSQL / GPL-2.0 / Apache 2.0 | Almacén transaccional, consultas geoespaciales, documentos de reseñas y respaldos. |
 | **Caché & Sesiones** | Valkey | BSD-3-Clause | Caché de alta velocidad, sesiones del chatbot e idempotencia. |
 | **Almacenamiento de Objetos** | SeaweedFS | Apache 2.0 | Documentos de verificación y respaldos (API S3). |
@@ -709,6 +735,12 @@ La plataforma prioriza el **Software Libre y de Código Abierto (FOSS)**, con li
 #### 3.6.5 Despliegue y Operación
 
 La plataforma se despliega en un clúster **k3s**: un nodo en el prototipo (Escenario A) y tres nodos en el piloto institucional (Escenario B). Cada microservicio corre como un *Deployment* con sondas de `/health`, límites de recursos y un HPA; los almacenes de datos y el broker se ejecutan en un espacio de nombres separado, y las políticas de red solo permiten el tráfico previsto (Traefik hacia los servicios, cada servicio hacia su base de datos, el Módulo 5 hacia los Módulos 2, 3 y 4). El detalle de réplicas y respaldos está en el [Plan de Implementación](./Plan_de_Implementacion.md), sección 7.
+
+> [!NOTE]
+> **Despliegue real del prototipo (v1.2):** k3s es el entorno objetivo (ADR-005). La demostración pública corre en una VM de AWS (`tourism-vm`, 2 vCPU y 8 GB) con **Docker Compose** (`infra/docker-compose.yml`), con los mismos Dockerfile de cada servicio y rutas de Traefik equivalentes (`gateway/config/compose/` y `gateway/config/k3s/`). En la VM las imágenes se construyen como `<servicio>:local`; en k3s se usan las de `ghcr.io/luifdo/<servicio>` que publica el CI.
+> * Los manifiestos de k3s se probaron en k3d (e2e de iam: 12 de 12, *rolling update* sin errores y HPA) y en un k3s dentro de Docker (`infra/k8s/README.md`).
+> * En la VM no hay HPA, *rolling update* ni NetworkPolicy. **RNF-12** se cumple en k3d y k3s local, y queda **pendiente en la VM**.
+> * Faltan los manifiestos de k3s del frontend y su NetworkPolicy (`frontend/README.md`, `infra/k8s/README.md`).
 
 Para facilitar su lectura, el despliegue se presenta en una vista de infraestructura y una vista por actor, con solo los nodos y servicios que cada actor utiliza. Las fuentes PlantUML están en [`fuentes/`](./fuentes/).
 
@@ -752,6 +784,23 @@ A continuación se presenta el modelo conceptual de entidades del dominio. El co
 > [!NOTE]
 > **Referencias entre servicios:** Las relaciones entre entidades de módulos distintos son conceptuales. Por el principio *Database-per-Service*, físicamente se implementan como **referencias lógicas** (identificadores sin llave foránea), marcadas como `REF a ...`; solo las relaciones dentro de una misma base usan llaves foráneas (`FK`). La consistencia entre servicios se mantiene mediante eventos (Sección 3.6.2).
 
+> [!NOTE]
+> **Fuente del modelo (v1.2):** Las columnas y los tipos se tomaron de las migraciones (`services/*/migrations/versions/`) y de `services/recommendation-service/db/01-recomendacion-log.sql`. Los nombres de las entidades son conceptuales; cuando la tabla se llama distinto, el comentario de la clave primaria lo dice (por ejemplo, `RESENA_OPINION` es la tabla `resena`). Se omiten columnas de mantenimiento como `actualizado_en`, `busqueda_es` o `busqueda_en`. Cambios frente a la v1.1:
+> * **ZONA** (`geometry(MultiPolygon, 4326)`) agrupa servicios y alertas. Una alerta apunta a un servicio **o** a una zona, nunca a los dos.
+> * **Categorías:** las 6 de la v1.1 más `TRANSPORTE`, agregada con el tipo de servicio, la unidad de la tarifa y los atributos por tipo (migración `0004` de catalog).
+> * **Estados de la reseña:** `PUBLICADA`, `EN_REVISION` y `OCULTA`. La reseña ya no guarda `reserva_id`: quién puede reseñar sale de la proyección `elegibilidad_resena`, alimentada por `reserva.finalizada`.
+> * **USUARIO:** `razon_social`, `idioma`, `version` y `datos_suprimidos_en`.
+> * **Cupos:** `DISPONIBILIDAD_CUPO` tiene llave (`servicio_id`, `fecha`) y la reserva apunta a ese día.
+>
+> **Tablas técnicas que no se dibujan:**
+> * `outbox` en los Módulos 1, 2 y 4, y `evento_outbox` en el Módulo 3: eventos pendientes de publicar (ADR-008).
+> * `evento_procesado` en los Módulos 2 y 4: idempotencia de los consumidores.
+> * `idempotencia` en el Módulo 4: respuestas guardadas por `Idempotency-Key`.
+> * Proyecciones alimentadas por eventos, sin llaves foráneas:
+>   * Módulo 2: `reserva_proyeccion`, `disponibilidad_proyeccion` y `calificacion_resena`, además del conteo `intencion_visita_dia`.
+>   * Módulo 3: `servicio_ref`.
+>   * Módulo 4: `elegibilidad_resena` y `servicio_dueno`.
+
 ![Diagrama Entidad-Relación por Microservicio](./Diagrama_Modelo_Datos_ER.svg)
 
 <details>
@@ -763,9 +812,11 @@ erDiagram
     USUARIO ||--o{ BITACORA_AUDITORIA : "origina eventos"
     USUARIO ||--o| PRESTADOR_PERFIL : "tiene perfil comercial"
     PRESTADOR_PERFIL ||--o{ ATRACTIVO_SERVICIO : "publica"
+    ZONA |o--o{ ATRACTIVO_SERVICIO : "contiene"
+    ZONA |o--o{ ALERTA_OFICIAL : "recibe"
     ATRACTIVO_SERVICIO |o--o{ ALERTA_OFICIAL : "recibe"
     ATRACTIVO_SERVICIO ||--o{ DISPONIBILIDAD_CUPO : "habilita"
-    ATRACTIVO_SERVICIO ||--o{ SOLICITUD_RESERVA : "recibe"
+    DISPONIBILIDAD_CUPO ||--o{ SOLICITUD_RESERVA : "aparta cupos de"
     USUARIO ||--o{ SOLICITUD_RESERVA : "solicita"
     ATRACTIVO_SERVICIO ||--o{ RESENA_OPINION : "es evaluado en"
     USUARIO ||--o{ RESENA_OPINION : "redacta"
@@ -774,13 +825,20 @@ erDiagram
     ATRACTIVO_SERVICIO ||--o{ RECOMENDACION_LOG : "es sugerido en"
 
     USUARIO {
-        uuid id PK "M1 iam_db"
-        string email UK "Correo de acceso"
+        uuid id PK "M1 iam_db, tabla usuario"
+        string email UK "Correo de acceso, en minúsculas"
         string password_hash "Argon2id"
+        string nombre_completo "2 a 150 caracteres"
         enum rol "Turista, Prestador, Entidad, Admin"
+        boolean activo "Cuenta habilitada"
         boolean email_verificado "Verificación de correo"
         boolean habeas_data_aceptado "Ley 1581 (UC6)"
-        timestamp creado_en "Fecha de registro"
+        timestamptz habeas_data_aceptado_en "Momento del consentimiento"
+        string razon_social "Prestador; viaja en prestador.aprobado (C-07)"
+        string idioma "es, en"
+        int version "Control de concurrencia (If-Match)"
+        timestamptz datos_suprimidos_en "Supresión por anonimización (Ley 1581)"
+        timestamptz creado_en "Fecha de registro"
     }
 
     DOCUMENTO_VERIFICACION {
@@ -788,91 +846,131 @@ erDiagram
         uuid usuario_id FK "Prestador que adjunta"
         enum tipo_documento "RNT, RUT"
         string objeto_s3 "Llave en SeaweedFS"
+        string tipo_contenido "PDF o imagen"
+        int tamano_bytes "Tamaño del archivo"
+        boolean vigente "Uno vigente por tipo y prestador"
         enum estado "Pendiente, Aprobado, Rechazado"
-        timestamp fecha_subida "Fecha de carga"
+        text motivo_rechazo "Si se rechaza"
+        uuid revisado_por FK "Admin que revisa"
+        timestamptz fecha_subida "Fecha de carga"
     }
 
     BITACORA_AUDITORIA {
         uuid id PK "M1 iam_db, solo INSERT"
         uuid usuario_id FK "Actor (nulo si anónimo)"
-        uuid event_id UK "event_id del sobre del evento; nulo en los eventos propios del Módulo 1; único para evitar duplicados"
-        string accion "LOGIN_FAIL, ROLE_CHANGE, ACCESS_DENIED, EXPORT"
+        uuid event_id UK "event_id del sobre; nulo en los eventos propios del Módulo 1"
+        string correlation_id "X-Correlation-ID"
+        string accion "LOGIN_FALLIDO, ROL_MODIFICADO, ACCESS_DENIED, EXPORT..."
         enum resultado "Exito, Denegado, Error"
         string servicio_origen "Servicio que reporta"
-        string ip_origen "Dirección IP"
+        inet ip_origen "Dirección IP"
         jsonb detalles "Metadatos contextuales"
-        timestamp fecha "Marca temporal"
+        timestamptz fecha "Marca temporal"
     }
 
     PRESTADOR_PERFIL {
         uuid id PK "M2 catalog_db"
-        uuid usuario_id "REF a USUARIO (iam_db)"
-        string razon_social "Nombre comercial"
-        string telefono "Contacto"
-        string direccion "Ubicación física"
-        string politica_cancelacion "Visible al turista"
+        uuid usuario_id UK "REF a USUARIO (iam_db)"
+        text razon_social "Se borra con usuario.suprimido"
+        text telefono "Se borra con usuario.suprimido"
+        text direccion "Se borra con usuario.suprimido"
+        jsonb politica_cancelacion "Visible al turista"
+        boolean activo "Lo cambian prestador.aprobado y prestador.suspendido"
+        timestamptz estado_iam_en "occurred_at del último evento de iam aplicado"
+        int version "Control de concurrencia"
+    }
+
+    ZONA {
+        uuid id PK "M2 catalog_db"
+        string codigo UK "Identificador legible"
+        jsonb nombre "es, en"
+        geometry poligono "MultiPolygon 4326"
+        boolean activa "Vigente"
+        int version "Control de concurrencia"
     }
 
     ATRACTIVO_SERVICIO {
         uuid id PK "M2 catalog_db"
         uuid prestador_id FK "PRESTADOR_PERFIL"
-        string nombre "Título"
-        string descripcion "Detalle"
-        string categoria "Playa, Naturaleza, Cultura, Gastronomia"
-        point coordenadas_gis "PostGIS Point 4326"
+        uuid prestador_usuario_id "REF a USUARIO (iam_db)"
+        jsonb nombre "es, en"
+        jsonb descripcion "es, en"
+        string categoria "PLAYA, NATURALEZA, CULTURA, GASTRONOMIA, AVENTURA, ALOJAMIENTO, TRANSPORTE"
+        string tipo "21 tipos, p. ej. HOTEL, TOUR_GUIADO, ACCESO_PLAYA"
+        double lat "Latitud"
+        double lon "Longitud"
+        geography ubicacion "Point 4326, generada de lat y lon"
         decimal tarifa_base "COP"
+        string unidad_tarifa "POR_PERSONA, POR_NOCHE, POR_GRUPO, POR_UNIDAD, POR_HORA, POR_DIA"
         int capacidad_aforo_diario "Capacidad de carga oficial"
-        string[] imagenes_urls "Galería"
+        jsonb atributos "Bloques de atributos según el tipo"
+        string[] imagenes_urls "Galería, máximo 10"
+        uuid zona_id FK "ZONA que contiene el punto"
+        boolean activo "Se desactiva, no se borra"
+        int version "Control de concurrencia"
     }
 
     ALERTA_OFICIAL {
         uuid id PK "M2 catalog_db"
-        uuid atractivo_servicio_id FK "Nulo si es por zona"
+        uuid servicio_id FK "Nulo si es por zona"
+        uuid zona_id FK "Nulo si es por servicio"
         uuid entidad_usuario_id "REF a USUARIO (iam_db)"
-        enum nivel "Informativa, Preventiva, Critica"
-        string mensaje "Texto oficial"
+        string nivel "INFORMATIVA, PREVENTIVA, CRITICA"
+        jsonb mensaje "Texto oficial, es y en"
         boolean activa "Vigente"
-        timestamp fecha_expiracion "Fin de vigencia"
+        timestamptz fecha_expiracion "Fin de vigencia"
+        timestamptz creada_en "Fecha de emisión"
+        int version "Control de concurrencia"
     }
 
     DISPONIBILIDAD_CUPO {
-        uuid id PK "M3 booking_db"
-        uuid servicio_id "REF a ATRACTIVO_SERVICIO (catalog_db)"
-        date fecha "Día de operación"
+        uuid servicio_id PK "M3 booking_db; REF a ATRACTIVO_SERVICIO por servicio_ref"
+        date fecha PK "Día de operación en Bogotá"
         int cupos_totales "Capacidad del día"
         int cupos_disponibles "Cupos restantes"
+        decimal tarifa_dia "Nula = tarifa_base"
+        int version "Ediciones del prestador (If-Match)"
     }
 
     SOLICITUD_RESERVA {
         uuid id PK "M3 booking_db"
         uuid turista_id "REF a USUARIO (iam_db)"
-        uuid servicio_id "REF a ATRACTIVO_SERVICIO (catalog_db)"
-        date fecha_reserva "Fecha solicitada"
+        uuid servicio_id FK "Con fecha_reserva, a DISPONIBILIDAD_CUPO"
+        date fecha_reserva FK "Fecha solicitada"
+        uuid prestador_id "Copiado de servicio_ref"
         int numero_personas "Asistentes"
-        enum estado "Solicitada, Confirmada, Rechazada, Cancelada, Finalizada"
-        timestamp expira_en "Plazo de respuesta (48 h)"
-        timestamp fecha_creacion "Fecha de solicitud"
+        string estado "SOLICITADA, CONFIRMADA, RECHAZADA, CANCELADA, FINALIZADA"
+        timestamptz expira_en "Plazo de respuesta (48 h), solo en SOLICITADA"
+        string motivo "Obligatorio al rechazar"
+        string cancelada_por "Turista, Prestador"
+        int version "Control de concurrencia"
+        timestamptz creado_en "Fecha de solicitud"
     }
 
     RESENA_OPINION {
-        uuid id PK "M4 review_db"
+        uuid id PK "M4 review_db, tabla resena"
         uuid servicio_id "REF a ATRACTIVO_SERVICIO (catalog_db)"
-        uuid turista_id "REF a USUARIO (iam_db)"
-        uuid reserva_id "REF a SOLICITUD_RESERVA Finalizada"
-        int puntuacion "1 a 5"
-        jsonb calificaciones_detalle "Limpieza, guianza, precio"
-        string comentario "Opinión"
-        enum estado_moderacion "Publicado, En_Revision, Oculto"
-        jsonb respuesta_prestador "Réplica del operador"
-        timestamp creado_en "Fecha de publicación"
+        uuid turista_id "REF a USUARIO (iam_db); única por turista y servicio"
+        smallint puntuacion "1 a 5"
+        jsonb aspectos "Calificaciones por aspecto"
+        text comentario "Opinión"
+        jsonb respuesta "Réplica del prestador"
+        date ultima_visita "Mes de la visita, de reserva.finalizada"
+        string estado "PUBLICADA, EN_REVISION, OCULTA"
+        int reportes_pendientes "Cola del Administrador"
+        timestamptz creada_en "Fecha de publicación"
+        int version "Control de concurrencia"
     }
 
     REPORTE_RESENA {
         uuid id PK "M4 review_db"
         uuid resena_id FK "RESENA_OPINION"
-        uuid reportado_por "REF a USUARIO (iam_db)"
-        string motivo "Motivo del reporte"
-        timestamp fecha "Fecha del reporte"
+        uuid usuario_id "REF a USUARIO (iam_db)"
+        string rol "Turista, Prestador"
+        string motivo "OFENSIVO, SPAM, FALSO, DATOS_PERSONALES, OTRO"
+        boolean es_dueno "Lo reporta el prestador dueño"
+        timestamptz reportado_en "Fecha del reporte"
+        timestamptz resuelto_en "Fecha de la moderación"
     }
 
     RECOMENDACION_LOG {
@@ -880,10 +978,10 @@ erDiagram
         uuid conversacion_id "Sesión del chatbot"
         uuid turista_id "REF a USUARIO (iam_db)"
         uuid servicio_id "REF a ATRACTIVO_SERVICIO (catalog_db)"
-        string justificacion "Motivo mostrado al turista (RNF-08)"
+        text justificacion "Motivo mostrado al turista (RNF-08)"
         jsonb herramientas_usadas "Herramientas consultadas"
-        string modelo "Versión de Gemini"
-        timestamp fecha_generacion "Marca temporal"
+        text modelo "Modelo de lenguaje en Groq (LLM_MODEL)"
+        timestamptz fecha_generacion "Marca temporal"
     }
 ```
 </details>
@@ -913,6 +1011,19 @@ Conforme a las directrices de verificación del estándar ISO/IEC/IEEE 29148:201
 | **RF-13** | Funcional | **Prueba** | Generación y descarga íntegra de archivos estructurados en formato CSV y PDF con métricas analíticas del destino sin errores de serialización. |
 | **RF-14** | Funcional | **Prueba** | Un turista sin reserva `Finalizada` del servicio recibe HTTP 403 al intentar reseñarlo; con reserva finalizada la reseña queda `Publicado`; con uno o dos reportes de turistas (UC39) la reseña sigue visible y aparece en la cola del Administrador; al tercer reporte o con el reporte del prestador dueño pasa a `En_Revision`, y solo el Administrador la publica u oculta. |
 | **RNF-01** a **RNF-13** | No Funcional | **Prueba / Análisis** | Verificación empírica contra los escenarios formales de calidad (ESC-01 a ESC-09), pruebas de carga con k6 ($p95 < 2.0$s), auditorías WCAG 2.1 AA, despliegue reproducible en k3s y pruebas de la PWA en modo sin conexión. |
+
+#### Estado de la verificación en el prototipo (v1.2)
+
+Lo que no se midió se declara como **no medido**; no se reporta un resultado que no exista.
+
+| ID | Qué se midió | Qué falta | Estado | Evidencia |
+|---|---|---|---|---|
+| **ESC-01** | Borrado ordenado y forzado de réplicas de iam en k3d: 0 errores en 688 y en 714 peticiones, con 2 réplicas listas a los 5 y 6 s. | Las pruebas borran pods, pero **no prueban una réplica colgada ni la caída de un nodo**. El aislamiento en menos de 5 s **no se midió**. | No medido | `services/iam-service/docs/verificacion-fase4.md` (escenario k) |
+| **ESC-02** | Solo el perfil `humo` de `buscar.js`, en el Kubernetes de Docker Desktop de un PC, con 2.000 servicios sembrados (2026-10-24): 30 rps durante 1 min, 1.668 peticiones, 0 errores 5xx, mediana de 22 ms y p95 de 1,29 s. Se descartaron 133 iteraciones: picos de hasta 6,9 s con la caché fría y 2 réplicas dejaron a k6 sin VUs para sostener el ritmo. | El perfil `completo` (**500 rps** durante 10 min en el clúster k3s) **no se midió**. | No medido (limitación del prototipo) | `services/catalog-service/k6/README.md` |
+| **ESC-08** | Solo el perfil `humo` de `escalado.js`, en el mismo entorno: rampa a 60 rps durante 3 min, 7.276 peticiones, 0 errores 5xx, mediana de 30 ms y p95 de 228 ms. El HPA subió a 6 réplicas (CPU del 124 % al 220 % del objetivo) y todas quedaron listas. | El perfil `completo` (rampa a **1.000 rps** durante 30 min en k3s), el tiempo hasta tener réplicas listas y el crecimiento de la capacidad **no se midieron**. | No medido (limitación del prototipo) | `services/catalog-service/k6/README.md` |
+| **RNF-12** | *Rolling update* de iam en k3d: 0 errores en 1.272 peticiones, p95 de 16 ms y cambio en 10 s; manifiestos aplicados en un k3s dentro de Docker. | La VM pública corre Docker Compose, sin HPA ni *rolling update*. | Cumplido en k3d y k3s local; pendiente en la VM | `verificacion-fase4.md` (escenario j); `infra/k8s/README.md` |
+
+Las cifras del perfil `humo` indican que el sistema funciona bajo carga baja; **no** reemplazan la medición de ESC-02 y ESC-08 en k3s.
 
 ---
 
@@ -965,8 +1076,8 @@ flowchart LR
 |---|---|---|---|---|---|
 | **R-01** | **Técnico** | Curva de aprendizaje del equipo en orquestación de microservicios, Kubernetes y colas asíncronas. | Alto | Media | Un solo lenguaje y framework para los 5 servicios (Python + FastAPI); plantilla base común en `templates/`; práctica en un clúster local (k3d) y en Docker Compose antes del despliegue en k3s. |
 | **R-02** | **Seguridad** | Exposición de endpoints o fuga de datos sensibles de prestadores y turistas. | Crítico | Baja | Aplicación de arquitectura Zero-Trust interna (políticas de red de Kubernetes), validación perimetral de JWT en el API Gateway, cifrado Argon2id y auditorías automatizadas de código. |
-| **R-03** | **Alcance** | Desviación del alcance por complejización innecesaria del módulo de Inteligencia Artificial. | Alto | Media | Congelamiento estricto del alcance en RF-06 (chatbot de recomendaciones que consume la API de Gemini y consulta la plataforma mediante herramientas), descartando el entrenamiento de modelos propios, los datasets sintéticos de entrenamiento y la visión artificial. |
-| **R-04** | **Técnico (dependencia externa)** | Dependencia de la API de Gemini: disponibilidad del proveedor, límites de solicitudes, costos de consumo y latencia de las consultas. | Medio | Media | Mantener el chatbot desacoplado del núcleo transaccional para que su indisponibilidad no afecte catálogo ni reservas; manejo de errores con mensajes claros al usuario; seguimiento del consumo frente a los límites de uso del proveedor. |
+| **R-03** | **Alcance** | Desviación del alcance por complejización innecesaria del módulo de Inteligencia Artificial. | Alto | Media | Congelamiento estricto del alcance en RF-06 (chatbot de recomendaciones que consume la API de Groq y consulta la plataforma mediante herramientas), descartando el entrenamiento de modelos propios, los datasets sintéticos de entrenamiento y la visión artificial. |
+| **R-04** | **Técnico (dependencia externa)** | Dependencia de la API de Groq (antes Gemini, ADR-011): disponibilidad del proveedor, límites de solicitudes del plan gratuito, costos de consumo si se pasara a un plan de pago y latencia de las consultas. | Medio | Media | Mantener el chatbot desacoplado del núcleo transaccional para que su indisponibilidad no afecte catálogo ni reservas; manejo de errores con mensajes claros al usuario; seguimiento del consumo frente a los límites de uso del proveedor. |
 | **R-05** | **Gestión** | Disponibilidad heterogénea de tiempo entre integrantes del equipo durante el semestre. | Alto | Media | Sprints cortos de 2 semanas con entregables modulares e independientes asignados por componente (Apéndice C), visibilizados en GitHub Projects. |
 | **R-06** | **Técnico** | Pérdida, duplicación o conflicto de formularios enviados sin conexión desde la PWA. | Medio | Media | Clave de idempotencia por envío, versión del registro en las ediciones (HTTP 409 ante conflicto), estado "Pendiente de envío" visible y prueba dedicada (ESC-09). |
 | **R-07** | **Técnico (capacidad)** | La capacidad fija de los nodos del clúster limita el escalado horizontal en picos. | Medio | Media | Dimensionar los nodos con holgura para el pico de ESC-08, fijar máximos en el HPA, priorizar Módulos 2 y 3 y ejecutar la prueba de carga antes de la temporada alta. |

@@ -38,7 +38,7 @@
 | RNF-10 | Bitácora inmutable, consulta en panel | Triggers y `REVOKE`, UC33, consumidor de eventos | `integration/test_bitacora_inmutable.py`; `b1-bitacora-solo-insercion.txt`; `integration/test_consumidor_auditoria.py::test_guarda_el_evento_y_el_duplicado_no`; e2e d | ✅ | C-03, C-04, C-38, C-39, C-40 |
 | RNF-12 | Contenedores, manifiestos versionados, rolling update sin 5xx, `/health` y `/metrics` | `k8s/`, misma imagen, `maxUnavailable: 0`, preStop | e2e j: 0 errores en 1272 peticiones, p95 de 16 ms, rollout de 10 s | ✅ | C-31, C-32, C-55 |
 | RNF-13 (perfil) | Formulario diferido, una sola vez, versión con 409 (§3.6.6) | `ETag` e `If-Match`, repetir el `PATCH` no duplica. La prueba sin conexión es de la PWA | `api/test_perfil_api.py::test_patch_cambia_audita_solo_los_nombres_y_sube_la_version` | ⚠ | C-49 |
-| ESC-04 | 401 y 403, 100 % registrado con IP, fecha y usuario | Cada rechazo probado deja su fila. **La IP es la que Traefik ve,** y en k3d no es la del cliente real. `externalTrafficPolicy: Local` (#21) y `FORWARDED_ALLOW_IPS` en el compose (este commit) están configurados; se comprueba en la VM de AWS | `api/test_verificar_api.py::test_postgresql_caido_en_un_rechazo_sigue_siendo_401`; e2e b | ⚠ | C-23, C-34, C-35, C-56; F-08 |
+| ESC-04 | 401 y 403, 100 % registrado con IP, fecha y usuario | Cada rechazo probado deja su fila. En la VM pública, por el gateway real con HTTPS, se probaron un 401 sin token, otro con un token mal formado y el 403 `ROL_INSUFICIENTE` de un Turista en `GET /api/iam/admin/usuarios`. Las tres filas `ACCESS_DENIED` aparecen con la IP pública de quien midió; la del 403, con el `usuario_id` del Turista. En k3d la IP no era la del cliente (F-08) | `api/test_verificar_api.py::test_postgresql_caido_en_un_rechazo_sigue_siendo_401`; e2e b; `vm-aws.txt` 1.1-1.6 y 2.1 | ✅ | C-23, C-34, C-35, C-56; F-08 |
 
 ### Ley 1581 (SRS §2.4.5)
 
@@ -46,7 +46,7 @@
 |---|---|---|---|---|---|
 | Consentimiento | Informado y previo, con prueba | `habeas_data_aceptado_en`, `CHECK` en la base | `unit/test_registrar_usuario.py::test_habeas_data_se_valida_primero` | ✅ | C-01, C-03 |
 | Actualización | Derecho a actualizar | Nombre e idioma. **El correo no se edita** | `api/test_perfil_api.py::test_reglas_del_registro_y_campos_que_no_se_editan` | ⚠ | C-25, C-51 |
-| Supresión | Derecho a suprimir | Anonimiza y borra documentos. Catalog borra `razon_social`, `telefono` y `direccion` del perfil al recibir `usuario.suprimido`, liberado en compose (#21) y en k8s (este commit) | `api/test_supresion_api.py::test_suprime_los_datos_y_borra_los_objetos`; e2e g; catalog `6076a78` | ✅ | C-27, C-48, C-63 |
+| Supresión | Derecho a suprimir | Anonimiza y borra documentos. Catalog borra `razon_social`, `telefono` y `direccion` del perfil al recibir `usuario.suprimido`, liberado en compose (#21) y en k8s (este commit). Comprobado de punta a punta en la VM pública el 2026-11-13: la supresión de un Prestador de prueba ya aprobado da 204, su login da 401 después, y en `catalog_db` su perfil quedó con esos tres campos en NULL (consulta de Luis Fernando en la VM) | `api/test_supresion_api.py::test_suprime_los_datos_y_borra_los_objetos`; e2e g; catalog `6076a78`; `vm-aws.txt` 6.1, 6.2 y 6.3 | ✅ | C-27, C-48, C-63 |
 | Almacenamiento cifrado | "Almacenamiento cifrado de datos sensibles" | **No implementado:** RUT y RNT en SeaweedFS y correos en PostgreSQL van sin cifrado de aplicación ni de objeto. Decidido en el ADR-012 (`1a9a806`): disco cifrado en la VM, volúmenes de SeaweedFS cifrados y TLS en el borde. Hasta que se aplique en la VM de AWS (Luis Fernando), el requisito no se cumple | Búsqueda de `ServerSideEncryption` en `app/` y `k8s/`, y de cifrado de volúmenes en `infra/`: sin resultados | ❌ | C-58; F-01 |
 
 ### Laboratorio 3
@@ -60,7 +60,7 @@
 | §4.2 | Máquina de estados de la sesión | Refresh opaco con rotación, `REFRESH_REUTILIZADO` y revocación de la familia; la PWA renueva sola (#26) | `api/test_refresh_api.py`; e2e l | ✅ | C-20, C-21, C-60 |
 | §4.2 | Sin bloqueo de cuenta | No lo hay; rate limiting en Traefik | Inspección de `iniciar_sesion.py`; e2e i | ✅ | C-26 |
 | Fig. 10 | Readiness que aísla réplicas | `/health/live` cada 2 s, 2 fallos. Sin errores al borrar réplicas. **No se probó una réplica colgada** | `k8s/base/deployment-api.yaml`; e2e k | ⚠ | C-32 |
-| §5.1 | 2 a 4 réplicas al 70 % | `hpa.yaml`; subió de 2 a 4 bajo carga y no pasó de 4 | e2e k | ✅ | C-53; F-09 |
+| §5.1 | 2 a 4 réplicas al 70 % | `hpa.yaml`; subió de 2 a 4 bajo carga y no pasó de 4. Con logins: 4 réplicas listas a los 17-35 s del inicio de la carga | e2e k; `carga-k3d.txt` | ✅ | C-53; F-09 |
 | §5.1 | Datos en `iam_db` y SeaweedFS | Sí | e2e a y g | ✅ | C-46 |
 | §6.1 | Bitácora de solo inserción | Triggers: `UPDATE`, `DELETE` y `TRUNCATE` fallan, e `INSERT ... ON CONFLICT DO NOTHING` sigue funcionando. Con el rol de esta base, que es superusuario, rechaza el trigger; el `REVOKE` no se ejerce aquí | `integration/test_bitacora_inmutable.py`; `b1-bitacora-solo-insercion.txt` | ✅ | C-03 |
 | §6.1 | Sin duplicados | `UNIQUE(event_id)` | e2e d | ✅ | C-04 |
@@ -160,18 +160,36 @@ Sin hallazgos (`b4-secretos.txt`): ningún PEM, `.env` ni `secretos.env` version
 - Antes de la corrida válida hubo fallos del propio arnés, corregidos en `e2e/` y en el script: permisos de la cookie de RabbitMQ, puertos gRPC de SeaweedFS, cola de prueba no durable y la espera de réplicas. Una vez k3s falló al arrancar y bastó con recrear el clúster.
 - El relay del outbox registró un `ERROR` al arrancar, mientras las dependencias se levantaban, y se recuperó solo.
 
+### Carga del login en k3d
+
+`carga-k3d.txt` y `carga-k3d.csv` (2026-11-13, k3s v1.35.5, `scripts/carga_k3d.py`). Todo pasa por Traefik. El overlay de prueba `e2e/overlay-carga` sube el límite del login de 5/min a 100/s, porque en k3d todos los clientes comparten IP (F-08). Cada fase empieza desde 2 réplicas en reposo y dura 2 minutos (la referencia de `verificar` dura 1). Muestras cada 5 s.
+
+| Fase | Logins: 200 / enviados | 503 | Login p50 / p95 / p99 | `verificar` p95 / p99 | HPA: 4 réplicas listas |
+|---|---|---|---|---|---|
+| Base, 1/s | 120 / 120 | 0 | 359 / 500 / 516 ms | — | 35 s |
+| Pico 2/s | 240 / 240 | 0 | 390 / 515 / 563 ms | — | 33 s |
+| Pico 4/s | 480 / 480 | 0 | 360 / 484 / 500 ms | — | 33 s |
+| Pico 8/s | 960 / 960 | 0 | 484 / 8109 / 10 140 ms | — | 17 s |
+| Solo `verificar`, 50/s | — | — | — | 47 / 47 ms (3000 sin error) | 33 s |
+| Mezcla, 2/s + 50/s | 240 / 240 | 0 | 437 / 578 / 625 ms | 94 / 156 ms (6000 sin error) | 32 s |
+
+- **Saturación** (503 > 1 %): no alcanzada hasta 8/s. Una corrida descartada dio un 1,4 % a 8/s, así que 8/s está en el borde.
+- **Ruptura:** 8/s, con el criterio literal. No hubo errores, pero 12 logins dieron 200 entre 10,03 y 10,42 s: es la espera de 10 s por el cupo más el hash (C-53), mientras atendían 2 réplicas. Con 4 réplicas, 8/s se sostuvo con p95 de unos 600 ms, al borde del límite de CPU. Por la regla de parada, 12/s y 16/s no se probaron.
+- Ningún 5xx en ninguna fase. `verificar` se degrada poco con logins (p95 de 47 a 94 ms), por contención de CPU dentro del pod.
+- **Límites:** una sola corrida, en Docker Desktop, con el generador en la misma máquina (18 núcleos y 23,4 GiB). Las latencias tienen una resolución de unos 16 ms (reloj de Windows). Se repite en la Fase 5.
+
 ## 5. Hallazgos
 
-Cerrados: F-04, F-06, F-07, F-10 y F-11. F-07 se cerró en dos pasos: primero `pip` y después la imagen base, con Alpine (C-62). Los demás siguen abiertos.
+Cerrados: F-04, F-06, F-07, F-08, F-10 y F-11. F-08 se cerró con la medición en la VM pública (`vm-aws.txt`). F-07 se cerró en dos pasos: primero `pip` y después la imagen base, con Alpine (C-62). Los demás siguen abiertos.
 
 | ID | Hallazgo | Severidad | Bloquea el PR | Propuesta o resultado |
 |---|---|---|---|---|
 | F-01 | §2.4.5 pide almacenamiento cifrado de datos sensibles; no está implementado (C-58) | Alta (cumplimiento) | No | Decidido en el ADR-012 (`1a9a806`): disco cifrado en la VM, cifrado de volúmenes de SeaweedFS y TLS en el borde. Cifrar en el servicio rompería las URL firmadas. ⏸ Se aplica en la VM de AWS (Luis Fernando) |
-| F-08 | Traefik ve a todos los clientes como `10.42.0.1` (`externalTrafficPolicy: Cluster`): en esas condiciones, el rate limiting por IP se comparte entre **todos** los usuarios, y la bitácora guarda esa IP en vez de la real (ESC-04). k3d agrega su propio balanceador, así que hay que confirmarlo en el k3s real | Alta, si se confirma | No: es de `gateway/` | ✅ `4ab4ca8` (#21): `externalTrafficPolicy: Local` con `HelmChartConfig`. `FORWARDED_ALLOW_IPS` corregido en el compose (este commit); se comprueba en la VM de AWS. ⏸ Que llegue la IP real del cliente se mide en la VM de AWS |
+| F-08 | Traefik ve a todos los clientes como `10.42.0.1` (`externalTrafficPolicy: Cluster`): en esas condiciones, el rate limiting por IP se comparte entre **todos** los usuarios, y la bitácora guarda esa IP en vez de la real (ESC-04). k3d agrega su propio balanceador, así que hay que confirmarlo en el k3s real | Alta, si se confirma | **Cerrado** | ✅ `4ab4ca8` (#21): `externalTrafficPolicy: Local` con `HelmChartConfig`, y `FORWARDED_ALLOW_IPS` corregido en el compose. ✅ **Comprobado en la VM pública el 2026-11-13** (`vm-aws.txt`, 2.1): por el gateway real con HTTPS, las tres filas `ACCESS_DENIED` (dos 401 y un 403) guardan la IP pública de quien midió, no una privada. La evidencia muestra esa IP enmascarada, porque es un dato personal. No se midió el rate limiting por IP en la VM |
 | F-10 | `infra/docker-compose.yml` usa `-volume.max=5`. La colección por defecto puede quedarse con todos y los documentos responden 503. Depende del orden: pasó en una corrida y falló en otra | Media | **Cerrado** | `a55e098` (#15): `-volume.max=30`; hoy 150, con volúmenes de 100 MB (`2089891`), en compose y en `infra/k8s` |
 | F-11 | Si SeaweedFS no puede escribir, la carga responde el 503 correcto **a los 32 s**, por los reintentos de boto3 | Media | **Cerrado** | C-59: tope de 9 s, hilos propios y los mismos límites en la supresión. 503 en 9,4 s y login sin bloquearse (`f11-s3-colgado.txt`). Quedan los límites listados en C-59 |
 | F-04 | Sin prueba automatizada de la inmutabilidad de la bitácora, que es lo que verifica la SIC (Lab §6.1) | Media | **Cerrado** | `tests/integration/test_bitacora_inmutable.py`, marcada `db`; falla si se desactivan los triggers |
-| F-09 | Con un `request` de CPU de 100m, unas 50 peticiones por segundo a `verificar` bastan para llevar el HPA a 4 réplicas | Baja | No | ⏸ Se mide en k3d y se ajusta el `request` |
+| F-09 | Con un `request` de CPU de 100m, unas 50 peticiones por segundo a `verificar` bastan para llevar el HPA a 4 réplicas | Baja | No | **Medido** en k3d el 2026-11-13 (`carga-k3d.txt` y `carga-k3d.csv`, overlay de prueba `e2e/overlay-carga` con el límite del login subido). **Confirmado, y es más:** 50 `verificar`/s solos, o 1 login/s, ya llevan el HPA de 2 a 4 réplicas (pedidas a los 26 s, listas a los 33 s). Siempre salta de 2 a 4, sin pasar por 3. Cada login cuesta unos 0,38 CPU·s y cada `verificar`, unos 8 ms de CPU. Un pod se satura en unos 2,6 logins/s con el límite de 1000m. Con 4 réplicas a 8/s, el IAM usó 3,2 CPU con 0,4 reservadas. **Propuesta, no aplicada: `request` de 500m** (umbral de 350m por pod): 2 réplicas aguantan 1 login/s y piden más desde unos 1,8 logins/s o 85 `verificar`/s, con margen para los 25-35 s que tarda el HPA. Cuesta 1-2 CPU reservadas: hay que confirmar con Luis Fernando que caben en la VM; si no, 250m. `ARGON2_CONCURRENCIA_MAXIMA` no cambia. ⏸ Decidir el `request` |
 | F-06 | C-57 contradice RNF-03, y no está en la línea "SRS v1.2" de "Pendiente de reflejar" | Baja | **Cerrado** | Agregada |
 | F-02 | `nombre_completo` y `tipo_documento` difieren del prompt | Baja | No | Ninguna en el código; son el contrato actual y están en `iam.yaml` |
 | F-03 | El smoke test no cubre la aprobación del Admin | Baja | No | Cubierto en e2e a; agregarlo al smoke si se quiere |

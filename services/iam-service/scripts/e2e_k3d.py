@@ -108,7 +108,8 @@ def generar_llaves() -> None:
     )
 
 
-def preparar() -> None:
+def preparar(overlay: Path = SERVICIO / "e2e" / "overlay") -> None:
+    """Crea el clúster y despliega el IAM con `overlay` (el de carga cambia el rate limiting)."""
     CARPETA.mkdir(parents=True, exist_ok=True)
     generar_llaves()
     print("Creando el clúster...", flush=True)
@@ -157,7 +158,7 @@ def preparar() -> None:
         f"--from-file=private.pem={CARPETA / 'private.pem'}",
         f"--from-file=public.pem={CARPETA / 'public.pem'}",
     )  # fmt: skip
-    manifiestos = kubectl("kustomize", str(SERVICIO / "e2e" / "overlay"))
+    manifiestos = kubectl("kustomize", str(overlay))
     kubectl("apply", "-f", "-", entrada=manifiestos)
     for nombre in ("iam-service", "iam-worker", "whoami"):
         kubectl("-n", "turismo-app", "rollout", "status", f"deploy/{nombre}", "--timeout=300s")

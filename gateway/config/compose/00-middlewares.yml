@@ -33,12 +33,13 @@ http:
           - iam-forward-auth
           - limite-cuerpo
 
-    # Login y recuperación (UC32): 5 intentos por minuto por IP, en un solo cupo compartido.
+    # Login y recuperación (UC32): 15 intentos por minuto por IP, en un solo cupo compartido. Con 15 (y no 5) un aula o un jurado
+    # detrás de una misma IP no se bloquean entre sí; sigue siendo un tope real contra la fuerza bruta desde una IP.
     iam-rate-limit:
       rateLimit:
-        average: 5
+        average: 15
         period: 1m
-        burst: 5
+        burst: 15
 
     # El refresh es tráfico legítimo (una vez cada 15 min por usuario y varios usuarios pueden salir por la misma IP):
     # su propio límite y su propio contador, para que no gaste el cupo del login.

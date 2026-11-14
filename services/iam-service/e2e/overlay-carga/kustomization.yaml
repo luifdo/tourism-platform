@@ -1,6 +1,6 @@
 # ENTORNO DE PRUEBA, NO DE PRODUCCIÓN: el overlay e2e con el límite del login subido para la
 # prueba de carga (scripts/carga_k3d.py). En k3d todos los clientes llegan con la misma IP (F-08),
-# así que el límite real de 5 por minuto cortaría la carga en el sexto login. El middleware sigue
+# así que el límite real de 15 por minuto cortaría la carga en el login 16. El middleware sigue
 # en la cadena de Traefik, con un umbral que la prueba no alcanza.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

@@ -361,8 +361,8 @@ def comprobar_log(gateway):
 def grupo_limites(gateway):
     grupo("Límites de tasa (Traefik reiniciado para empezar con los contadores en cero)")
     gateway.reiniciar()
-    login = [pedir("POST", "/api/iam/login", cuerpo=b"{}")[0] for _ in range(6)]
-    verificar("login: 5 intentos pasan y el 6.º da 429", login[:5] == [200] * 5 and login[5] == 429, str(login))
+    login = [pedir("POST", "/api/iam/login", cuerpo=b"{}")[0] for _ in range(16)]
+    verificar("login: 15 intentos pasan y el 16.º da 429", login[:15] == [200] * 15 and login[15] == 429, str(login))
     estado = pedir("POST", "/api/iam/auth/recuperar", cuerpo=b"{}")[0]
     verificar("recuperar comparte el cupo del login (ya agotado) → 429", estado == 429, str(estado))
     refresh = [pedir("POST", "/api/iam/auth/refresh", cuerpo=b"{}")[0] for _ in range(12)]

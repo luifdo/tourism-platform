@@ -37,13 +37,13 @@ Todo lo demás pasa por ForwardAuth (`GET /api/iam/auth/verificar`). **Nunca se 
 
   | Qué | Límite | Por qué |
   |---|---|---|
-  | `login` y `auth/recuperar` | 5 por minuto, ráfaga de 5, un solo cupo | fuerza bruta de contraseñas |
+  | `login` y `auth/recuperar` | 15 por minuto, ráfaga de 15, un solo cupo | fuerza bruta de contraseñas. 15 y no 5 para que un aula o un jurado detrás de una misma IP no se bloqueen entre sí |
   | `auth/refresh` | 20 por minuto, ráfaga de 10 | es tráfico legítimo: no debe gastar el cupo del login |
   | `register` y `auth/restablecer` | 20 por minuto, ráfaga de 20, un solo cupo | cada uno calcula un Argon2: sin tope, un anónimo satura los cupos del IAM y el login responde `SERVICIO_OCUPADO`. La ráfaga es holgada para que un aula detrás de una misma IP pueda registrarse |
   | lecturas públicas (catálogo, mapa, disponibilidad, reseñas) | 600 por minuto (10 por segundo), ráfaga de 100 | consultas caras (PostGIS, búsqueda de texto): frena un barrido o una inundación desde una sola IP |
   | `POST servicios/{id}/intencion-visita` | 30 por minuto, ráfaga de 10 | es anónimo y suma a la demanda que ve la Entidad |
 
-  Sin límite a propósito: `jwks.json` (lo piden los servicios) y el frontend (carga cientos de archivos, como los cuadros del héroe). Los límites son por IP: detrás de una red compartida (un aula) todos cuentan juntos, por eso las ráfagas son holgadas, salvo en el login, donde el cupo es deliberadamente corto.
+  Sin límite a propósito: `jwks.json` (lo piden los servicios) y el frontend (carga cientos de archivos, como los cuadros del héroe). Los límites son por IP: detrás de una red compartida (un aula) todos cuentan juntos, por eso las ráfagas son holgadas.
 * **Tope de 1 MB en todo cuerpo JSON** (`limite-cuerpo`): se aplica a las rutas protegidas **después** de validar el token (un anónimo no hace que se lea nada) y a los POST públicos. Las fotos van directo a SeaweedFS y los documentos de verificación tienen su propio tope de 6 MB.
 * `X-Forwarded-For` del cliente no se acepta: Traefik pone el suyo.
 * **Registro de acceso en JSON sin la ruta ni la línea de la petición**, porque incluyen el query string y el enlace de `/restablecer-contrasena?token=...` lleva el token. Se conservan router, servicio, método y estado; para seguir una petición se usa el `correlation_id` de los servicios.

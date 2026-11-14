@@ -89,8 +89,8 @@ groups:
             El IAM revocó la sesión completa. Buscar REFRESH_REUTILIZADO en la bitácora (GET /api/iam/admin/bitacora)
             para ver la cuenta y la IP, y avisar al usuario.
 
-      # El gateway ya corta a 5 intentos por minuto por IP (429, que no llega al IAM): lo que pasa de 50 fallos en 5 minutos
-      # viene de muchas IP a la vez.
+      # El gateway corta a 15 intentos por minuto por IP (el 429 no llega al IAM), o sea, hasta 75 fallos en 5 minutos desde
+      # una sola IP: pasar de 50 ya es un ataque sostenido, de una IP o de varias.
       - alert: LoginsFallidosEnRafaga
         expr: >-
           sum(increase(http_requests_total{job="iam-service",handler="/api/iam/login",status="4xx"}[5m])) > 50

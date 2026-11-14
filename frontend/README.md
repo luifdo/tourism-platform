@@ -159,6 +159,7 @@ Toda la API ya existía (`contracts/openapi/`); estas pantallas la usan. Cada á
 * **Ficha**: atributos del servicio por bloques (`domain/catalog/atributos.js`: qué incluye, horario, punto de encuentro, qué llevar, habitaciones, requisitos…), galería de fotos y reseñas.
 * **Mapa**: capas opcionales de **zonas** (con su nivel de saturación) y de **alertas oficiales**, de `/mapa/zonas` y `/mapa/alertas`.
 * El selector de idioma está en la cinta, en la barra fija (desde tablet) y en el menú del móvil.
+* **Cambiar de idioma sin saltos:** los textos de la interfaz cambian al instante (están en el paquete); lo que viene del servidor (nombres y descripciones del catálogo, reseñas) se vuelve a pedir en el idioma nuevo. Mientras llega, la portada, la ficha del servicio y las reseñas **conservan lo que ya muestran** (un poco atenuado, `aria-busy`) en vez de volver al esqueleto gris, y una barra fina en el borde superior (`BarraRefresco`, `lib/refrescoIdioma.js`) avisa si la espera pasa de 150 ms. Si la petición falla, se queda el contenido en el idioma anterior en lugar de un error. Con movimiento reducido la barra queda fija. Las pantallas de gestión (reservas, paneles) todavía recargan con esqueleto al cambiar de idioma.
 
 **No está hecho:** editar el calendario sin conexión (cola) y subir fotos sin conexión. Las reseñas se probaron contra el servicio real solo en lectura: escribirlas exige una reserva finalizada, que el stack local no genera sin esperar la fecha.
 

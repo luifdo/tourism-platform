@@ -54,7 +54,12 @@ body { margin: 0; font-family: var(--font-sans); color: var(--color-ink); backgr
 .glass { background: rgba(255,255,255,.85); backdrop-filter: blur(8px); border: 1px solid rgba(0,103,152,.1); }
 :focus-visible { outline: 3px solid var(--color-teal); outline-offset: 2px; }
 
+/* Barra de refresco al cambiar de idioma (components/shared/BarraRefresco.vue) */
+@keyframes barra-refresco { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.barra-refresco { animation: barra-refresco 1.1s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
+  .barra-refresco { width: 100%; animation: none; opacity: .6; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }

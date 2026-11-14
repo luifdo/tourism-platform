@@ -36,7 +36,7 @@ describe('adaptador HTTP del catálogo', () => {
       const [url, init] = fetchFn.mock.calls[0]
       const u = new URL(url, 'http://x')
       expect(u.pathname).toBe('/api/catalog/buscar')
-      expect(Object.fromEntries(u.searchParams)).toEqual({ texto: 'mar azul', categoria: 'PLAYA,CULTURA', pagina: '2', tamano: '12' })
+      expect(Object.fromEntries(u.searchParams)).toEqual({ texto: 'mar azul', categoria: 'PLAYA,CULTURA', pagina: '2', tamano: '12', lang: 'en' })
       expect(init.method).toBe('GET')
       expect(init.headers['Accept-Language']).toBe('en')
       expect(init.headers.Authorization).toBeUndefined() // ruta pública
@@ -45,7 +45,7 @@ describe('adaptador HTTP del catálogo', () => {
     it('omite los filtros vacíos', async () => {
       const fetchFn = vi.fn(async () => respuesta({ items: [], total: 0 }))
       await crear(fetchFn).buscarServicios({ texto: '', categorias: [], pagina: 1, tamano: 12 })
-      expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/buscar?pagina=1&tamano=12')
+      expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/buscar?pagina=1&tamano=12&lang=es')
     })
 
     it('convierte cada ServicioResumen al modelo de la aplicación', async () => {
@@ -79,7 +79,7 @@ describe('adaptador HTTP del catálogo', () => {
     it('pide /servicios/{id} y convierte el detalle', async () => {
       const fetchFn = vi.fn(async () => respuesta(detalle))
       const s = await crear(fetchFn).obtenerServicio('11111111-1111-4111-8111-111111111111', 'es')
-      expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/servicios/11111111-1111-4111-8111-111111111111')
+      expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/servicios/11111111-1111-4111-8111-111111111111?lang=es')
       expect(s).toMatchObject({
         descripcion: 'Texto', capacidadDiaria: 20, reglaCancelacion: 'Hasta las 23:59',
         imagenes: ['https://s3.ejemplo/img.jpg'], // descarta lo que no es una URL de texto
@@ -93,7 +93,7 @@ describe('adaptador HTTP del catálogo', () => {
     it('escapa el id en la ruta (un id raro no cambia la URL)', async () => {
       const fetchFn = vi.fn(async () => respuesta(detalle))
       await crear(fetchFn).obtenerServicio('a/../../b?x=1', 'es')
-      expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/servicios/a%2F..%2F..%2Fb%3Fx%3D1')
+      expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/servicios/a%2F..%2F..%2Fb%3Fx%3D1?lang=es')
     })
 
     it('un servicio sin pagos informados trae avisoPagos nulo', async () => {
@@ -116,7 +116,7 @@ describe('adaptador HTTP del catálogo', () => {
     it('repite el parámetro ids, como pide el contrato', async () => {
       const fetchFn = vi.fn(async () => respuesta({ items: [{ id: 'a', nombre: 'A', activo: true }, { id: 'b', nombre: 'B', activo: false }] }))
       const r = await crear(fetchFn).nombresServicios(['a', 'b'], 'es')
-      expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/servicios/nombres?ids=a&ids=b')
+      expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/servicios/nombres?ids=a&ids=b&lang=es')
       expect(r).toEqual([{ id: 'a', nombre: 'A', activo: true }, { id: 'b', nombre: 'B', activo: false }])
     })
     it('ignora entradas sin id', async () => {
@@ -140,7 +140,7 @@ describe('adaptador HTTP del catálogo', () => {
       const r = await crear(fetchFn).mapaServicios({ bbox: [-75, 10, -73, 12], zoom: 10.4, categorias: ['PLAYA'], idioma: 'es' })
       const u = new URL(fetchFn.mock.calls[0][0], 'http://x')
       expect(u.pathname).toBe('/api/catalog/mapa/servicios')
-      expect(Object.fromEntries(u.searchParams)).toEqual({ bbox: '-75,10,-73,12', zoom: '10', categoria: 'PLAYA' })
+      expect(Object.fromEntries(u.searchParams)).toEqual({ bbox: '-75,10,-73,12', zoom: '10', categoria: 'PLAYA', lang: 'es' })
       expect(r).toEqual([
         { tipo: 'servicio', id: 's1', nombre: 'Bahía', categoria: 'PLAYA', calificacion: 4.2, conteo: null, lat: 11.32, lon: -74.09 },
         { tipo: 'grupo', id: undefined, nombre: undefined, categoria: undefined, calificacion: null, conteo: 5, lat: 11.2, lon: -73.9 },
@@ -195,12 +195,21 @@ describe('filtros de /buscar y zonas', () => {
   it('manda zona, precios, fecha, personas y orden con los nombres del contrato, y omite los vacíos', async () => {
     const fetchFn = vi.fn(async () => respuesta({ items: [], pagina: 1, tamano: 12, total: 0 }))
     await crear(fetchFn).buscarServicios({ texto: 'kayak', categorias: [], zona: 'taganga', precioMin: 50000, precioMax: null, fecha: '2026-12-01', personas: 3, orden: 'precio', pagina: 1, tamano: 12, idioma: 'es' })
-    expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/buscar?texto=kayak&zona=taganga&precio_min=50000&fecha=2026-12-01&personas=3&orden=precio&pagina=1&tamano=12')
+    expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/buscar?texto=kayak&zona=taganga&precio_min=50000&fecha=2026-12-01&personas=3&orden=precio&pagina=1&tamano=12&lang=es')
   })
+  it('las lecturas públicas llevan ?lang= (clave de la caché del Service Worker) y las que llevan sesión no', async () => {
+    const publica = vi.fn(async () => respuesta({ items: [], pagina: 1, tamano: 12, total: 0 }))
+    await crear(publica).buscarServicios({ idioma: 'en', pagina: 1, tamano: 12 })
+    expect(new URL(publica.mock.calls[0][0], 'http://x').searchParams.get('lang')).toBe('en')
+    const privada = vi.fn(async () => respuesta({ items: [], pagina: 1, tamano: 100, total: 0 }))
+    await createHttpCatalogGateway({ baseUrl: '/api/catalog', fetchFn: vi.fn(), authFetchFn: privada }).serviciosPrestador({}, 'en')
+    expect(privada.mock.calls[0][0]).not.toContain('lang=') // su respuesta no se guarda en la caché compartida
+  })
+
   it('GET /zonas devuelve código y nombre en el idioma pedido', async () => {
     const fetchFn = vi.fn(async () => respuesta([{ id: 'z1', codigo: 'minca', nombre: 'Minca', centro: { lat: 1, lon: 2 } }, { sin: 'codigo' }]))
     expect(await crear(fetchFn).zonas('en')).toEqual([{ codigo: 'minca', nombre: 'Minca' }])
-    expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/zonas')
+    expect(fetchFn.mock.calls[0][0]).toBe('/api/catalog/zonas?lang=en') // `lang` separa las entradas de la caché del Service Worker por idioma
     expect(fetchFn.mock.calls[0][1].headers['Accept-Language']).toBe('en')
   })
 })

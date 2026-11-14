@@ -6,6 +6,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { catalogUseCases, isMockBackend } from '../composition'
 import { nivelOcupacion } from '../domain/catalog/rules'
+import { conRefresco } from '../lib/refrescoIdioma'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -118,7 +119,9 @@ onMounted(() => {
   map.on('moveend', alMover)
   actualizar()
 })
-watch([locale, verZonas, verAlertas], actualizar)
+watch([verZonas, verAlertas], actualizar)
+// Los marcadores se quedan hasta que llegan los del idioma nuevo (no se limpia la capa antes de tiempo)
+watch(locale, () => conRefresco(actualizar))
 onBeforeUnmount(() => { clearTimeout(esperar); map?.remove() })
 </script>
 

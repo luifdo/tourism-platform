@@ -1,10 +1,11 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { entityUseCases } from '../../composition'
 import { ultimosDias } from '../../domain/gestion/rules'
 import { useGestion } from '../../ui/useGestion'
 import { useOnline } from '../../ui/useOnline'
+import { conRefresco } from '../../lib/refrescoIdioma'
 
 /* UC38 · Exportar el reporte de demanda en CSV (siempre en español, para Excel: separador ;, coma decimal y UTF-8 con BOM). Cada exportación queda en la bitácora. */
 const { t, locale } = useI18n()
@@ -17,6 +18,7 @@ const enviando = ref(false)
 const error = ref('')
 const hecho = ref('')
 onMounted(async () => { zonas.value = await entityUseCases.zonas(locale.value).catch(() => []) })
+watch(locale, () => conRefresco(async () => { zonas.value = await entityUseCases.zonas(locale.value).catch(() => zonas.value) }))
 
 async function exportar() {
   enviando.value = true; error.value = ''; hecho.value = ''

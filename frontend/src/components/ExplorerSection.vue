@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { catalogUseCases, isMockBackend } from '../composition'
 import { CATEGORIAS, ORDENES, nivelOcupacion } from '../domain/catalog/rules'
 import { useCatalog } from '../lib/useCatalog'
+import { conRefresco } from '../lib/refrescoIdioma'
 import { degradado } from '../ui/format'
 
 const { t, te, tm, rt, n, locale, d } = useI18n()
@@ -31,7 +32,12 @@ const limpiar = () => { Object.assign(avanzados, VACIOS); aplicados.value = { ..
 const filtros = () => ({ texto: buscado.value, categorias: categoria.value === 'all' ? [] : [categoria.value], ...aplicados.value })
 const recargar = () => cargar(filtros(), locale.value)
 onMounted(() => { recargar(); catalogUseCases.zonas(locale.value).then((z) => { zonas.value = z }).catch(() => {}) })
-watch([categoria, buscado, aplicados, locale], recargar)
+watch([categoria, buscado, aplicados], recargar)
+// Cambiar de idioma no borra las tarjetas: se quedan (un poco atenuadas) hasta que llegan las del idioma nuevo
+watch(locale, () => conRefresco(() => Promise.all([
+  cargar(filtros(), locale.value, { silencioso: true }),
+  catalogUseCases.zonas(locale.value).then((z) => { zonas.value = z }).catch(() => {}),
+])))
 // Ya en la portada, una búsqueda nueva desde arriba cambia ?q= sin volver a montar la sección
 watch(() => route.query.q, () => { texto.value = deLaUrl(); buscado.value = texto.value })
 const buscar = () => { buscado.value = texto.value.trim(); aplicados.value = { ...avanzados } }
@@ -109,7 +115,7 @@ const fecha = computed(() => (estado.actualizadoEn ? d(estado.actualizadoEn, { d
         <button type="button" class="mt-3 font-semibold underline" @click="recargar">{{ t('explorer.retry') }}</button>
       </div>
 
-      <div v-else class="mt-10 grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-6">
+      <div v-else class="mt-10 grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-6 transition-opacity duration-300" :class="estado.actualizando ? 'opacity-60' : ''" :aria-busy="estado.actualizando">
         <article
           v-for="e in estado.items" :key="e.id"
           class="group flex flex-col overflow-hidden rounded-card border border-sand/30 bg-cream shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"

@@ -6,6 +6,7 @@ import { CODIGOS } from '../domain/catalog/errors'
 import { nivelOcupacion } from '../domain/catalog/rules'
 import { seccionesDeAtributos } from '../domain/catalog/atributos'
 import { degradado, urlMapa } from '../ui/format'
+import { conRefresco } from '../lib/refrescoIdioma'
 import BookingWidget from '../components/BookingWidget.vue'
 import ResenasServicio from '../components/reviews/ResenasServicio.vue'
 
@@ -15,19 +16,25 @@ const { t, n, locale } = useI18n()
 // UC9 · GET /api/catalog/servicios/{id}
 const servicio = ref(null)
 const estado = ref('cargando') // 'cargando' | 'listo' | 'noEncontrado' | 'error'
-async function cargar() {
+const actualizando = ref(false) // la misma ficha se vuelve a pedir en otro idioma: se sigue mostrando mientras llega
+async function cargar(silencioso = false) {
   const id = props.id
-  estado.value = 'cargando'
+  const idioma = locale.value
+  const vigente = () => id === props.id && idioma === locale.value // ni otra ficha ni otro idioma mientras llegaba la respuesta
+  if (silencioso) actualizando.value = true
+  else estado.value = 'cargando'
   try {
-    const s = await catalogUseCases.ficha(id, { idioma: locale.value })
-    if (id !== props.id) return // se cambió de ficha mientras llegaba la respuesta
+    const s = await catalogUseCases.ficha(id, { idioma })
+    if (!vigente()) return
     servicio.value = s; estado.value = 'listo'
   } catch (e) {
-    if (id !== props.id) return
+    if (!vigente()) return
+    if (silencioso) return // la ficha ya está en pantalla: se queda en el idioma anterior en vez de reemplazarla por un error
     servicio.value = null; estado.value = e.code === CODIGOS.NO_ENCONTRADO ? 'noEncontrado' : 'error'
-  }
+  } finally { if (vigente()) actualizando.value = false }
 }
-watch([() => props.id, locale], cargar, { immediate: true })
+// Solo cambió el idioma (misma ficha ya cargada): sin esqueleto, con la barra de refresco de la parte de arriba
+watch([() => props.id, locale], ([id], [idAnterior] = []) => (id === idAnterior && estado.value === 'listo' ? conRefresco(() => cargar(true)) : cargar(false)), { immediate: true })
 
 const cop = (v) => n(v, { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
 const bar = { ok: 'bg-ok', mid: 'bg-warn', high: 'bg-danger' }
@@ -59,10 +66,10 @@ const comoLlegar = () => catalogUseCases.comoLlegar(props.id)
 
       <div v-else-if="estado === 'error'" class="mt-10 rounded-panel border border-danger/30 bg-danger-bg p-6 text-danger" role="alert">
         <p>{{ t('service.error') }}</p>
-        <button type="button" class="mt-3 font-semibold underline" @click="cargar">{{ t('service.retry') }}</button>
+        <button type="button" class="mt-3 font-semibold underline" @click="cargar(false)">{{ t('service.retry') }}</button>
       </div>
 
-      <div v-else class="mt-6 grid items-start gap-8 lg:grid-cols-[1.4fr_1fr]">
+      <div v-else class="mt-6 grid items-start gap-8 transition-opacity duration-300 lg:grid-cols-[1.4fr_1fr]" :class="actualizando ? 'opacity-60' : ''" :aria-busy="actualizando">
         <article>
           <div class="relative h-[clamp(200px,34vw,360px)] overflow-hidden rounded-panel shadow-elevated" :style="{ background: degradado(servicio.categoria) }">
             <img v-if="portada" :src="portada" :alt="servicio.nombre" class="size-full object-cover" loading="lazy" />

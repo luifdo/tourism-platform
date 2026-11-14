@@ -7,6 +7,7 @@ import { useGestion } from '../../ui/useGestion'
 import { useOnline } from '../../ui/useOnline'
 import { useSession } from '../../ui/useSession'
 import { fmtMomento } from '../../ui/format'
+import { recargarAlCambiarIdioma } from '../../lib/refrescoIdioma'
 import EstadoCarga from '../shared/EstadoCarga.vue'
 import Paginacion from '../shared/Paginacion.vue'
 import Estrellas from './Estrellas.vue'
@@ -48,7 +49,9 @@ async function elegibilidad() {
   try { puedeEscribir.value = (await reviewUseCases.pendientes()).some((p) => p.servicio_id === props.servicioId) } catch (e) { sesionVencida(e) && undefined }
 }
 onMounted(() => { cargar(); elegibilidad() })
-watch([orden, locale], () => cargar())
+watch(orden, () => cargar())
+// Cambiar de idioma no borra las reseñas ya mostradas: se actualizan cuando llegan
+recargarAlCambiarIdioma(locale, { cargar, cargando, error, hayDatos: () => datos.value.items.length > 0, argumentos: () => [datos.value.pagina] })
 watch(() => props.servicioId, () => { cargar(); elegibilidad() })
 watch(() => sesion.autenticado, elegibilidad)
 

@@ -7,6 +7,7 @@ import { useOnline } from '../../ui/useOnline'
 import { fmtMomento } from '../../ui/format'
 import EstadoCarga from '../shared/EstadoCarga.vue'
 import Paginacion from '../shared/Paginacion.vue'
+import { recargarAlCambiarIdioma, conRefresco } from '../../lib/refrescoIdioma'
 
 /*
  * UC26 · Alertas oficiales. Se publican para una zona o para un servicio, con nivel (informativa, preventiva o crítica) y vigencia.
@@ -36,7 +37,14 @@ onMounted(async () => {
   zonas.value = await entityUseCases.zonas(locale.value).catch(() => [])
   servicios.value = (await catalogUseCases.explorar({ pagina: 1, tamano: 100 }, { idioma: locale.value }).catch(() => ({ items: [] }))).items
 })
-watch([estado, locale], () => cargar())
+watch(estado, () => cargar())
+recargarAlCambiarIdioma(locale, { cargar, cargando, error, hayDatos: () => !!datos.value, argumentos: () => [datos.value?.pagina ?? 1] })
+// Las zonas y los servicios del formulario también salen en el idioma de la interfaz
+watch(locale, () => conRefresco(async () => {
+  zonas.value = await entityUseCases.zonas(locale.value).catch(() => zonas.value)
+  const s = await catalogUseCases.explorar({ pagina: 1, tamano: 100 }, { idioma: locale.value }).catch(() => null)
+  if (s) servicios.value = s.items
+}))
 
 const aLocal = (iso) => { const d = new Date(iso); const p = (x) => String(x).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}` }
 function nueva() { Object.assign(form, { abierto: true, id: '', version: 0, nivel: 'INFORMATIVA', es: '', en: '', destino: 'zona', zona: '', servicioId: '', expira: aLocal(new Date(Date.now() + 7 * 86_400_000)), error: '', campos: {} }); aviso.value = '' }

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { entityUseCases } from '../../composition'
 import { CATEGORIAS } from '../../domain/catalog/rules'
@@ -7,6 +7,7 @@ import { ultimosDias } from '../../domain/gestion/rules'
 import { useGestion } from '../../ui/useGestion'
 import EstadoCarga from '../shared/EstadoCarga.vue'
 import SerieBarras from './SerieBarras.vue'
+import { conRefresco } from '../../lib/refrescoIdioma'
 
 /* UC23 · Indicadores de demanda (personas por fecha de la visita, según el estado actual de su reserva) y las intenciones de visita ("Cómo llegar"), que son un indicador aparte. */
 const { t, n, locale } = useI18n()
@@ -28,6 +29,7 @@ async function cargar() {
   } catch (e) { if (!sesionVencida(e)) error.value = camposDe(e).desde ?? mensaje(e, 'entidad') } finally { cargando.value = false }
 }
 onMounted(async () => { zonas.value = await entityUseCases.zonas(locale.value).catch(() => []); cargar() })
+watch(locale, () => conRefresco(async () => { zonas.value = await entityUseCases.zonas(locale.value).catch(() => zonas.value) }))
 
 const sum = (k) => (demanda.value?.serie ?? []).reduce((s, p) => s + p[k], 0)
 const porZona = computed(() => {

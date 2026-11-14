@@ -9,6 +9,7 @@ import { fmtMomento } from '../../ui/format'
 import EstadoCarga from '../shared/EstadoCarga.vue'
 import Paginacion from '../shared/Paginacion.vue'
 import Estrellas from '../reviews/Estrellas.vue'
+import { recargarAlCambiarIdioma } from '../../lib/refrescoIdioma'
 
 /* UC21 · Reseñas de mis servicios: responder públicamente (una respuesta por reseña; se puede reemplazar) y reportar las inapropiadas (UC39). */
 const props = defineProps({ servicios: { type: Array, default: () => [] } })
@@ -32,7 +33,8 @@ async function cargar(pagina = 1) {
   } finally { cargando.value = false }
 }
 onMounted(() => cargar())
-watch([() => filtros.servicio_id, () => filtros.sin_respuesta, locale], () => cargar())
+watch([() => filtros.servicio_id, () => filtros.sin_respuesta], () => cargar())
+recargarAlCambiarIdioma(locale, { cargar, cargando, error, hayDatos: () => datos.value.items.length > 0, argumentos: () => [datos.value.pagina] })
 
 const nombreServicio = (id) => props.servicios.find((s) => s.id === id)?.nombre ?? ''
 function abrir(r, modo) { Object.assign(abierta, { id: r.id, modo, texto: modo === 'responder' ? (r.respuesta?.texto ?? '') : '', motivo: 'OFENSIVO', detalle: '', error: '', ok: '' }) }

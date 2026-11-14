@@ -59,7 +59,10 @@ const aPunto = (f) => {
 export function createHttpCatalogGateway({ baseUrl = '/api/catalog', fetchFn = (...a) => fetch(...a), authFetchFn = fetchFn } = {}) {
   // `authFetchFn` (fetch autenticado) solo lo usan las rutas del prestador; las públicas van sin Authorization
   async function http(method, path, { query = [], idioma = 'es', autenticada = false } = {}) {
-    const qs = query.length ? '?' + new URLSearchParams(query.filter(([, v]) => v != null && v !== '')) : ''
+    // El idioma va en Accept-Language, pero el Service Worker guarda las respuestas públicas por URL: sin esto, al pasar a inglés
+    // devolvería el catálogo en español desde la caché. `lang` solo separa las entradas de la caché; el servidor lo ignora.
+    const conLang = !autenticada && method === 'GET' ? [...query, ['lang', idioma]] : query
+    const qs = conLang.length ? '?' + new URLSearchParams(conLang.filter(([, v]) => v != null && v !== '')) : ''
     let res
     try { res = await (autenticada ? authFetchFn : fetchFn)(`${baseUrl}${path}${qs}`, { method, headers: { Accept: 'application/json', 'Accept-Language': idioma } }) }
     catch { throw new CatalogError(CODIGOS.SIN_CONEXION, 'No hay conexión con el servidor.') }

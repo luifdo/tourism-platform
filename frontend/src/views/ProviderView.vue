@@ -12,6 +12,7 @@ import MetricasPrestador from '../components/provider/MetricasPrestador.vue'
 import VerificacionPrestador from '../components/provider/VerificacionPrestador.vue'
 import PerfilComercial from '../components/provider/PerfilComercial.vue'
 import TabsNav from '../components/shared/TabsNav.vue'
+import { recargarAlCambiarIdioma } from '../lib/refrescoIdioma'
 
 /*
  * Panel del prestador: UC20 solicitudes, UC19 calendario, UC17/UC18 servicios, UC21 reseñas, UC22 métricas y UC37 verificación. Solo para el rol Prestador (la ruta lo exige).
@@ -49,7 +50,7 @@ async function cargar() {
   } finally { cargando.value = false }
 }
 onMounted(cargar)
-watch(locale, cargar)
+recargarAlCambiarIdioma(locale, { cargar, cargando, error, hayDatos: () => servicios.value.length > 0 })
 const pestanas = computed(() => PESTANAS.map((id) => ({ id, label: t(`provider.tabs.${id}`) })))
 </script>
 

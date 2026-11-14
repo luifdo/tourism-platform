@@ -4,7 +4,7 @@ export default {
     loading: 'Loading…', retry: 'Retry', empty: 'Nothing to show yet.', save: 'Save', saving: 'Saving…', sending: 'Sending…', searching: 'Searching…',
     cancel: 'Cancel', confirm: 'Confirm', edit: 'Edit', remove: 'Remove', all: 'All', clear: 'Clear', apply: 'Apply', optional: 'optional', days: 'days',
     from: 'From', to: 'To', prev: 'Previous', next: 'Next', pagination: 'Pagination', pageOf: 'Page {n} of {total}',
-    noPermission: 'You do not have permission to view that page.', unexpected: 'Something went wrong on the page. Reference: {ref}.', reload: 'Reload', dismiss: 'Dismiss', reference: 'reference',
+    noPermission: 'You do not have permission to view that page.', unexpected: 'Something went wrong on the page. Reference: {ref}.', reload: 'Reload', dismiss: 'Dismiss', updating: 'Updating the content to the new language…', reference: 'reference',
     needOnline: 'Requires a connection.',
     errors: {
       generic: 'We could not complete the action. Please try again.', SIN_CONEXION: 'No connection. Try again when the network is back.',

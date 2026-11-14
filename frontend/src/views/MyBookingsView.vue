@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { bookingUseCases, catalogUseCases, isMockBackend as isMock } from '../composition'
@@ -11,6 +11,7 @@ import { useSession } from '../ui/useSession'
 import { fmtDate } from '../ui/format'
 import StatusBadge from '../components/StatusBadge.vue'
 import Countdown from '../components/Countdown.vue'
+import { conRefresco } from '../lib/refrescoIdioma'
 
 /*
  * UC13 (historial) + UC12 (modificar solo en SOLICITADA, cancelar). Modificar y cancelar requieren conexión.
@@ -73,6 +74,8 @@ async function load(reset = true) {
   finally { loading.value = false }
 }
 onMounted(load)
+// Los nombres de los servicios salen en el idioma de la interfaz: al cambiarlo se piden otra vez, sin tocar la lista
+watch(locale, () => items.value.length && conRefresco(() => cargarNombres().catch(() => {})))
 const setFilter = (f) => { filter.value = f; load() }
 const more = () => { page.value++; load(false) }
 

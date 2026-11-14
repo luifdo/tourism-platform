@@ -5,6 +5,7 @@ import { useSession } from './ui/useSession'
 import AppNavbar from './components/AppNavbar.vue'
 import OfflineBar from './components/OfflineBar.vue'
 import AppFooter from './components/AppFooter.vue'
+import BarraRefresco from './components/shared/BarraRefresco.vue'
 import AssistantDrawer from './components/AssistantDrawer.vue'
 import { descartarError, errorGlobal } from './lib/errorGlobal'
 import { useI18n } from 'vue-i18n'
@@ -24,6 +25,7 @@ watch(() => sesion.expirada, (expirada) => {
 </script>
 
 <template>
+  <BarraRefresco />
   <AppNavbar />
   <OfflineBar />
   <div v-if="sinPermiso" class="flex flex-wrap items-center justify-between gap-3 bg-warn-bg px-[clamp(16px,3vw,32px)] py-2.5 text-sm text-ink-control" role="status">

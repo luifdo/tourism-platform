@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { offerUseCases } from '../../composition'
 import { useGestion } from '../../ui/useGestion'
@@ -7,6 +7,7 @@ import { useOnline } from '../../ui/useOnline'
 import { degradado } from '../../ui/format'
 import EstadoCarga from '../shared/EstadoCarga.vue'
 import ServicioForm from './ServicioForm.vue'
+import { conRefresco } from '../../lib/refrescoIdioma'
 
 /*
  * UC17 y UC18 · Mis servicios: lista (activos e inactivos), crear, editar, desactivar y reactivar.
@@ -38,6 +39,7 @@ async function cargar() {
   } finally { cargando.value = false }
 }
 onMounted(cargar)
+watch(locale, () => conRefresco(async () => { zonas.value = await offerUseCases.zonas(locale.value).catch(() => zonas.value) }))
 
 const nombre = (s) => (locale.value === 'en' && s.nombre.en ? s.nombre.en : s.nombre.es)
 const nuevo = () => { aviso.value = ''; editado.value = null; modo.value = 'nuevo' }

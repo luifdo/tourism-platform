@@ -221,7 +221,8 @@ Cada decisión sigue el formato: **Estado**, **Contexto**, **Decisión**, **Alte
   * La llave de `encryptVolumeData` la guarda el filer de SeaweedFS en su propio almacenamiento. Si se pierde ese volumen, los datos no se recuperan. El respaldo del filer pasa a ser obligatorio.
   * **Pendiente para cumplirla:**
     * Probar `-filer.encryptVolumeData` con el despliegue de `infra/` en la VM: subir, leer con URL firmada, respaldar y restaurar.
-    * Confirmar el cifrado de disco del proveedor elegido.
+    * ~~Confirmar el cifrado de disco del proveedor elegido.~~ Hecho: la VM de AWS (`tourism-vm`) usa un volumen EBS gp3 cifrado, que cubre PostgreSQL, RabbitMQ, Valkey y SeaweedFS (punto 3).
+    * TLS en el borde (punto 1) funcionando en la VM pública: Let's Encrypt y HTTP → HTTPS (`services/iam-service/docs/evidencias/vm-aws.txt`, 7.1-7.2).
     * Escribir en el SRS v1.2 (§2.4.5) qué se cifra, dónde y qué queda como limitación.
     * Marcar C-58 como resuelta en la documentación del IAM.
 * **Trazabilidad:** SRS §2.4.5, RNF-09, Ley 1581, C-46, C-58, ADR-003, ADR-005, ADR-007, Plan §7.

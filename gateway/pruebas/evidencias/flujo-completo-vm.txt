@@ -1,0 +1,114 @@
+# Flujo completo de la plataforma en la VM pública de AWS, por el gateway con HTTPS
+# Script: gateway/pruebas/flujo_completo.py --entorno compose --gateway https://3-141-142-12.sslip.io
+# Fecha: 2026-11-13 (hora de Bogotá). Código desplegado en la VM: 468ee93 (develop).
+# Recorre iam -> catalog -> booking -> review -> recommendation y los eventos de RabbitMQ entre ellos.
+# Sin contraseñas; los correos de las cuentas de prueba van enmascarados.
+#
+# Resultado: 72 comprobaciones, 71 OK y 1 marcada FALLA que no es un fallo de la plataforma:
+#   "chat sin clave responde 503" supone que no hay clave del modelo de lenguaje. En la VM sí la hay
+#   (Groq, ADR-011), así que el chat respondió 200 con una respuesta real del modelo. La comprobación
+#   siguiente ("chat rechaza otro rol") pasó.
+#
+# Correo: durante la corrida, iam y catalog enviaron a Mailpit (SMTP_HOST=mailpit) para poder
+# comprobar los correos; al terminar volvieron a Gmail.
+# Limpieza: el Prestador y el Turista de prueba quedaron desactivados por el Admin
+# ("Datos de prueba"); el servicio 'Tour prueba b3e0241b' ya no es visible (404).
+
+
+== iam ==
+OK    iam login del Admin sembrado 
+OK    iam verificar devuelve identidad 
+OK    iam registro Prestador 
+OK    iam registro Turista 
+
+== gateway ==
+OK    sin token: 401 
+OK    encabezados falsos sin token: 401 
+OK    rol falso con token de turista: lo reemplaza y da 403 
+OK    ruta pública sin token 
+OK    /internal no se publica 
+OK    /metrics no se publica 
+OK    /health no se publica 
+OK    iam carga RNT en SeaweedFS 
+OK    iam carga RUT en SeaweedFS 
+OK    seaweedfs URL firmada del RUT sirve 
+OK    seaweedfs el RUT sin firma NO se lee 
+OK    catalog rechaza prestador sin aprobar o cuerpo inválido 
+OK    iam aprueba prestador 
+OK    prestador.aprobado -> catalog crea perfil con razón social 
+
+== servicio.publicado ==
+OK    catalog crea servicio 
+OK    catalog firma subida de imagen 
+OK    seaweedfs acepta la imagen con credencial limitada 
+OK    seaweedfs imagen pública sin firma 
+OK    servicio.publicado -> booking lo conoce y su dueño abre calendario 
+OK    servicio.publicado -> review guarda el dueño 
+
+== disponibilidad ==
+OK    booking disponibilidad pública 
+OK    disponibilidad.actualizada -> catalog muestra cupos 
+
+== reservas y correos ==
+OK    booking solicitar 
+OK    reserva.solicitada -> correo al prestador (contacto en iam + Mailpit) 
+OK    descuento de cupos llega a catalog 
+OK    reserva.solicitada -> catalog.demanda 
+OK    booking confirmar 
+OK    reserva.confirmada -> correo al turista 
+OK    booking rechazar 
+OK    reserva.rechazada -> correo con motivo 
+OK    booking modificar 
+OK    reserva.modificada -> correo al prestador 
+OK    booking cancelar por turista 
+OK    reserva.cancelada(Turista) -> correo al prestador 
+
+== recommendation -> catalog, booking y review ==
+OK    tools se ejecutan en el contenedor 
+OK    tool buscar_servicios 
+OK    tool detalle_servicio 
+OK    tool consultar_disponibilidad 
+OK    tool historial_turista 
+OK    tool resenas_servicio 
+OK    tool presion_capacidad_carga 
+OK    tool alertas_oficiales 
+FALLA chat sin clave responde 503 con formato común {"conversacion_id":"3972fcf1-ac25-46e5-8b79-5da6452aa45a","respuesta":"¡Hola! Soy tu asistente de turismo en Santa Marta. Cuéntame qué tipo de actividades, lugares o servicios te interesan para hoy o para los próximos días, y te ayudaré a encontrar las mejores opciones.","recomendaciones":[]}
+OK    chat rechaza otro rol 
+
+== reserva.finalizada y reseñas ==
+OK    review rechaza sin visita (NO_ELEGIBLE) 
+OK    booking cron finalizar-reservas corre 
+OK    reserva FINALIZADA 
+OK    reserva.finalizada -> review habilita la reseña 
+OK    reserva.finalizada -> catalog.demanda 
+OK    review crea reseña 
+OK    resena.publicada -> catalog actualiza promedio 
+OK    review y catalog coinciden en el promedio 
+OK    review el dueño (de servicio.publicado) responde 
+OK    review otro usuario no responde 
+OK    review modera 
+OK    resena.ocultada -> catalog quita del promedio 
+
+== auditoria.registrada -> bitácora de iam ==
+OK    403 en catalog 
+OK    403 en booking 
+OK    403 en review 
+OK    ACCESS_DENIED de catalog-service en bitácora 
+OK    ACCESS_DENIED de booking-service en bitácora 
+OK    ACCESS_DENIED de review-service en bitácora 
+OK    MODERACION en bitácora 
+OK    RESERVA_CONFIRMADA en bitácora 
+
+== prestador.suspendido ==
+OK    iam desactiva prestador 
+OK    prestador.suspendido -> catalog oculta el servicio 
+OK    servicio.publicado(activo=false) -> booking no acepta reservas 
+OK    prestador.aprobado al rehabilitar -> catalog restaura 
+
+== datos que quedan para el frontend ==
+Prestador p***@example.com / <clave omitida>  (id f6ffada9-212a-4df0-83c6-78dd416dad52)
+Turista   t***@example.com / <clave omitida>  (id b45be9ee-c057-40b2-9e6c-846e528c8486)
+Servicio  01eaeeb3-2582-4c9f-b7bd-2ae4cf799009  ('Tour prueba b3e0241b')
+
+== resumen ==
+Fallos: ['chat sin clave responde 503 con formato común']

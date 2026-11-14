@@ -5,11 +5,11 @@ import { nuevaClave } from '../src/domain/gestion/rules.js'
 import { urlMapa } from '../src/ui/format.js'
 
 describe('limpieza de cachés obsoletas', () => {
-  it('borra la caché «catalogo» (traía rutas privadas) y «fuentes»', async () => {
+  it('borra las cachés «catalogo» (traía rutas privadas), «fuentes» y «catalogo-publico-v2» (servía el idioma anterior)', async () => {
     const almacen = { delete: vi.fn(async () => true) }
     await borrarCachesObsoletas(almacen)
-    expect(CACHES_OBSOLETAS).toEqual(['catalogo', 'fuentes'])
-    expect(almacen.delete.mock.calls.map((c) => c[0]).sort()).toEqual(['catalogo', 'fuentes'])
+    expect(CACHES_OBSOLETAS).toEqual(['catalogo', 'fuentes', 'catalogo-publico-v2'])
+    expect(almacen.delete.mock.calls.map((c) => c[0]).sort()).toEqual(['catalogo', 'catalogo-publico-v2', 'fuentes'])
   })
   it('sin Cache Storage (HTTP no seguro) no falla, y un error al borrar tampoco', async () => {
     await expect(borrarCachesObsoletas(undefined)).resolves.toBeUndefined()
@@ -27,7 +27,7 @@ describe('política de la caché del Service Worker', () => {
     const cfg = readFileSync(new URL('../vite.config.js', import.meta.url), 'utf8')
     expect(cfg).toContain("!request.headers.has('Authorization')")
     expect(cfg).toContain(String(publica))
-    expect(cfg).toContain('catalogo-publico-v2')
+    expect(cfg).toContain('catalogo-publico-v3')
   })
 })
 

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { catalogUseCases, reviewUseCases } from '../composition'
 import { useGestion } from '../ui/useGestion'
@@ -8,6 +8,7 @@ import EstadoCarga from '../components/shared/EstadoCarga.vue'
 import Paginacion from '../components/shared/Paginacion.vue'
 import Estrellas from '../components/reviews/Estrellas.vue'
 import ResenaForm from '../components/reviews/ResenaForm.vue'
+import { recargarAlCambiarIdioma } from '../lib/refrescoIdioma'
 
 /* UC15 · Mis reseñas: los servicios que ya disfruté y aún no reseñé, y las que escribí (con su estado: publicada, en revisión u oculta). */
 const { t, locale } = useI18n()
@@ -31,6 +32,7 @@ async function cargar(pagina = 1) {
   } catch (e) { if (!sesionVencida(e)) error.value = mensaje(e, 'resenas') } finally { cargando.value = false }
 }
 onMounted(() => cargar())
+recargarAlCambiarIdioma(locale, { cargar, cargando, error, hayDatos: () => pendientes.value.length > 0 || mias.value.items.length > 0, argumentos: () => [mias.value.pagina] })
 
 const nombre = (id) => nombres.value[id]?.nombre ?? t('my.service')
 const colorEstado = { PUBLICADA: 'bg-ok-bg text-ok', EN_REVISION: 'bg-warn-bg text-warn', OCULTA: 'bg-danger-bg text-danger' }

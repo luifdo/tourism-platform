@@ -19,17 +19,19 @@ const estado = ref('cargando') // 'cargando' | 'listo' | 'noEncontrado' | 'error
 const actualizando = ref(false) // la misma ficha se vuelve a pedir en otro idioma: se sigue mostrando mientras llega
 async function cargar(silencioso = false) {
   const id = props.id
+  const idioma = locale.value
+  const vigente = () => id === props.id && idioma === locale.value // ni otra ficha ni otro idioma mientras llegaba la respuesta
   if (silencioso) actualizando.value = true
   else estado.value = 'cargando'
   try {
-    const s = await catalogUseCases.ficha(id, { idioma: locale.value })
-    if (id !== props.id) return // se cambió de ficha mientras llegaba la respuesta
+    const s = await catalogUseCases.ficha(id, { idioma })
+    if (!vigente()) return
     servicio.value = s; estado.value = 'listo'
   } catch (e) {
-    if (id !== props.id) return
+    if (!vigente()) return
     if (silencioso) return // la ficha ya está en pantalla: se queda en el idioma anterior en vez de reemplazarla por un error
     servicio.value = null; estado.value = e.code === CODIGOS.NO_ENCONTRADO ? 'noEncontrado' : 'error'
-  } finally { if (id === props.id) actualizando.value = false }
+  } finally { if (vigente()) actualizando.value = false }
 }
 // Solo cambió el idioma (misma ficha ya cargada): sin esqueleto, con la barra de refresco de la parte de arriba
 watch([() => props.id, locale], ([id], [idAnterior] = []) => (id === idAnterior && estado.value === 'listo' ? conRefresco(() => cargar(true)) : cargar(false)), { immediate: true })

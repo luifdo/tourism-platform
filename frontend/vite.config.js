@@ -47,13 +47,13 @@ export default defineConfig({
           {
             // Catálogo PÚBLICO: stale-while-revalidate (RNF-13). Solo las rutas públicas del gateway y solo peticiones SIN sesión: lo
             // que lleva Authorization es de una persona (métricas, servicios del prestador, analítica de la Entidad...) y esta caché
-            // la sirve a cualquiera, antes de revisar nada, y sobrevive al cierre de sesión. Nombre nuevo (-v2): la caché «catalogo»
+            // la sirve a cualquiera, antes de revisar nada, y sobrevive al cierre de sesión. Nombre nuevo (-v3: las entradas ahora van separadas por idioma con ?lang=): la caché «catalogo»
             // de versiones anteriores traía rutas privadas y se borra al arrancar (lib/limpiezaLocal.js).
             urlPattern: ({ url, request }) =>
               request.method === 'GET' && !request.headers.has('Authorization')
               && /^\/api\/catalog\/(servicios(\/[^/]+)?|buscar|zonas|alertas|mapa\/[^/]+)$/.test(url.pathname),
             handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'catalogo-publico-v2', expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 } },
+            options: { cacheName: 'catalogo-publico-v3', expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 } },
           },
           {
             // Mapa: solo las teselas ya vistas (política de uso de OpenStreetMap), nunca descarga masiva

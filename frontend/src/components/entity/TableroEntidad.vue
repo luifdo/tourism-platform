@@ -1,11 +1,12 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { entityUseCases } from '../../composition'
 import { ultimosDias } from '../../domain/gestion/rules'
 import { useGestion } from '../../ui/useGestion'
 import EstadoCarga from '../shared/EstadoCarga.vue'
 import MapaCalor from './MapaCalor.vue'
+import { recargarAlCambiarIdioma } from '../../lib/refrescoIdioma'
 
 /* UC25 tablero de planificación (reúne UC23 y UC24) y RF-07 mapa de calor. Los datos de capacidad se calculan al consultar y llevan su hora (`calculado_en`). */
 const { t, n, locale } = useI18n()
@@ -25,6 +26,7 @@ async function cargar() {
   } catch (e) { if (!sesionVencida(e)) error.value = camposDe(e).desde ?? mensaje(e, 'entidad') } finally { cargando.value = false }
 }
 onMounted(cargar)
+recargarAlCambiarIdioma(locale, { cargar, cargando, error, hayDatos: () => !!datos.value })
 
 const NIVEL = { BAJO: 'bg-ok-bg text-ok', MEDIO: 'bg-warn-bg text-warn', ALTO: 'bg-danger-bg text-danger' }
 const BARRA = { BAJO: 'bg-ok', MEDIO: 'bg-warn', ALTO: 'bg-danger' }

@@ -8,6 +8,7 @@ import { fmtMomento } from '../../ui/format'
 import EstadoCarga from '../shared/EstadoCarga.vue'
 import Paginacion from '../shared/Paginacion.vue'
 import Estrellas from '../reviews/Estrellas.vue'
+import { recargarAlCambiarIdioma } from '../../lib/refrescoIdioma'
 
 /*
  * UC29 · Moderar reseñas reportadas. La cola trae primero las que están en revisión (ocultas a la espera de decisión) y luego
@@ -33,7 +34,8 @@ async function cargar(pagina = 1) {
   } catch (e) { if (!sesionVencida(e)) error.value = mensaje(e, 'resenas') } finally { cargando.value = false }
 }
 onMounted(() => cargar())
-watch([estado, locale], () => cargar())
+watch(estado, () => cargar())
+recargarAlCambiarIdioma(locale, { cargar, cargando, error, hayDatos: () => !!datos.value?.items?.length, argumentos: () => [datos.value.pagina] })
 
 const nombre = (id) => nombres.value[id]?.nombre ?? t('my.service')
 const abrir = (r, decision) => Object.assign(accion, { id: r.id, decision, motivo: '', error: '' })

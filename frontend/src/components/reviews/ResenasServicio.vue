@@ -7,7 +7,7 @@ import { useGestion } from '../../ui/useGestion'
 import { useOnline } from '../../ui/useOnline'
 import { useSession } from '../../ui/useSession'
 import { fmtMomento } from '../../ui/format'
-import { conRefresco } from '../../lib/refrescoIdioma'
+import { recargarAlCambiarIdioma } from '../../lib/refrescoIdioma'
 import EstadoCarga from '../shared/EstadoCarga.vue'
 import Paginacion from '../shared/Paginacion.vue'
 import Estrellas from './Estrellas.vue'
@@ -36,13 +36,12 @@ const reporte = reactive({ id: '', motivo: 'OFENSIVO', detalle: '', enviando: fa
 const rol = computed(() => sesion.usuario?.rol)
 const puedeReportar = computed(() => sesion.autenticado && (rol.value === 'Turista' || rol.value === 'Prestador'))
 
-async function cargar(pagina = 1, { silencioso = false } = {}) {
-  if (!silencioso) cargando.value = true
-  error.value = ''
+async function cargar(pagina = 1) {
+  cargando.value = true; error.value = ''
   try {
     const [r, l] = await Promise.all([reviewUseCases.resumen(props.servicioId), reviewUseCases.resenasDeServicio(props.servicioId, { orden: orden.value, pagina, tamano: 5, idioma: locale.value })])
     resumen.value = r; datos.value = l
-  } catch (e) { if (!silencioso) error.value = mensaje(e, 'resenas') } finally { cargando.value = false }
+  } catch (e) { error.value = mensaje(e, 'resenas') } finally { cargando.value = false }
 }
 async function elegibilidad() {
   puedeEscribir.value = false
@@ -52,7 +51,7 @@ async function elegibilidad() {
 onMounted(() => { cargar(); elegibilidad() })
 watch(orden, () => cargar())
 // Cambiar de idioma no borra las reseñas ya mostradas: se actualizan cuando llegan
-watch(locale, () => conRefresco(() => cargar(datos.value.pagina, { silencioso: datos.value.items.length > 0 })))
+recargarAlCambiarIdioma(locale, { cargar, cargando, error, hayDatos: () => datos.value.items.length > 0, argumentos: () => [datos.value.pagina] })
 watch(() => props.servicioId, () => { cargar(); elegibilidad() })
 watch(() => sesion.autenticado, elegibilidad)
 

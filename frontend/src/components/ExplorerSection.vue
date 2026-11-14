@@ -34,7 +34,10 @@ const recargar = () => cargar(filtros(), locale.value)
 onMounted(() => { recargar(); catalogUseCases.zonas(locale.value).then((z) => { zonas.value = z }).catch(() => {}) })
 watch([categoria, buscado, aplicados], recargar)
 // Cambiar de idioma no borra las tarjetas: se quedan (un poco atenuadas) hasta que llegan las del idioma nuevo
-watch(locale, () => conRefresco(() => cargar(filtros(), locale.value, { silencioso: true })))
+watch(locale, () => conRefresco(() => Promise.all([
+  cargar(filtros(), locale.value, { silencioso: true }),
+  catalogUseCases.zonas(locale.value).then((z) => { zonas.value = z }).catch(() => {}),
+])))
 // Ya en la portada, una búsqueda nueva desde arriba cambia ?q= sin volver a montar la sección
 watch(() => route.query.q, () => { texto.value = deLaUrl(); buscado.value = texto.value })
 const buscar = () => { buscado.value = texto.value.trim(); aplicados.value = { ...avanzados } }

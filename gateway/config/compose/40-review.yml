@@ -7,7 +7,7 @@ http:
         Method(`GET`) && (PathRegexp(`^/api/reviews/servicios/[^/]+/(resenas|resumen)$`)
         || PathRegexp(`^/api/reviews/resenas/[^/]+$`))
       priority: 100
-      middlewares: [quitar-identidad]
+      middlewares: [quitar-identidad, publico-rate-limit]
       service: review-service
 
     review-protegidas:

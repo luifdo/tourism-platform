@@ -5,7 +5,7 @@ http:
     booking-publicas:
       rule: "Method(`GET`) && Path(`/api/bookings/disponibilidad`)"
       priority: 100
-      middlewares: [quitar-identidad]
+      middlewares: [quitar-identidad, publico-rate-limit]
       service: booking-service
 
     booking-protegidas:

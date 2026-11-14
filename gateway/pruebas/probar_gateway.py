@@ -10,8 +10,10 @@ Qué comprueba (config/compose es la que usa infra/docker-compose.yml):
      contrato (barrido completo): sin sesión, las protegidas dan 401 y no llegan al servicio.
   2. Que X-Usuario-Id y X-Usuario-Rol del cliente nunca lleguen a un servicio, ni en rutas públicas ni protegidas.
   3. El prefijo no se quita, /internal, /health y /metrics no se enrutan, X-Forwarded-For del cliente no se cree.
-  4. Los límites de tasa (login y recuperar comparten cupo; refresh tiene el suyo) y el límite de 6 MB de documentos.
-  5. SeaweedFS por nombre de host con CORS solo para la PWA, y que el token de /restablecer-contrasena no quede en los logs.
+  4. Los límites de tasa (login y recuperar comparten cupo; refresh, registro, lecturas públicas e intención de visita
+     tienen el suyo), el tope de 1 MB de los cuerpos JSON y el de 6 MB de documentos.
+  5. SeaweedFS por nombre de host con CORS solo para la PWA (los orígenes de localhost solo con DOMINIO_PUBLICO=localhost),
+     y que el token de /restablecer-contrasena no quede en los logs.
 Termina con código distinto de cero si algo falla.
 """
 import argparse
@@ -77,6 +79,7 @@ class Gateway:
     def __init__(self, traefik, carpeta_config):
         self.traefik, self.carpeta_config = traefik, carpeta_config
         self.proceso = None
+        self.dominio = DOMINIO_DE_PRUEBA
         self.tmp = Path(tempfile.mkdtemp(prefix="gateway-prueba-"))
         self.log_acceso = self.tmp / "acceso.log"
         self.log_traefik = self.tmp / "traefik.log"
@@ -100,7 +103,7 @@ class Gateway:
             f"--entrypoints.web.address=127.0.0.1:{PUERTO}", f"--entrypoints.traefik.address=127.0.0.1:{PUERTO_PING}",
             f"--accesslog.filepath={self.log_acceso}", "--log.level=ERROR", *banderas,
         ]
-        entorno = {**os.environ, "DOMINIO_PUBLICO": DOMINIO_DE_PRUEBA}  # lo lee la plantilla del origen CORS de 00-middlewares.yml
+        entorno = {**os.environ, "DOMINIO_PUBLICO": self.dominio}  # lo lee la plantilla del origen CORS de 00-middlewares.yml
         self.proceso = subprocess.Popen(orden, stdout=self.log_traefik.open("w"), stderr=subprocess.STDOUT, env=entorno)
         for _ in range(60):
             try:
@@ -121,8 +124,10 @@ class Gateway:
             except subprocess.TimeoutExpired:
                 self.proceso.kill()
 
-    def reiniciar(self):  # reinicia también los contadores de los límites de tasa
+    def reiniciar(self, dominio=None):  # reinicia también los contadores de los límites de tasa
         self.detener()
+        if dominio:
+            self.dominio = dominio
         self.arrancar()
 
 
@@ -281,7 +286,8 @@ def grupo_almacenamiento():
     verificar("Host s3.localhost → SeaweedFS", estado == 200 and falsos.vistos("almacenamiento") and not falsos.vistos("frontend"))
     estado, cab, _ = pedir("OPTIONS", "/documentos/x", {
         "Origin": "http://localhost:5173", "Access-Control-Request-Method": "PUT"}, host="s3.localhost")
-    verificar("preflight desde la PWA permitido", cab.get("access-control-allow-origin") == "http://localhost:5173", str(cab))
+    verificar("con un dominio público real, una página en localhost NO es un origen permitido",
+              "access-control-allow-origin" not in cab, str(cab))
     estado, cab, _ = pedir("OPTIONS", "/documentos/x", {
         "Origin": "https://sitio-malo.example", "Access-Control-Request-Method": "PUT"}, host="s3.localhost")
     verificar("preflight desde otro origen NO permitido", "access-control-allow-origin" not in cab, str(cab))
@@ -299,6 +305,38 @@ def grupo_almacenamiento():
     verificar("sin ese host, la misma ruta va al frontend (no a SeaweedFS)", not falsos.vistos("almacenamiento"))
     estado, _, _ = pedir("GET", "/catalogo-imagenes/foto.jpg", host="mis3.localhost")
     verificar("un host que solo CONTIENE s3 (mis3.localhost) no va a SeaweedFS", not falsos.vistos("almacenamiento"))
+
+
+def grupo_almacenamiento_local(gateway):
+    grupo("SeaweedFS con DOMINIO_PUBLICO=localhost (desarrollo): la PWA de localhost sí puede subir")
+    gateway.reiniciar(dominio="localhost")
+    for origen in ("http://localhost:5173", "http://localhost"):
+        estado, cab, _ = pedir("OPTIONS", "/documentos/x", {
+            "Origin": origen, "Access-Control-Request-Method": "PUT"}, host="s3.localhost")
+        verificar(f"preflight desde {origen} permitido", cab.get("access-control-allow-origin") == origen, str(cab))
+    estado, cab, _ = pedir("OPTIONS", "/documentos/x", {
+        "Origin": "https://sitio-malo.example", "Access-Control-Request-Method": "PUT"}, host="s3.localhost")
+    verificar("otro origen sigue sin permiso", "access-control-allow-origin" not in cab, str(cab))
+    gateway.reiniciar(dominio=DOMINIO_DE_PRUEBA)
+
+
+def grupo_cuerpos():
+    grupo("Tope de 1 MB en los cuerpos JSON (después de validar el token en las rutas protegidas)")
+    ruta = "/api/catalog/servicios"  # POST protegido
+    falsos.limpiar()
+    estado, _, _ = pedir("POST", ruta, TURISTA, cuerpo=b"x" * (2 * 1024 * 1024))
+    verificar("2 MB con token → 413 y no llega al servicio", estado == 413 and recibido("catalog", ruta) is None, f"estado={estado}")
+    falsos.limpiar()
+    estado, _, _ = pedir("POST", ruta, TURISTA, cuerpo=b"x" * (512 * 1024))
+    r = recibido("catalog", ruta)
+    verificar("512 KB con token → llega al servicio", estado == 200 and r is not None and r["bytes"] == 512 * 1024, f"estado={estado}")
+    falsos.limpiar()
+    estado, _, _ = pedir("POST", ruta, cuerpo=b"x" * (2 * 1024 * 1024))
+    verificar("2 MB sin token → 401 (la sesión se valida antes que el tamaño)", estado == 401 and recibido("catalog", ruta) is None, f"estado={estado}")
+    for ruta in ("/api/iam/login", "/api/iam/register", "/api/catalog/servicios/abc/intencion-visita"):
+        falsos.limpiar()
+        estado, _, _ = pedir("POST", ruta, cuerpo=b"x" * (2 * 1024 * 1024))
+        verificar(f"POST {ruta} de 2 MB (pública) → 413", estado == 413 and recibido("iam" if "iam" in ruta else "catalog", ruta) is None, f"estado={estado}")
 
 
 def grupo_frontend():
@@ -333,6 +371,34 @@ def grupo_limites(gateway):
     verificar("refresh también tiene tope (11.º–12.º pueden dar 429)", 429 in refresh, str(refresh))
     estado = pedir("POST", "/api/iam/register", cuerpo=b"{}")[0]
     verificar("el registro no entra en esos cupos", estado == 200, str(estado))
+    gateway.reiniciar()
+    registro = [pedir("POST", "/api/iam/register", cuerpo=b"{}")[0] for _ in range(21)]
+    verificar("registro: ráfaga de 20 pasa y el 21.º da 429", registro[:20] == [200] * 20 and registro[20] == 429, str(registro))
+    estado = pedir("POST", "/api/iam/auth/restablecer", cuerpo=b"{}")[0]
+    verificar("restablecer comparte el cupo del registro (ya agotado) → 429", estado == 429, str(estado))
+    estado = pedir("GET", "/api/iam/.well-known/jwks.json")[0]
+    verificar("el JWKS no entra en el cupo del registro", estado == 200, str(estado))
+    estado = pedir("POST", "/api/iam/login", cuerpo=b"{}")[0]
+    verificar("el login conserva su propio cupo", estado == 200, str(estado))
+
+    gateway.reiniciar()
+    ruta = "/api/catalog/servicios/abc/intencion-visita"
+    visitas = [pedir("POST", ruta, cuerpo=b"{}")[0] for _ in range(12)]
+    verificar("intención de visita: ráfaga de 10 pasa y luego 429", visitas[:10] == [200] * 10 and 429 in visitas[10:], str(visitas))
+    estado = pedir("GET", "/api/catalog/buscar?texto=playa")[0]
+    verificar("las lecturas públicas no gastan el cupo de la intención de visita", estado == 200, str(estado))
+
+    gateway.reiniciar()
+    lecturas = [pedir("GET", "/api/catalog/buscar?texto=playa")[0] for _ in range(160)]
+    verificar("lecturas públicas: las primeras 100 pasan y la inundación recibe 429", lecturas[:100] == [200] * 100 and 429 in lecturas, f"{lecturas.count(200)} × 200, {lecturas.count(429)} × 429")
+    gateway.reiniciar()
+    for nombre, ruta in (("reservas", "/api/bookings/disponibilidad?servicio_id=a&desde=2026-01-01&hasta=2026-01-02"),
+                         ("reseñas", "/api/reviews/servicios/abc/resumen")):
+        lecturas = [pedir("GET", ruta)[0] for _ in range(160)]
+        verificar(f"lecturas públicas de {nombre}: también tienen tope (cada ruta lleva su contador)",
+                  lecturas[:100] == [200] * 100 and 429 in lecturas, f"{lecturas.count(200)} × 200, {lecturas.count(429)} × 429")
+    estado = pedir("GET", "/mis-reservas")[0]
+    verificar("el frontend no tiene límite (carga cientos de archivos)", estado == 200, str(estado))
 
 
 def operaciones_de_los_contratos():
@@ -404,6 +470,8 @@ def main():
         grupo_cabeceras()
         grupo_documentos()
         grupo_almacenamiento()
+        grupo_almacenamiento_local(gateway)
+        grupo_cuerpos()
         grupo_frontend()
         grupo_contratos()
         comprobar_log(gateway)

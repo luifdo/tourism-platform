@@ -24,12 +24,14 @@ http:
           - X-Usuario-Id
           - X-Usuario-Rol
 
-    # Ruta protegida = primero se borra lo que traiga el cliente y después se valida el token.
+    # Ruta protegida = primero se borra lo que traiga el cliente, después se valida el token y al final se limita el
+    # cuerpo: así un anónimo no hace que se almacene nada (mismo orden que en las cargas de documentos).
     protegida:
       chain:
         middlewares:
           - quitar-identidad
           - iam-forward-auth
+          - limite-cuerpo
 
     # Login y recuperación (UC32): 5 intentos por minuto por IP, en un solo cupo compartido.
     iam-rate-limit:
@@ -46,6 +48,38 @@ http:
         period: 1m
         burst: 10
 
+    # Registro y restablecimiento de contraseña: cada uno calcula un Argon2 (64 MiB, 4 a la vez por réplica). Sin tope, un
+    # anónimo satura esos cupos y el login responde 503 SERVICIO_OCUPADO. Cupo propio (no gasta el del login) y ráfaga
+    # holgada para que un aula entera detrás de una misma IP pueda registrarse.
+    iam-rate-limit-registro:
+      rateLimit:
+        average: 20
+        period: 1m
+        burst: 20
+
+    # Lecturas públicas del catálogo, el mapa, la disponibilidad y las reseñas: consultas caras (PostGIS, búsqueda de
+    # texto). 10 por segundo por IP con ráfaga de 100: no molesta a un usuario ni a un aula, y frena un barrido o una inundación
+    # desde una sola IP. Traefik crea una instancia por router: el catálogo, las reservas y las reseñas llevan cada uno su contador.
+    publico-rate-limit:
+      rateLimit:
+        average: 600
+        period: 1m
+        burst: 100
+
+    # POST anónimo que suma a la demanda que ve la Entidad (se deduplica por IP, servicio y día): una persona lo pulsa pocas
+    # veces; más que eso es inflar las cifras.
+    intencion-rate-limit:
+      rateLimit:
+        average: 30
+        period: 1m
+        burst: 10
+
+    # Ningún cuerpo JSON de la API pasa de 1 MB (las fotos van directo a SeaweedFS y los documentos tienen su propio
+    # tope de 6 MB, abajo). Sin esto, cualquiera hace que el servicio lea y valide cuerpos de cualquier tamaño.
+    limite-cuerpo:
+      buffering:
+        maxRequestBodyBytes: 1048576 # 1 MB
+
     # El IAM rechaza documentos de más de 5 MB; aquí se corta antes de que lleguen enteros al servicio.
     iam-limite-documentos:
       buffering:
@@ -59,12 +93,17 @@ http:
         stsSeconds: 86400
 
     # El origen de la PWA con HTTPS sale de DOMINIO_PUBLICO (plantilla del proveedor de archivos; en infra/.env).
+    # Los orígenes de desarrollo (http://localhost) solo se aceptan cuando DOMINIO_PUBLICO es localhost: en un servidor con
+    # dominio real, una página en localhost de otra persona no debe poder usar este S3. Las líneas de plantilla van como
+    # comentarios YAML para que el archivo siga siendo YAML válido; Traefik las procesa igual.
     almacenamiento-cors:
       headers:
         accessControlAllowOriginList:
+          - 'https://{{ env "DOMINIO_PUBLICO" }}'
+          # {{ if eq (env "DOMINIO_PUBLICO") "localhost" }}
           - http://localhost
           - http://localhost:5173
-          - 'https://{{ env "DOMINIO_PUBLICO" }}'
+          # {{ end }}
         accessControlAllowMethods: [GET, PUT, HEAD, OPTIONS]
         accessControlAllowHeaders: [Content-Type, Content-Length]
         accessControlMaxAge: 600

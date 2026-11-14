@@ -9,15 +9,21 @@ spec:
     - match: Path(`/api/iam/login`) || Path(`/api/iam/auth/recuperar`)
       kind: Rule
       priority: 100
-      middlewares: [{ name: quitar-identidad }, { name: iam-rate-limit }]
+      middlewares: [{ name: quitar-identidad }, { name: iam-rate-limit }, { name: limite-cuerpo }]
       services: [{ name: iam-service, port: 8001 }]
     # Sin ForwardAuth: el access token puede haber vencido.
     - match: Path(`/api/iam/auth/refresh`)
       kind: Rule
       priority: 100
-      middlewares: [{ name: quitar-identidad }, { name: iam-rate-limit-refresh }]
+      middlewares: [{ name: quitar-identidad }, { name: iam-rate-limit-refresh }, { name: limite-cuerpo }]
       services: [{ name: iam-service, port: 8001 }]
-    - match: Path(`/api/iam/register`) || Path(`/api/iam/auth/restablecer`) || Path(`/api/iam/.well-known/jwks.json`)
+    # Cada registro y cada restablecimiento calculan un Argon2: su propio cupo por IP.
+    - match: Path(`/api/iam/register`) || Path(`/api/iam/auth/restablecer`)
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }, { name: iam-rate-limit-registro }, { name: limite-cuerpo }]
+      services: [{ name: iam-service, port: 8001 }]
+    - match: Path(`/api/iam/.well-known/jwks.json`)
       kind: Rule
       priority: 100
       middlewares: [{ name: quitar-identidad }]

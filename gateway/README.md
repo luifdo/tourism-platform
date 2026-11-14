@@ -33,7 +33,18 @@ Todo lo demás pasa por ForwardAuth (`GET /api/iam/auth/verificar`). **Nunca se 
 
 * **`X-Usuario-Id` y `X-Usuario-Rol` se borran en todas las peticiones**, también en las públicas. En las protegidas solo llegan los que devuelve ForwardAuth (`authResponseHeaders`), sin `trustForwardHeader`. Los servicios confían en esos encabezados, así que esto es lo que impide hacerse pasar por otro usuario.
 * El orden de las rutas protegidas es *borrar identidad → validar token*. En `POST /api/iam/prestador/documentos` el tope de 6 MB va **después** de validar el token, para que un anónimo no haga almacenar un cuerpo grande (el overlay `e2e` del IAM los pone al revés; ambos son válidos).
-* **Límites de tasa por IP:** login y recuperar comparten 5 por minuto; `auth/refresh` tiene el suyo (20 por minuto, ráfaga de 10) para no gastar el cupo del login. El registro y el restablecimiento no tienen límite en el gateway (el IAM responde `SERVICIO_OCUPADO`).
+* **Límites de tasa por IP** (cada ruta lleva su propio contador; Traefik crea una instancia del middleware por router):
+
+  | Qué | Límite | Por qué |
+  |---|---|---|
+  | `login` y `auth/recuperar` | 5 por minuto, ráfaga de 5, un solo cupo | fuerza bruta de contraseñas |
+  | `auth/refresh` | 20 por minuto, ráfaga de 10 | es tráfico legítimo: no debe gastar el cupo del login |
+  | `register` y `auth/restablecer` | 20 por minuto, ráfaga de 20, un solo cupo | cada uno calcula un Argon2: sin tope, un anónimo satura los cupos del IAM y el login responde `SERVICIO_OCUPADO`. La ráfaga es holgada para que un aula detrás de una misma IP pueda registrarse |
+  | lecturas públicas (catálogo, mapa, disponibilidad, reseñas) | 600 por minuto (10 por segundo), ráfaga de 100 | consultas caras (PostGIS, búsqueda de texto): frena un barrido o una inundación desde una sola IP |
+  | `POST servicios/{id}/intencion-visita` | 30 por minuto, ráfaga de 10 | es anónimo y suma a la demanda que ve la Entidad |
+
+  Sin límite a propósito: `jwks.json` (lo piden los servicios) y el frontend (carga cientos de archivos, como los cuadros del héroe). Los límites son por IP: detrás de una red compartida (un aula) todos cuentan juntos, por eso las ráfagas son holgadas, salvo en el login, donde el cupo es deliberadamente corto.
+* **Tope de 1 MB en todo cuerpo JSON** (`limite-cuerpo`): se aplica a las rutas protegidas **después** de validar el token (un anónimo no hace que se lea nada) y a los POST públicos. Las fotos van directo a SeaweedFS y los documentos de verificación tienen su propio tope de 6 MB.
 * `X-Forwarded-For` del cliente no se acepta: Traefik pone el suyo.
 * **Registro de acceso en JSON sin la ruta ni la línea de la petición**, porque incluyen el query string y el enlace de `/restablecer-contrasena?token=...` lleva el token. Se conservan router, servicio, método y estado; para seguir una petición se usa el `correlation_id` de los servicios.
 

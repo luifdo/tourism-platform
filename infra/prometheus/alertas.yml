@@ -63,3 +63,79 @@ groups:
           descripcion: >-
             El SMTP rechazó o no respondió. Los usuarios reciben 202 y el correo nunca llega; pueden volver a
             pedirlo, pero fallará igual hasta que se corrija el SMTP (SMTP_* en iam-secretos e iam-config).
+
+  # Alertas de seguridad (A09 de OWASP 2025). La bitácora del IAM ya guarda cada intento; esto avisa de las ráfagas sin
+  # esperar a que alguien la abra. El instrumentador agrupa los estados (status="4xx", "5xx"): no separa 401 de 403, así que
+  # el detalle se ve en la bitácora (GET /api/iam/admin/bitacora). Los umbrales son para el tráfico de la demostración:
+  # ajustarlos con el uso real.
+  - name: seguridad
+    rules:
+      # Un refresh token ya usado volvió a presentarse: o se copió o el cliente reintentó mal. El IAM ya revocó la sesión
+      # (C-20); esto avisa de que pasó. Misma forma que RecuperacionSinCorreo: la serie nace con el primer caso.
+      - alert: RefreshReutilizado
+        expr: >-
+          sum(increase(iam_refresh_total{resultado="reutilizado"}[15m])) > 0
+          or
+          sum(
+            iam_refresh_total{resultado="reutilizado"}
+            unless
+            iam_refresh_total{resultado="reutilizado"} offset 15m
+          )
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "Se reutilizó un refresh token: posible robo de sesión"
+          descripcion: >-
+            El IAM revocó la sesión completa. Buscar REFRESH_REUTILIZADO en la bitácora (GET /api/iam/admin/bitacora)
+            para ver la cuenta y la IP, y avisar al usuario.
+
+      # El gateway ya corta a 5 intentos por minuto por IP (429, que no llega al IAM): lo que pasa de 50 fallos en 5 minutos
+      # viene de muchas IP a la vez.
+      - alert: LoginsFallidosEnRafaga
+        expr: >-
+          sum(increase(http_requests_total{job="iam-service",handler="/api/iam/login",status="4xx"}[5m])) > 50
+        labels:
+          severidad: advertencia
+        annotations:
+          resumen: "Más de 50 inicios de sesión fallidos en 5 minutos"
+          descripcion: >-
+            Posible relleno de credenciales desde varias IP (el límite del gateway es por IP). Ver LOGIN_FAIL en la
+            bitácora, agrupado por usuario_id: muchas cuentas distintas = barrido; una sola = ataque a esa cuenta.
+
+      # Cada petición protegida pasa por /auth/verificar. Un token vencido da un 401 y el cliente renueva, así que algo
+      # de ruido es normal; cientos en minutos son tokens falsos, vencidos o revocados que alguien sigue probando.
+      - alert: TokensRechazadosEnRafaga
+        expr: >-
+          sum(increase(http_requests_total{job="iam-service",handler="/api/iam/auth/verificar",status="4xx"}[5m])) > 100
+        labels:
+          severidad: advertencia
+        annotations:
+          resumen: "Más de 100 tokens rechazados en 5 minutos"
+          descripcion: >-
+            Ver ACCESS_DENIED en la bitácora para saber el motivo y de dónde vienen.
+
+      # 503 en login, registro o restablecimiento: SERVICIO_OCUPADO (los cupos de Argon2 están llenos) o Valkey caído.
+      # Si es lo primero, alguien está inundando esas rutas y los usuarios reales no pueden entrar.
+      - alert: IamSaturado
+        expr: >-
+          sum(increase(http_requests_total{job="iam-service",handler=~"/api/iam/(login|register|auth/restablecer)",status="5xx"}[5m])) > 10
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "El IAM responde 503 en login, registro o restablecimiento"
+          descripcion: >-
+            Mirar el cuerpo del error: SERVICIO_OCUPADO es saturación de Argon2 (revisar el gateway y los límites de
+            iam-rate-limit-registro); SERVICIO_NO_DISPONIBLE es Valkey o PostgreSQL caídos.
+
+      # Un servicio con más de 5 % de errores 5xx durante 10 minutos: falla propia o ataque que lo desborda.
+      - alert: ServicioConErrores5xx
+        expr: >-
+          sum by (job) (rate(http_requests_total{status="5xx"}[5m]))
+          / sum by (job) (rate(http_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severidad: advertencia
+        annotations:
+          resumen: "{{ $labels.job }} responde más de 5 % de errores 5xx"
+          descripcion: >-
+            Ver los registros del servicio con el correlation_id de una petición fallida.

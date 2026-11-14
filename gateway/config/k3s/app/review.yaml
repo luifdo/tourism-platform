@@ -10,7 +10,7 @@ spec:
         || PathRegexp(`^/api/reviews/resenas/[^/]+$`))
       kind: Rule
       priority: 100
-      middlewares: [{ name: quitar-identidad }]
+      middlewares: [{ name: quitar-identidad }, { name: publico-rate-limit }]
       services: [{ name: review-service, port: 8004 }]
     - match: PathPrefix(`/api/reviews`)
       kind: Rule

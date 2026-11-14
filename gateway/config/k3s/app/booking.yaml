@@ -8,7 +8,7 @@ spec:
     - match: Method(`GET`) && Path(`/api/bookings/disponibilidad`)
       kind: Rule
       priority: 100
-      middlewares: [{ name: quitar-identidad }]
+      middlewares: [{ name: quitar-identidad }, { name: publico-rate-limit }]
       services: [{ name: booking-service, port: 8003 }]
     - match: PathPrefix(`/api/bookings`)
       kind: Rule

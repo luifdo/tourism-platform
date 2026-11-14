@@ -24,18 +24,47 @@ spec:
     middlewares:
       - name: quitar-identidad
       - name: iam-forward-auth
+      - name: limite-cuerpo
 ---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata: { name: iam-rate-limit }
 spec:
-  rateLimit: { average: 5, period: 1m, burst: 5 }
+  rateLimit: { average: 15, period: 1m, burst: 15 }
 ---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata: { name: iam-rate-limit-refresh }
 spec:
   rateLimit: { average: 20, period: 1m, burst: 10 }
+---
+# Registro y restablecimiento: cada uno calcula un Argon2; su propio cupo por IP (equivale a compose/00-middlewares.yml).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: iam-rate-limit-registro }
+spec:
+  rateLimit: { average: 20, period: 1m, burst: 20 }
+---
+# Lecturas públicas (catálogo, mapa, disponibilidad, reseñas): 10 por segundo por IP, ráfaga de 100.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: publico-rate-limit }
+spec:
+  rateLimit: { average: 600, period: 1m, burst: 100 }
+---
+# POST anónimo de intención de visita: suma a la demanda que ve la Entidad.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: intencion-rate-limit }
+spec:
+  rateLimit: { average: 30, period: 1m, burst: 10 }
+---
+# Ningún cuerpo JSON de la API pasa de 1 MB (fotos directo a SeaweedFS; documentos con su propio tope de 6 MB).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: limite-cuerpo }
+spec:
+  buffering: { maxRequestBodyBytes: 1048576 } # 1 MB
 ---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware

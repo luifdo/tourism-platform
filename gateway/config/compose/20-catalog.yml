@@ -4,15 +4,21 @@ http:
   routers:
     catalog-publicas:
       rule: >-
-        (Method(`GET`) && (Path(`/api/catalog/servicios`)
+        Method(`GET`) && (Path(`/api/catalog/servicios`)
         || PathRegexp(`^/api/catalog/servicios/[^/]+$`)
         || Path(`/api/catalog/buscar`)
         || Path(`/api/catalog/zonas`)
         || Path(`/api/catalog/alertas`)
-        || PathPrefix(`/api/catalog/mapa/`)))
-        || (Method(`POST`) && PathRegexp(`^/api/catalog/servicios/[^/]+/intencion-visita$`))
+        || PathPrefix(`/api/catalog/mapa/`))
       priority: 100
-      middlewares: [quitar-identidad]
+      middlewares: [quitar-identidad, publico-rate-limit]
+      service: catalog-service
+
+    # Anónimo y suma a lo que ve la Entidad: cupo propio y más estricto.
+    catalog-intencion-visita:
+      rule: "Method(`POST`) && PathRegexp(`^/api/catalog/servicios/[^/]+/intencion-visita$`)"
+      priority: 100
+      middlewares: [quitar-identidad, intencion-rate-limit, limite-cuerpo]
       service: catalog-service
 
     catalog-protegidas:

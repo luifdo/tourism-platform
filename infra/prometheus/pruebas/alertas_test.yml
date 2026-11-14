@@ -82,3 +82,104 @@ tests:
       - eval_time: 29m
         alertname: RecuperacionSinCorreo
         exp_alerts: []
+
+  # Un refresh token reutilizado dispara aunque la serie sea nueva; los refresh normales no.
+  - interval: 1m
+    input_series:
+      - series: 'iam_refresh_total{job="iam-service",resultado="ok"}'
+        values: "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30"
+      - series: 'iam_refresh_total{job="iam-service",resultado="reutilizado"}'
+        values: "_ _ _ _ _ _ _ _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: RefreshReutilizado
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: RefreshReutilizado
+        exp_alerts:
+          - exp_labels: { severidad: critica }
+            exp_annotations:
+              resumen: "Se reutilizó un refresh token: posible robo de sesión"
+              descripcion: >-
+                El IAM revocó la sesión completa. Buscar REFRESH_REUTILIZADO en la bitácora (GET /api/iam/admin/bitacora)
+                para ver la cuenta y la IP, y avisar al usuario.
+      - eval_time: 29m
+        alertname: RefreshReutilizado
+        exp_alerts: []
+
+  # Ráfaga de logins fallidos (20 por minuto) y de tokens rechazados (50 por minuto) desde el minuto 1; antes, silencio.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="iam-service",handler="/api/iam/login",method="POST",status="4xx"}'
+        values: "0+20x12"
+      - series: 'http_requests_total{job="iam-service",handler="/api/iam/login",method="POST",status="2xx"}'
+        values: "0+200x12"
+      - series: 'http_requests_total{job="iam-service",handler="/api/iam/auth/verificar",method="GET",status="4xx"}'
+        values: "0+50x12"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LoginsFallidosEnRafaga
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LoginsFallidosEnRafaga
+        exp_alerts:
+          - exp_labels: { severidad: advertencia }
+            exp_annotations:
+              resumen: "Más de 50 inicios de sesión fallidos en 5 minutos"
+              descripcion: >-
+                Posible relleno de credenciales desde varias IP (el límite del gateway es por IP). Ver LOGIN_FAIL en la
+                bitácora, agrupado por usuario_id: muchas cuentas distintas = barrido; una sola = ataque a esa cuenta.
+      - eval_time: 1m
+        alertname: TokensRechazadosEnRafaga
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: TokensRechazadosEnRafaga
+        exp_alerts:
+          - exp_labels: { severidad: advertencia }
+            exp_annotations:
+              resumen: "Más de 100 tokens rechazados en 5 minutos"
+              descripcion: >-
+                Ver ACCESS_DENIED en la bitácora para saber el motivo y de dónde vienen.
+
+  # Solo los 503 del IAM en login/registro/restablecimiento disparan IamSaturado; los 503 de otra ruta o los 2xx, no.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="iam-service",handler="/api/iam/register",method="POST",status="5xx"}'
+        values: "0+5x12"
+      - series: 'http_requests_total{job="iam-service",handler="/api/iam/perfil",method="GET",status="5xx"}'
+        values: "0+50x12"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: IamSaturado
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: IamSaturado
+        exp_alerts:
+          - exp_labels: { severidad: critica }
+            exp_annotations:
+              resumen: "El IAM responde 503 en login, registro o restablecimiento"
+              descripcion: >-
+                Mirar el cuerpo del error: SERVICIO_OCUPADO es saturación de Argon2 (revisar el gateway y los límites de
+                iam-rate-limit-registro); SERVICIO_NO_DISPONIBLE es Valkey o PostgreSQL caídos.
+
+  # catalog con ~9 % de 5xx durante más de 10 minutos dispara; booking, sano, no.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="catalog-service",handler="/api/catalog/buscar",method="GET",status="2xx"}'
+        values: "0+100x25"
+      - series: 'http_requests_total{job="catalog-service",handler="/api/catalog/buscar",method="GET",status="5xx"}'
+        values: "0+10x25"
+      - series: 'http_requests_total{job="booking-service",handler="/api/bookings/disponibilidad",method="GET",status="2xx"}'
+        values: "0+100x25"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: ServicioConErrores5xx
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ServicioConErrores5xx
+        exp_alerts:
+          - exp_labels: { severidad: advertencia, job: catalog-service }
+            exp_annotations:
+              resumen: "catalog-service responde más de 5 % de errores 5xx"
+              descripcion: >-
+                Ver los registros del servicio con el correlation_id de una petición fallida.

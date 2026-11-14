@@ -6,16 +6,21 @@ spec:
   entryPoints: [web]
   routes:
     - match: >-
-        (Method(`GET`) && (Path(`/api/catalog/servicios`)
+        Method(`GET`) && (Path(`/api/catalog/servicios`)
         || PathRegexp(`^/api/catalog/servicios/[^/]+$`)
         || Path(`/api/catalog/buscar`)
         || Path(`/api/catalog/zonas`)
         || Path(`/api/catalog/alertas`)
-        || PathPrefix(`/api/catalog/mapa/`)))
-        || (Method(`POST`) && PathRegexp(`^/api/catalog/servicios/[^/]+/intencion-visita$`))
+        || PathPrefix(`/api/catalog/mapa/`))
       kind: Rule
       priority: 100
-      middlewares: [{ name: quitar-identidad }]
+      middlewares: [{ name: quitar-identidad }, { name: publico-rate-limit }]
+      services: [{ name: catalog-service, port: 8002 }]
+    # Anónimo y suma a lo que ve la Entidad: cupo propio y más estricto.
+    - match: Method(`POST`) && PathRegexp(`^/api/catalog/servicios/[^/]+/intencion-visita$`)
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }, { name: intencion-rate-limit }, { name: limite-cuerpo }]
       services: [{ name: catalog-service, port: 8002 }]
     - match: PathPrefix(`/api/catalog`)
       kind: Rule

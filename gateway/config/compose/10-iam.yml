@@ -5,18 +5,26 @@ http:
     iam-login:
       rule: "Path(`/api/iam/login`) || Path(`/api/iam/auth/recuperar`)"
       priority: 100
-      middlewares: [quitar-identidad, iam-rate-limit]
+      middlewares: [quitar-identidad, iam-rate-limit, limite-cuerpo]
       service: iam-service
 
     # Sin ForwardAuth: el access token puede haber vencido (para eso se pide uno nuevo).
     iam-refresh:
       rule: "Path(`/api/iam/auth/refresh`)"
       priority: 100
-      middlewares: [quitar-identidad, iam-rate-limit-refresh]
+      middlewares: [quitar-identidad, iam-rate-limit-refresh, limite-cuerpo]
       service: iam-service
 
-    iam-publicas:
-      rule: "Path(`/api/iam/register`) || Path(`/api/iam/auth/restablecer`) || Path(`/api/iam/.well-known/jwks.json`)"
+    # Cada registro y cada restablecimiento calculan un Argon2: su propio cupo por IP (ver iam-rate-limit-registro).
+    iam-registro:
+      rule: "Path(`/api/iam/register`) || Path(`/api/iam/auth/restablecer`)"
+      priority: 100
+      middlewares: [quitar-identidad, iam-rate-limit-registro, limite-cuerpo]
+      service: iam-service
+
+    # Las llaves públicas las piden los servicios y los clientes con frecuencia: sin límite de tasa.
+    iam-jwks:
+      rule: "Path(`/api/iam/.well-known/jwks.json`)"
       priority: 100
       middlewares: [quitar-identidad]
       service: iam-service

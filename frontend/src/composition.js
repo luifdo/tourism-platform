@@ -77,7 +77,7 @@ const assistantGateway = isMockBackend
 export const assistantUseCases = createAssistantUseCases({ gateway: assistantGateway, session: tokenSession })
 
 /* ---- Catálogo (catalog-service): rutas públicas, sin sesión ---- */
-const catalogGateway = isMockBackend ? createMockCatalogGateway() : createHttpCatalogGateway({ baseUrl: '/api/catalog', authFetchFn: authorizedFetch }) // solo las rutas del prestador llevan sesión
+const catalogGateway = isMockBackend ? createMockCatalogGateway({ verificarPrestador: () => mock.verificarPrestador() }) : createHttpCatalogGateway({ baseUrl: '/api/catalog', authFetchFn: authorizedFetch }) // solo las rutas del prestador llevan sesión
 
 export const catalogUseCases = createCatalogUseCases({ gateway: catalogGateway, cache: idbCatalogCache, clock })
 

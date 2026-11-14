@@ -1,7 +1,13 @@
 <script setup>
+import { nextTick, onMounted, watch } from 'vue'
 // Pestañas accesibles (role="tablist"): flechas, Inicio y Fin cambian de pestaña. El contenido lo pinta quien lo usa.
 const props = defineProps({ tabs: { type: Array, required: true }, modelValue: { type: String, required: true }, etiqueta: { type: String, default: '' }, prefijo: { type: String, default: 'tab' } })
 const emit = defineEmits(['update:modelValue'])
+
+// En pantallas angostas la fila de pestañas se desplaza: la activa (p. ej. «Mi negocio», al final) no puede quedar cortada fuera de la vista
+const verActiva = () => document.getElementById(`${props.prefijo}-${props.modelValue}`)?.scrollIntoView({ block: 'nearest', inline: 'center' })
+onMounted(() => nextTick(verActiva))
+watch(() => props.modelValue, () => nextTick(verActiva))
 
 function teclado(e, i) {
   const n = props.tabs.length

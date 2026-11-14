@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminUseCases } from '../../composition'
 import { useGestion } from '../../ui/useGestion'
@@ -11,6 +11,7 @@ import Paginacion from '../shared/Paginacion.vue'
  * UC33 · Bitácora de auditoría: de lo más reciente a lo más antiguo. Consultarla también queda registrado (AUDIT_VIEW).
  * Las fechas se piden en la hora del navegador y se mandan con zona horaria (el servicio rechaza fechas sin zona).
  */
+const props = defineProps({ usuarioId: { type: String, default: '' } }) // llega desde «Ver en la bitácora» de la lista de usuarios
 const { t, locale } = useI18n()
 const { mensaje, camposDe, sesionVencida } = useGestion()
 
@@ -33,7 +34,8 @@ async function cargar(pagina = 1) {
     error.value = camposDe(e).desde ?? mensaje(e, 'admin')
   } finally { cargando.value = false }
 }
-onMounted(() => cargar())
+onMounted(() => { if (props.usuarioId) f.usuario_id = props.usuarioId; cargar() })
+watch(() => props.usuarioId, (id) => { if (id) { f.usuario_id = id; cargar() } })
 const colorResultado = { Exito: 'bg-ok-bg text-ok', Denegado: 'bg-warn-bg text-warn', Error: 'bg-danger-bg text-danger' }
 const limpiar = () => { Object.assign(f, { accion: '', resultado: '', servicio_origen: '', usuario_id: '', desde: '', hasta: '' }); cargar() }
 </script>

@@ -123,6 +123,18 @@ export function createMockGestion({
   const docsDe = (id, soloVigentes = true) => cargar().docs.filter((d) => d.usuario_id === id && (!soloVigentes || d.vigente))
   const revision = (id, nombre) => ({ usuario_id: id, razon_social: razon(id, nombre), estado: estadoPrestador(docsDe(id)), documentos: docsDe(id, false).map((d) => vistaDoc(d, true)) })
 
+  // Como el catálogo real: un prestador cuyo RNT y RUT el Admin no aprobó recibe 403 PERFIL_INACTIVO en todo lo suyo (servicios, perfil
+  // comercial, métricas, reseñas). Las cuentas de ejemplo (@samaland.demo) cuentan como aprobadas para poder recorrer el panel.
+  const aprobado = async (u) => {
+    const base = await directorio.obtener(u.id)
+    return !!base?.email?.endsWith('@samaland.demo') || estadoPrestador(docsDe(u.id)) === 'aprobado'
+  }
+  const exigirActivo = async () => {
+    const u = exigir('Prestador')
+    if (!(await aprobado(u))) throw err('PERFIL_INACTIVO', 'Tu cuenta aún no está verificada.', 403, { data: { motivo: 'no_aprobado' } })
+    return u
+  }
+
   const account = {
     perfil: () => leer(async () => {
       const u = yo(); const base = await directorio.obtener(u.id)
@@ -135,6 +147,7 @@ export function createMockGestion({
       if (cambios.nombre) act.nombre_completo = cambios.nombre
       if (cambios.idioma) act.idioma = cambios.idioma
       const b = await directorio.actualizar(u.id, act)
+      auditar('PROFILE_UPDATE', u.id, { campos: Object.keys(act) })
       return { id: b.id, email: b.email, nombre: b.nombre_completo, rol: b.rol, idioma: b.idioma, razon_social: b.rol === 'Prestador' ? razon(b.id) : null, creado_en: b.creado_en }
     }),
     cambiarContrasena: ({ actual, nueva }) => mutar(async () => {
@@ -159,6 +172,7 @@ export function createMockGestion({
       if (tipo === 'RUT') db.razonSocial[u.id] = razonSocial
       const doc = { id: newId(), usuario_id: u.id, tipo_documento: tipo, estado: 'Pendiente', vigente: true, tipo_contenido: archivo.type, tamano_bytes: archivo.size, motivo_rechazo: null, fecha_subida: clock.now().toISOString(), revisado_en: null, revisado_por: null }
       db.docs.push(doc)
+      auditar('DOCUMENT_UPLOAD', u.id, { tipo })
       return vistaDoc(doc, false)
     }),
   }
@@ -320,8 +334,8 @@ export function createMockGestion({
     }),
     misResenas: ({ pagina, tamano }) => leer(() => { const u = exigir('Turista'); const l = cargar().resenas.filter((r) => r.turista_id === u.id); return { ...paginar(l, pagina, tamano), items: paginar(l, pagina, tamano).items.map((r) => propia(r)) } }),
     pendientes: () => leer(() => pendientesDe(exigir('Turista').id)),
-    resenasPrestador: ({ servicio_id, sin_respuesta, pagina, tamano }) => leer(() => {
-      exigir('Prestador')
+    resenasPrestador: ({ servicio_id, sin_respuesta, pagina, tamano }) => leer(async () => {
+      await exigirActivo()
       const mios = new Set(cargar().servicios.map((s) => s.id))
       const l = cargar().resenas.filter((r) => mios.has(r.servicio_id) && r.estado !== 'OCULTA' && (!servicio_id || r.servicio_id === servicio_id) && (!sin_respuesta || !r.respuesta))
       const p = paginar(l, pagina, tamano)
@@ -346,16 +360,16 @@ export function createMockGestion({
   const verOk = (s, version) => { if (version == null || version === '') throw err('FALTA_IF_MATCH', 'Falta la versión.', 428); if (Number(version) !== s.version) throw err(C.VERSION_DISTINTA, 'El servicio cambió.', 409, { data: { version_actual: s.version } }) }
   const zonaDe = (u) => { const z = ZONAS.reduce((m, x) => { const d = (x.centro.lat - u.lat) ** 2 + (x.centro.lon - u.lon) ** 2; return d < m.d ? { d, x } : m }, { d: Infinity }).x; return { codigo: z.codigo, nombre: z.nombre.es } }
   const offer = {
-    perfilComercial: () => leer(() => { const u = exigir('Prestador'); return { id: u.id, razon_social: razon(u.id, 'Guías de Taganga'), activo: true, ...cargar().comercial } }),
-    editarPerfilComercial: (cuerpo, version) => mutar(() => {
-      const u = exigir('Prestador')
+    perfilComercial: () => leer(async () => { const u = await exigirActivo(); return { id: u.id, razon_social: razon(u.id, 'Guías de Taganga'), activo: true, ...cargar().comercial } }),
+    editarPerfilComercial: (cuerpo, version) => mutar(async () => {
+      const u = await exigirActivo()
       if (Number(version) !== db.comercial.version) throw err(C.VERSION_DISTINTA, 'El perfil cambió.', 409)
       db.comercial = { ...db.comercial, ...cuerpo, version: db.comercial.version + 1 }
       return { id: u.id, razon_social: razon(u.id, 'Guías de Taganga'), activo: true, ...db.comercial }
     }),
-    servicios: ({ pagina, tamano }) => leer(() => { exigir('Prestador'); return paginar(catalogo(), pagina, tamano) }),
-    crearServicio: (cuerpo, clave) => mutar(() => {
-      exigir('Prestador')
+    servicios: ({ pagina, tamano }) => leer(async () => { await exigirActivo(); return paginar(catalogo(), pagina, tamano) }),
+    crearServicio: (cuerpo, clave) => mutar(async () => {
+      await exigirActivo()
       if (db.idem[clave]) return db.idem[clave]
       const bloque = cuerpo.tipo
       const s = { id: newId(), prestador_id: 'demo-prestador', ...cuerpo, categoria: categoriaDe(bloque), zona: zonaDe(cuerpo.ubicacion), activo: true, version: 1, creado_en: clock.now().toISOString(), actualizado_en: clock.now().toISOString() }
@@ -363,20 +377,20 @@ export function createMockGestion({
       db.idem[clave] = s
       return s
     }),
-    editarServicio: (id, cuerpo, version, clave) => mutar(() => {
-      exigir('Prestador')
+    editarServicio: (id, cuerpo, version, clave) => mutar(async () => {
+      await exigirActivo()
       if (db.idem[clave]) return db.idem[clave]
       const s = propio(id); verOk(s, version)
       Object.assign(s, cuerpo, { categoria: categoriaDe(cuerpo.tipo), zona: zonaDe(cuerpo.ubicacion), version: s.version + 1, actualizado_en: clock.now().toISOString() })
       db.idem[clave] = s
       return s
     }),
-    desactivarServicio: (id, version) => mutar(() => { exigir('Prestador'); const s = propio(id); verOk(s, version); Object.assign(s, { activo: false, version: s.version + 1 }); return s }),
-    reactivarServicio: (id, version) => mutar(() => { exigir('Prestador'); const s = propio(id); verOk(s, version); Object.assign(s, { activo: true, version: s.version + 1 }); return s }),
+    desactivarServicio: (id, version) => mutar(async () => { await exigirActivo(); const s = propio(id); verOk(s, version); Object.assign(s, { activo: false, version: s.version + 1 }); return s }),
+    reactivarServicio: (id, version) => mutar(async () => { await exigirActivo(); const s = propio(id); verOk(s, version); Object.assign(s, { activo: true, version: s.version + 1 }); return s }),
     // Sin almacenamiento real: la imagen queda como URL de datos (solo para la demostración; las fotos de la oferta se guardan en el navegador)
     subirImagen: (archivo) => leer(() => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(err(C.ERROR, 'No se pudo leer la imagen.')); fr.readAsDataURL(archivo) })),
-    metricas: ({ desde, hasta }) => leer(() => {
-      exigir('Prestador')
+    metricas: ({ desde, hasta }) => leer(async () => {
+      await exigirActivo()
       const n = dias(desde, hasta).length
       return {
         desde, hasta,
@@ -393,8 +407,8 @@ export function createMockGestion({
         }),
       }
     }),
-    geocodificar: (direccion) => leer(() => {
-      exigir('Prestador')
+    geocodificar: (direccion) => leer(async () => {
+      await exigirActivo()
       const t = direccion.toLowerCase()
       const hallados = ZONAS.filter((z) => t.includes(z.nombre.es.toLowerCase()) || t.includes(z.codigo))
       return (hallados.length ? hallados : [ZONAS[0]]).map((z) => ({ lat: z.centro.lat, lon: z.centro.lon, etiqueta: `${z.nombre.es}, Santa Marta, Magdalena, Colombia` }))
@@ -471,5 +485,8 @@ export function createMockGestion({
     }),
   }
 
-  return { account, admin, review, offer, entity }
+  /** Para el catálogo simulado (`serviciosPrestador`): lanza PERFIL_INACTIVO si el prestador de la sesión no está aprobado. */
+  const verificarPrestador = () => exigirActivo()
+
+  return { account, admin, review, offer, entity, verificarPrestador }
 }

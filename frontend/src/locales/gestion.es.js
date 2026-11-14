@@ -4,14 +4,14 @@ export default {
     loading: 'Cargando…', retry: 'Reintentar', empty: 'No hay nada que mostrar todavía.', save: 'Guardar', saving: 'Guardando…', sending: 'Enviando…', searching: 'Buscando…',
     cancel: 'Cancelar', confirm: 'Confirmar', edit: 'Editar', remove: 'Quitar', all: 'Todos', clear: 'Limpiar', apply: 'Aplicar', optional: 'opcional', days: 'días',
     from: 'Desde', to: 'Hasta', prev: 'Anterior', next: 'Siguiente', pagination: 'Paginación', pageOf: 'Página {n} de {total}',
-    unexpected: 'Algo salió mal en la página. Referencia: {ref}.', reload: 'Recargar', dismiss: 'Cerrar', reference: 'referencia',
+    noPermission: 'No tienes permiso para ver esa página.', unexpected: 'Algo salió mal en la página. Referencia: {ref}.', reload: 'Recargar', dismiss: 'Cerrar', reference: 'referencia',
     needOnline: 'Requiere conexión.',
     errors: {
       generic: 'No pudimos completar la acción. Inténtalo de nuevo.', SIN_CONEXION: 'No hay conexión. Inténtalo de nuevo cuando vuelva la red.',
       NO_AUTENTICADO: 'Tu sesión expiró. Inicia sesión de nuevo.', ROL_INSUFICIENTE: 'Tu rol no puede hacer esto.', NO_ENCONTRADO: 'No encontramos lo que buscas.',
       VALIDACION: 'Revisa los datos e inténtalo de nuevo.', SERVICIO_NO_DISPONIBLE: 'El servicio no está disponible por ahora. Inténtalo en un momento.',
       VERSION_DISTINTA: 'Otra persona cambió esto mientras lo editabas. Recargamos la versión actual: revisa y vuelve a intentar.',
-      VERSION_CONFLICTO: 'Otra persona cambió esto mientras lo editabas. Recarga y vuelve a intentar.', FALTA_IF_MATCH: 'Falta la versión: recarga la página.',
+      PERFIL_INACTIVO: 'Disponible cuando el Admin apruebe tu cuenta. Sube el RNT y el RUT en «Mi negocio».', VERSION_CONFLICTO: 'Otra persona cambió esto mientras lo editabas. Recarga y vuelve a intentar.', FALTA_IF_MATCH: 'Falta la versión: recarga la página.',
       TOKEN_INVALIDO: 'Tu sesión expiró. Inicia sesión de nuevo.',
     },
     fieldErrors: {
@@ -66,7 +66,7 @@ export default {
   negocio: {
     title: 'Mi negocio', lead: 'Lo que ven los turistas en cada una de tus fichas: cómo contactarte y tu política de cancelación.', businessName: 'Razón social', phone: 'Teléfono de contacto', address: 'Dirección',
     policyEs: 'Política de cancelación (español)', policyEn: 'Política de cancelación (inglés)', policyNote: 'Puede ser más flexible que la regla de la plataforma, nunca más estricta.', saved: 'Datos guardados.',
-    errors: { VERSION_DISTINTA: 'Otra persona cambió estos datos. Recargamos la versión actual: revisa y guarda de nuevo.', VALIDACION: 'Revisa los datos (teléfono hasta 30 caracteres, dirección hasta 200).' },
+    errors: { PERFIL_INACTIVO: 'Disponible cuando el Admin apruebe tu cuenta.', VERSION_DISTINTA: 'Otra persona cambió estos datos. Recargamos la versión actual: revisa y guarda de nuevo.', VALIDACION: 'Revisa los datos (teléfono hasta 30 caracteres, dirección hasta 200).' },
   },
 
   oferta: {
@@ -140,7 +140,7 @@ export default {
     approveConfirm: 'Se aprobarán el RNT y el RUT vigentes y el prestador podrá publicar ofertas.', rejectHelp: 'Elige qué documentos rechazas y escribe el motivo de cada uno.', rejectReason: 'Motivo del rechazo',
     approved: 'Aprobaste a «{nombre}».', rejected: 'Rechazaste los documentos de «{nombre}».',
     usersTitle: 'Usuarios y roles', usersLead: 'Busca cuentas, cambia su rol o actívalas y desactívalas. No puedes modificar tu propia cuenta.', search: 'Buscar', searchPh: 'Nombre o correo', searchGo: 'Buscar', activeOnly: 'Solo activas', inactiveOnly: 'Solo inactivas',
-    usersEmpty: 'No hay usuarios con esos filtros.', inactive: 'Inactiva', you: 'Tú', since: 'desde {fecha}', changeRole: 'Cambiar rol', newRole: 'Nuevo rol', deactivate: 'Desactivar', activate: 'Activar',
+    viewAudit: 'Ver en la bitácora', usersEmpty: 'No hay usuarios con esos filtros.', inactive: 'Inactiva', you: 'Tú', since: 'desde {fecha}', changeRole: 'Cambiar rol', newRole: 'Nuevo rol', deactivate: 'Desactivar', activate: 'Activar',
     deactivateConfirm: 'La persona no podrá ingresar y se cerrarán sus sesiones.', activateConfirm: 'La persona podrá volver a ingresar.', revokesSessions: 'Cambiar el rol o desactivar la cuenta cierra todas sus sesiones.', reasonOptional: 'Motivo (opcional)',
     roleChanged: 'Cambiaste el rol de {nombre}.', activated: 'Activaste la cuenta de {nombre}.', deactivated: 'Desactivaste la cuenta de {nombre}.',
     moderationTitle: 'Moderar reseñas', moderationLead: 'Reseñas reportadas. Primero las que están en revisión (ocultas a la espera de tu decisión), luego las publicadas con reportes.', moderationEmpty: 'No hay reseñas por moderar.',

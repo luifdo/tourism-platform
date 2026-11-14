@@ -31,12 +31,20 @@ watch(() => route.hash, (h) => { if (PESTANAS.includes(h.slice(1))) pestana.valu
 const servicios = ref([])
 const cargando = ref(true)
 const error = ref('')
+// El catálogo responde 403 PERFIL_INACTIVO mientras el Admin no apruebe el RNT y el RUT: no es una falla, es el paso 1 del alta
+const sinVerificar = ref(false)
+const hashPedido = PESTANAS.includes(route.hash.slice(1))
 
 async function cargar() {
-  cargando.value = true; error.value = ''
+  cargando.value = true; error.value = ''; sinVerificar.value = false
   try { servicios.value = await catalogUseCases.misServicios({ idioma: locale.value }) }
   catch (e) {
     if (e?.status === 401) { expirar(); router.replace({ name: 'login', query: { redirect: route.fullPath, expirada: '1' } }); return }
+    if (e?.code === 'PERFIL_INACTIVO') {
+      sinVerificar.value = true
+      if (!hashPedido) pestana.value = 'negocio' // lo único que puede hacer es subir el RNT y el RUT: se abre ahí
+      return
+    }
     error.value = t(e?.status === 403 ? 'provider.errors.ROL_NO_PERMITIDO' : 'provider.errors.generic')
   } finally { cargando.value = false }
 }
@@ -52,6 +60,11 @@ const pestanas = computed(() => PESTANAS.map((id) => ({ id, label: t(`provider.t
       <h1 class="mt-2 text-[clamp(30px,4vw,48px)] font-bold tracking-[-.02em] text-navy-darkest">{{ t('provider.title') }}</h1>
       <p class="mt-2 max-w-2xl text-muted">{{ t('provider.lead') }}</p>
 
+      <div v-if="sinVerificar" class="mt-6 rounded-card border border-warn/40 bg-warn-bg p-4 text-sm text-ink-control" role="status">
+        <p class="font-semibold text-navy-darkest">{{ t('provider.unverified.title') }}</p>
+        <p class="mt-1">{{ t('provider.unverified.body') }}</p>
+        <button v-if="pestana !== 'negocio'" type="button" class="mt-2 font-semibold text-navy underline" @click="pestana = 'negocio'">{{ t('provider.unverified.go') }}</button>
+      </div>
       <TabsNav v-model="pestana" :tabs="pestanas" :etiqueta="t('provider.title')" prefijo="tab" />
 
       <!-- Las pestañas que no dependen de la lista de servicios del calendario se pintan siempre: no esperan esa carga -->
@@ -63,6 +76,7 @@ const pestanas = computed(() => PESTANAS.map((id) => ({ id, label: t(`provider.t
       </div>
       <template v-else>
         <div v-if="cargando" class="mt-8 h-40 animate-pulse rounded-panel bg-white" role="status" :aria-label="t('provider.loading')" />
+        <p v-else-if="sinVerificar" class="mt-8 rounded-panel border border-sand/40 bg-sand/10 p-5 text-sm leading-relaxed text-ink-control">{{ t('provider.unverified.tab') }}</p>
         <div v-else-if="error" class="mt-8 rounded-panel border border-danger/30 bg-danger-bg p-6 text-danger" role="alert">
           <p>{{ error }}</p>
           <button type="button" class="mt-3 font-semibold underline" @click="cargar">{{ t('provider.retry') }}</button>

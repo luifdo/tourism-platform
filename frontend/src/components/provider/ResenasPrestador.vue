@@ -13,19 +13,23 @@ import Estrellas from '../reviews/Estrellas.vue'
 /* UC21 · Reseñas de mis servicios: responder públicamente (una respuesta por reseña; se puede reemplazar) y reportar las inapropiadas (UC39). */
 const props = defineProps({ servicios: { type: Array, default: () => [] } })
 const { t, locale } = useI18n()
-const { mensaje, camposDe, sesionVencida } = useGestion()
+const { mensaje, camposDe, sesionVencida, esPerfilInactivo } = useGestion()
 const enLinea = useOnline()
 
 const filtros = reactive({ servicio_id: '', sin_respuesta: false })
 const datos = ref({ items: [], pagina: 1, tamano: 10, total: 0 })
 const cargando = ref(true)
 const error = ref('')
+const aviso = ref('') // la cuenta aún no está aprobada: no es una falla
 const abierta = reactive({ id: '', modo: '', texto: '', motivo: 'OFENSIVO', detalle: '', enviando: false, error: '', ok: '' })
 
 async function cargar(pagina = 1) {
-  cargando.value = true; error.value = ''
+  cargando.value = true; error.value = ''; aviso.value = ''
   try { datos.value = await reviewUseCases.resenasPrestador({ pagina, tamano: 10, idioma: locale.value, servicio_id: filtros.servicio_id || undefined, sin_respuesta: filtros.sin_respuesta || undefined }) }
-  catch (e) { if (!sesionVencida(e)) error.value = mensaje(e, 'resenas') } finally { cargando.value = false }
+  catch (e) {
+    if (sesionVencida(e)) return
+    if (esPerfilInactivo(e)) aviso.value = mensaje(e, 'resenas'); else error.value = mensaje(e, 'resenas')
+  } finally { cargando.value = false }
 }
 onMounted(() => cargar())
 watch([() => filtros.servicio_id, () => filtros.sin_respuesta, locale], () => cargar())
@@ -62,7 +66,7 @@ async function enviar(r) {
     </div>
 
     <div class="mt-5">
-      <EstadoCarga :cargando="cargando" :error="error" :vacio="!datos.items.length" :texto-vacio="t('resenas.providerEmpty')" alto="h-40" @reintentar="cargar(datos.pagina)">
+      <EstadoCarga :cargando="cargando" :error="error" :aviso="aviso" :vacio="!datos.items.length" :texto-vacio="t('resenas.providerEmpty')" alto="h-40" @reintentar="cargar(datos.pagina)">
         <ul class="space-y-4">
           <li v-for="r in datos.items" :key="r.id" class="tarjeta">
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1">

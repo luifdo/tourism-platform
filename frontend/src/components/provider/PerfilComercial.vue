@@ -8,21 +8,25 @@ import EstadoCarga from '../shared/EstadoCarga.vue'
 
 /* Perfil comercial del prestador (catalog-service): teléfono, dirección y política de cancelación, que ven los turistas en cada ficha. */
 const { t } = useI18n()
-const { mensaje, camposDe, sesionVencida } = useGestion()
+const { mensaje, camposDe, sesionVencida, esPerfilInactivo } = useGestion()
 const enLinea = useOnline()
 
 const perfil = ref(null)
 const cargando = ref(true)
 const errorCarga = ref('')
+const aviso = ref('') // la cuenta aún no está aprobada: no es una falla
 const f = reactive({ telefono: '', direccion: '', politica: { es: '', en: '' }, guardando: false, ok: false, error: '', campos: {} })
 
 async function cargar() {
-  cargando.value = true; errorCarga.value = ''
+  cargando.value = true; errorCarga.value = ''; aviso.value = ''
   try {
     perfil.value = await offerUseCases.perfilComercial()
     f.telefono = perfil.value.telefono ?? ''; f.direccion = perfil.value.direccion ?? ''
     f.politica = { es: perfil.value.politica_cancelacion?.es ?? '', en: perfil.value.politica_cancelacion?.en ?? '' }
-  } catch (e) { if (!sesionVencida(e)) errorCarga.value = mensaje(e, 'negocio') } finally { cargando.value = false }
+  } catch (e) {
+    if (sesionVencida(e)) return
+    if (esPerfilInactivo(e)) aviso.value = mensaje(e, 'negocio'); else errorCarga.value = mensaje(e, 'negocio')
+  } finally { cargando.value = false }
 }
 onMounted(cargar)
 
@@ -44,7 +48,7 @@ async function guardar() {
     <h2 id="h-negocio" class="text-lg font-bold text-navy-darkest">{{ t('negocio.title') }}</h2>
     <p class="mt-1 max-w-2xl text-sm text-muted">{{ t('negocio.lead') }}</p>
     <div class="mt-4">
-      <EstadoCarga :cargando="cargando" :error="errorCarga" alto="h-48" @reintentar="cargar">
+      <EstadoCarga :cargando="cargando" :error="errorCarga" :aviso="aviso" alto="h-48" @reintentar="cargar">
         <form v-if="perfil" class="tarjeta space-y-4" @submit.prevent="guardar">
           <p class="text-sm text-ink-control"><span class="campo-etiqueta">{{ t('negocio.businessName') }}</span><span class="mt-1 block">{{ perfil.razon_social }}</span></p>
           <div class="grid gap-4 sm:grid-cols-2">

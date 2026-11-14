@@ -204,6 +204,11 @@ export default {
   },
   provider: {
     title: 'Panel del prestador', lead: 'Atiende las solicitudes, administra tus calendarios, tus servicios y sus reseñas, mira tus métricas y verifica tu cuenta.',
+    unverified: {
+      title: 'Tu cuenta aún no está verificada',
+      body: 'Sube el RNT y el RUT en «Mi negocio». Cuando el Admin los apruebe se habilitan tus servicios, solicitudes, calendario, reseñas y métricas.',
+      go: 'Ir a «Mi negocio»', tab: 'Disponible cuando el Admin apruebe tu cuenta. Sube el RNT y el RUT en «Mi negocio».',
+    },
     tabs: { solicitudes: 'Solicitudes', calendario: 'Calendario', servicios: 'Mis servicios', resenas: 'Reseñas', metricas: 'Métricas', negocio: 'Mi negocio' },
     loading: 'Cargando…', retry: 'Reintentar', working: 'Enviando…', cancel: 'Cancelar', more: 'Ver más', save: 'Guardar', edit: 'Editar', add: 'Agregar',
     offline: 'Sin conexión: confirmar, rechazar y editar el calendario necesitan internet.',

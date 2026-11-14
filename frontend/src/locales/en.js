@@ -204,6 +204,11 @@ export default {
   },
   provider: {
     title: 'Provider panel', lead: 'Handle requests, manage your calendars, services and their reviews, check your metrics and verify your account.',
+    unverified: {
+      title: 'Your account is not verified yet',
+      body: 'Upload your RNT and RUT in “My business”. Once the Admin approves them, your services, requests, calendar, reviews and metrics are enabled.',
+      go: 'Go to “My business”', tab: 'Available once the Admin approves your account. Upload your RNT and RUT in “My business”.',
+    },
     tabs: { solicitudes: 'Requests', calendario: 'Calendar', servicios: 'My services', resenas: 'Reviews', metricas: 'Metrics', negocio: 'My business' },
     loading: 'Loading…', retry: 'Try again', working: 'Sending…', cancel: 'Cancel', more: 'Show more', save: 'Save', edit: 'Edit', add: 'Add',
     offline: 'Offline: confirming, rejecting and editing the calendar need internet.',

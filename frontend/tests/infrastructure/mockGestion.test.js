@@ -141,6 +141,19 @@ describe('administración de cuentas', () => {
   })
 })
 
+describe('bitácora por usuario', () => {
+  it('filtrar por usuario_id muestra lo que esa persona hizo (subir documentos, editar su perfil)', async () => {
+    const { m, como } = entorno(); como('pre')
+    await m.account.subirDocumento({ tipo: 'RNT', archivo: archivo() })
+    await m.account.editarPerfil({ nombre: 'Nuevo Nombre' })
+    como('adm')
+    await m.admin.cambiarEstado('tur-1', { activo: false }) // un hecho de otra persona: no debe salir
+    const r = await m.admin.bitacora({ usuario_id: 'pre-1', pagina: 1, tamano: 20 })
+    expect(r.items.map((e) => e.accion).sort()).toEqual(['DOCUMENT_UPLOAD', 'PROFILE_UPDATE'])
+    expect(r.items.every((e) => e.usuario_id === 'pre-1')).toBe(true)
+  })
+})
+
 describe('perfil', () => {
   it('cambiar la contraseña exige la actual correcta; suprimir también', async () => {
     const { m, como } = entorno(); como('tur')
@@ -152,10 +165,32 @@ describe('perfil', () => {
   })
 })
 
+// Deja al prestador de la prueba verificado: sube el RNT y el RUT y el Admin los aprueba
+async function verificar(m, como) {
+  como('pre')
+  await m.account.subirDocumento({ tipo: 'RNT', archivo: archivo() }); await m.account.subirDocumento({ tipo: 'RUT', archivo: archivo(), razonSocial: 'Guías S.A.S.' })
+  como('adm'); await m.admin.aprobarPrestador('pre-1'); como('pre')
+}
+
 describe('oferta del prestador', () => {
+  it('sin aprobar, todo lo suyo responde 403 PERFIL_INACTIVO (como el catálogo real) y al aprobarlo se habilita', async () => {
+    const { m, como } = entorno(); como('pre')
+    for (const llamada of [() => m.offer.servicios({}), () => m.offer.perfilComercial(), () => m.offer.metricas({ desde: '2026-10-01', hasta: '2026-10-31' }), () => m.review.resenasPrestador({}), () => m.offer.crearServicio({ tipo: 'SENDERISMO', ubicacion: { lat: 11.2, lon: -74.2 } }, 'k')])
+      expect(await llamada().then(() => null, (e) => e)).toMatchObject({ code: 'PERFIL_INACTIVO', status: 403 })
+    await m.account.misDocumentos() // subir documentos sí se puede: es justo lo que necesita
+    await verificar(m, como)
+    expect((await m.offer.servicios({})).total).toBeGreaterThan(0)
+  })
+  it('las cuentas de ejemplo (@samaland.demo) cuentan como aprobadas', async () => {
+    const m = createMockGestion({
+      storage: memoria(), clock: reloj, delayMs: 0, usuario: () => ({ id: 'd', rol: 'Prestador' }),
+      directorio: { obtener: async () => ({ id: 'd', email: 'prestador@samaland.demo' }), todos: async () => [] },
+    })
+    expect((await m.offer.servicios({})).total).toBeGreaterThan(0)
+  })
   const cuerpo = { nombre: { es: 'Kayak' }, descripcion: { es: 'Remada' }, tipo: 'DEPORTE_ACUATICO', ubicacion: { lat: 11.26, lon: -74.19 }, tarifa_base: 80000, unidad_tarifa: 'POR_PERSONA', capacidad_aforo_diario: 8, atributos: {}, imagenes_urls: [] }
   it('crear es idempotente, editar exige la versión y desactivar la sube', async () => {
-    const { m, como } = entorno(); como('pre')
+    const { m, como } = entorno(); await verificar(m, como)
     const a = await m.offer.crearServicio(cuerpo, 'c1')
     expect((await m.offer.crearServicio(cuerpo, 'c1')).id).toBe(a.id)
     expect(a).toMatchObject({ categoria: 'AVENTURA', activo: true, version: 1, zona: { codigo: 'taganga' } })
@@ -166,7 +201,7 @@ describe('oferta del prestador', () => {
     expect(await m.offer.reactivarServicio(a.id, 3)).toMatchObject({ activo: true })
   })
   it('las métricas traen un registro por servicio y el perfil comercial usa la versión', async () => {
-    const { m, como } = entorno(); como('pre')
+    const { m, como } = entorno(); await verificar(m, como)
     const mt = await m.offer.metricas({ desde: '2026-10-01', hasta: '2026-10-31' })
     expect(mt.servicios.length).toBeGreaterThan(0)
     expect(mt.servicios[0].reservas).toHaveProperty('confirmadas')

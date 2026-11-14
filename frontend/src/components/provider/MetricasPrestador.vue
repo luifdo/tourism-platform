@@ -9,18 +9,20 @@ import Estrellas from '../reviews/Estrellas.vue'
 
 /* UC22 · Métricas de mi oferta: reservas por estado, personas atendidas, ocupación, calificación e intenciones de visita ("Cómo llegar"). */
 const { t, n } = useI18n()
-const { mensaje, camposDe, sesionVencida } = useGestion()
+const { mensaje, camposDe, sesionVencida, esPerfilInactivo } = useGestion()
 
 const rango = reactive(ultimosDias(new Date(), 30))
 const datos = ref(null)
 const cargando = ref(true)
 const error = ref('')
+const aviso = ref('') // la cuenta aún no está aprobada: no es una falla
 
 async function cargar() {
-  cargando.value = true; error.value = ''
+  cargando.value = true; error.value = ''; aviso.value = ''
   try { datos.value = await offerUseCases.metricas({ desde: rango.desde, hasta: rango.hasta }) }
   catch (e) {
     if (sesionVencida(e)) return
+    if (esPerfilInactivo(e)) { aviso.value = mensaje(e, 'metricas'); return }
     error.value = camposDe(e).desde ?? mensaje(e, 'metricas')
   } finally { cargando.value = false }
 }
@@ -46,7 +48,7 @@ const ESTADOS = ['solicitadas', 'confirmadas', 'finalizadas', 'canceladas', 'rec
     </form>
 
     <div class="mt-5">
-      <EstadoCarga :cargando="cargando" :error="error" :vacio="!!datos && !datos.servicios.length" :texto-vacio="t('metricas.empty')" alto="h-48" @reintentar="cargar">
+      <EstadoCarga :cargando="cargando" :error="error" :aviso="aviso" :vacio="!!datos && !datos.servicios.length" :texto-vacio="t('metricas.empty')" alto="h-48" @reintentar="cargar">
         <template v-if="datos">
           <dl class="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <div class="tarjeta !p-4"><dt class="campo-etiqueta">{{ t('metricas.bookings') }}</dt><dd class="mt-1 text-3xl font-bold tabular-nums text-navy-darkest">{{ totales.reservas }}</dd></div>

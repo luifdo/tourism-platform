@@ -14,24 +14,28 @@ import ServicioForm from './ServicioForm.vue'
  */
 const emit = defineEmits(['cambio'])
 const { t, locale } = useI18n()
-const { mensaje, sesionVencida } = useGestion()
+const { mensaje, sesionVencida, esPerfilInactivo } = useGestion()
 const enLinea = useOnline()
 
 const items = ref([])
 const zonas = ref([])
 const cargando = ref(true)
 const error = ref('')
+const sinVerificar = ref('') // la cuenta aún no está aprobada: no es una falla
 const modo = ref('lista') // 'lista' | 'nuevo' | 'editar'
 const editado = ref(null)
 const aviso = ref('')
 const accion = ref({ id: '', error: '' })
 
 async function cargar() {
-  cargando.value = true; error.value = ''
+  cargando.value = true; error.value = ''; sinVerificar.value = ''
   try {
     const [p, z] = await Promise.all([offerUseCases.servicios(), offerUseCases.zonas(locale.value).catch(() => [])])
     items.value = p.items; zonas.value = z
-  } catch (e) { if (!sesionVencida(e)) error.value = mensaje(e, 'oferta') } finally { cargando.value = false }
+  } catch (e) {
+    if (sesionVencida(e)) return
+    if (esPerfilInactivo(e)) sinVerificar.value = mensaje(e, 'oferta'); else error.value = mensaje(e, 'oferta')
+  } finally { cargando.value = false }
 }
 onMounted(cargar)
 
@@ -65,7 +69,7 @@ async function alternar(s) {
         <h2 id="h-servicios" class="text-lg font-bold text-navy-darkest">{{ t('oferta.title') }}</h2>
         <p class="mt-1 max-w-2xl text-sm text-muted">{{ t('oferta.lead') }}</p>
       </div>
-      <button type="button" class="btn-primario" @click="nuevo">+ {{ t('oferta.new') }}</button>
+      <button type="button" class="btn-primario" :disabled="!!sinVerificar" @click="nuevo">+ {{ t('oferta.new') }}</button>
     </div>
     <h2 v-else id="h-servicios" class="text-lg font-bold text-navy-darkest">{{ modo === 'nuevo' ? t('oferta.newTitle') : t('oferta.editTitle') }}</h2>
 
@@ -75,7 +79,7 @@ async function alternar(s) {
       <ServicioForm v-if="modo === 'nuevo'" :zonas="zonas" @guardado="guardado" @cancelar="modo = 'lista'" />
       <ServicioForm v-else-if="modo === 'editar'" :key="editado.id" :servicio="editado" :zonas="zonas" @guardado="guardado" @cancelar="modo = 'lista'" />
 
-      <EstadoCarga v-else :cargando="cargando" :error="error" :vacio="!items.length" :texto-vacio="t('oferta.empty')" alto="h-40" @reintentar="cargar">
+      <EstadoCarga v-else :cargando="cargando" :error="error" :aviso="sinVerificar" :vacio="!items.length" :texto-vacio="t('oferta.empty')" alto="h-40" @reintentar="cargar">
         <ul class="grid gap-4 sm:grid-cols-2">
           <li v-for="s in items" :key="s.id" class="tarjeta flex gap-4 !p-4" :class="{ 'opacity-75': !s.activo }">
             <div class="size-20 shrink-0 overflow-hidden rounded-xl" :style="{ background: degradado(s.categoria) }">

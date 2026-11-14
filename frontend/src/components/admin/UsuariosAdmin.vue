@@ -13,6 +13,7 @@ import Paginacion from '../shared/Paginacion.vue'
  * UC27 · Usuarios y roles: buscar, cambiar el rol y activar o desactivar cuentas. Cambiar el rol o desactivar revoca las
  * sesiones de la persona. No se puede modificar la propia cuenta ni dejar la plataforma sin administradores (lo valida el servicio).
  */
+const emit = defineEmits(['ver-bitacora'])
 const ROLES = ['Turista', 'Prestador', 'Entidad', 'Admin']
 const { t, locale } = useI18n()
 const { mensaje, sesionVencida } = useGestion()
@@ -70,9 +71,12 @@ async function confirmar(u) {
                 <p class="flex flex-wrap items-center gap-2"><span class="font-semibold text-navy-darkest">{{ u.nombre_completo }}</span><span class="pildora bg-teal/15 text-teal">{{ t(`perfil.roles.${u.rol}`) }}</span><span v-if="!u.activo" class="pildora bg-danger-bg text-danger">{{ t('admin.inactive') }}</span><span v-if="esYo(u)" class="pildora bg-sand/20 text-ink-control">{{ t('admin.you') }}</span></p>
                 <p class="mt-0.5 break-all font-mono text-xs text-muted">{{ u.email }} · {{ t('admin.since', { fecha: fmtMomento(u.creado_en, locale, false) }) }}</p>
               </div>
-              <div v-if="!esYo(u) && accion.id !== u.id" class="flex gap-4 text-sm">
-                <button type="button" class="font-medium text-navy underline hover:text-teal" :disabled="!enLinea" @click="abrir(u, 'rol')">{{ t('admin.changeRole') }}</button>
-                <button type="button" class="font-medium underline" :class="u.activo ? 'text-danger' : 'text-ok'" :disabled="!enLinea" @click="abrir(u, 'estado')">{{ u.activo ? t('admin.deactivate') : t('admin.activate') }}</button>
+              <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                <button type="button" class="font-medium text-navy underline hover:text-teal" :title="u.id" @click="emit('ver-bitacora', u.id)">{{ t('admin.viewAudit') }}</button>
+                <template v-if="!esYo(u) && accion.id !== u.id">
+                  <button type="button" class="font-medium text-navy underline hover:text-teal" :disabled="!enLinea" @click="abrir(u, 'rol')">{{ t('admin.changeRole') }}</button>
+                  <button type="button" class="font-medium underline" :class="u.activo ? 'text-danger' : 'text-ok'" :disabled="!enLinea" @click="abrir(u, 'estado')">{{ u.activo ? t('admin.deactivate') : t('admin.activate') }}</button>
+                </template>
               </div>
             </div>
             <form v-if="accion.id === u.id" class="mt-3 space-y-3 rounded-xl border border-sand/40 p-3" @submit.prevent="confirmar(u)">

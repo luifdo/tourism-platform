@@ -1,0 +1,56 @@
+# Plan §7.4: solo entra el tráfico previsto. La salida no se restringe, igual que en catalog (la
+# API y el worker hablan con PostgreSQL, Valkey, RabbitMQ, SeaweedFS y SMTP); ver C-54.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: iam-service-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: iam-service
+      app.kubernetes.io/component: api
+  policyTypes: ["Ingress"]
+  ingress:
+    - from: # Traefik (Ingress de k3s): rutas públicas y ForwardAuth
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: traefik }
+      ports: [{ port: 8001 }]
+    - from: # el worker de catalog pide el contacto (/internal/usuarios/{id}/contacto, C-15)
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: catalog-service
+              app.kubernetes.io/component: worker
+      ports: [{ port: 8001 }]
+    - from: # Prometheus lee /metrics
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 8001 }]
+    - from: # Blackbox consulta /health (RNF-01): el gateway solo enruta /api/iam (C-32, C-54).
+        # Etiqueta POR CONFIRMAR con Juan Francisco cuando exista el despliegue de observabilidad.
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: blackbox-exporter }
+      ports: [{ port: 8001 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: iam-worker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: iam-service
+      app.kubernetes.io/component: worker
+  policyTypes: ["Ingress"]
+  ingress:
+    - from: # nadie llama al worker; solo Prometheus lee sus métricas
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 9101 }]

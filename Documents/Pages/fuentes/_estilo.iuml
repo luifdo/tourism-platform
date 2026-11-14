@@ -1,0 +1,23 @@
+skinparam actorStyle awesome
+skinparam shadowing false
+skinparam defaultFontName "Helvetica"
+skinparam defaultFontSize 13
+skinparam usecase {
+  BackgroundColor #F1F1F1
+  BorderColor #555555
+}
+skinparam package {
+  BackgroundColor #FFFFFF
+  BorderColor #94A3B8
+  FontColor #334155
+  FontSize 12
+}
+skinparam rectangle {
+  BorderColor #333333
+  FontSize 15
+}
+skinparam note {
+  BackgroundColor #FFFFE0
+  BorderColor #999999
+}
+skinparam arrowColor #333333

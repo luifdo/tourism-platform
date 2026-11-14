@@ -1,0 +1,42 @@
+# Corre un script de k6 dentro del clúster (guía en k6/README.md). Los scripts llegan por el
+# ConfigMap `k6-scripts`; SCRIPT y PERFIL eligen qué correr.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6
+  namespace: turismo-app
+  labels:
+    app.kubernetes.io/name: k6
+    app.kubernetes.io/part-of: turismo-santa-marta
+spec:
+  backoffLimit: 0 # una prueba de carga no se reintenta sola
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: k6
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: k6
+          image: grafana/k6:1.0.0
+          args: ["run", "/scripts/$(SCRIPT)"]
+          env:
+            - name: SCRIPT
+              value: buscar.js # o escalado.js
+            - name: PERFIL
+              value: humo # o completo (en el clúster k3s, no en un PC)
+            # En k3s se mide entrando por Traefik, como un turista; en local, directo al Service:
+            # - name: BASE_URL
+            #   value: https://turismo-santamarta.gov.co/api/catalog
+          resources:
+            requests: { cpu: 200m, memory: 128Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: k6-scripts

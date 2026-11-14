@@ -1,0 +1,78 @@
+flowchart TB
+    classDef clientStyle fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e40af,font-weight:bold;
+    classDef gatewayStyle fill:#f5f3ff,stroke:#7c3aed,stroke-width:2px,color:#5b21b6,font-weight:bold;
+    classDef msCoreStyle fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d,font-weight:bold;
+    classDef msAiStyle fill:#fdf4ff,stroke:#c026d3,stroke-width:2px,color:#701a75,font-weight:bold;
+    classDef brokerStyle fill:#fffbeb,stroke:#d97706,stroke-width:2px,color:#78350f,font-weight:bold;
+    classDef dbStyle fill:#f8fafc,stroke:#475569,stroke-width:2px,color:#0f172a,font-weight:bold;
+    classDef cacheStyle fill:#fff1f2,stroke:#e11d48,stroke-width:2px,color:#881337,font-weight:bold;
+    classDef obsStyle fill:#f0f9ff,stroke:#0284c7,stroke-width:2px,color:#0c4a6e,font-weight:bold;
+    classDef extStyle fill:#f1f5f9,stroke:#64748b,stroke-width:2px,stroke-dasharray:4 3,color:#0f172a,font-weight:bold;
+
+    Clients["Clientes web y móviles: PWA<br>(Turistas, Prestadores, Entidades, Admins)"]:::clientStyle
+    APIGW["API Gateway: Traefik (Ingress de k3s)<br>(TLS, ForwardAuth JWT, Rate Limiting, CORS)"]:::gatewayStyle
+
+    Clients ==>|"HTTPS / REST"| APIGW
+
+    subgraph K8s["Clúster Kubernetes (k3s)"]
+        direction TB
+
+        subgraph Microservicios["Microservicios: Python + FastAPI en contenedores (5 módulos)"]
+            direction LR
+            MS1["Módulo 1: Seguridad & IAM<br>(Auth, RBAC, Auditoría, RNT/RUT)"]:::msCoreStyle
+            MS2["Módulo 2: Catálogo, GIS & Inteligencia de Destino<br>(Atractivos, OSM, Analítica, Aforos, Alertas, Correos)"]:::msCoreStyle
+            MS3["Módulo 3: Reservas & Cupos<br>(Cupos, Solicitudes, Estados)"]:::msCoreStyle
+            MS4["Módulo 4: Reseñas & Moderación<br>(Opiniones, Respuestas, Reportes)"]:::msCoreStyle
+            MS5["Módulo 5: IA & Recomendación<br>(Chatbot, Herramientas, Gemini)"]:::msAiStyle
+        end
+
+        Broker["RabbitMQ: exchange turismo.eventos<br>(Pub/Sub, colas por consumidor, DLQ)"]:::brokerStyle
+
+        subgraph Persistencia["Persistencia políglota (Database-per-Service)"]
+            direction LR
+            DB1[("PostgreSQL<br>iam_db")]:::dbStyle
+            DB2[("PostgreSQL + PostGIS<br>catalog_db")]:::dbStyle
+            DB3[("PostgreSQL<br>booking_db")]:::dbStyle
+            DB4[("PostgreSQL JSONB<br>review_db")]:::dbStyle
+            DB5[("PostgreSQL<br>recommendation_db")]:::dbStyle
+            Cache[("Valkey<br>caché, sesiones de chat,<br>idempotencia")]:::cacheStyle
+            Obj[("SeaweedFS (S3)<br>documentos RNT / RUT")]:::dbStyle
+        end
+
+        Obs["Observabilidad<br>(Prometheus, Grafana, Loki)"]:::obsStyle
+    end
+
+    APIGW -->|"/api/iam"| MS1
+    APIGW -->|"/api/catalog"| MS2
+    APIGW -->|"/api/bookings"| MS3
+    APIGW -->|"/api/reviews"| MS4
+    APIGW -->|"/api/recommendations"| MS5
+    APIGW -.->|"ForwardAuth: valida JWT"| MS1
+
+    MS1 -.->|"prestador.aprobado"| Broker
+    MS3 -.->|"reserva.solicitada / confirmada /<br>rechazada / cancelada / finalizada"| Broker
+    MS4 -.->|"resena.publicada"| Broker
+    MS2 & MS3 & MS4 -.->|"auditoria.registrada"| Broker
+    Broker -.->|"reservas, reseñas y prestadores:<br>correos y métricas"| MS2
+    Broker -.->|"reserva.finalizada:<br>habilita la reseña"| MS4
+    Broker -.->|"auditoria.registrada:<br>bitácora inmutable"| MS1
+
+    MS1 --- DB1
+    MS1 --- Obj
+    MS2 --- DB2
+    MS3 --- DB3
+    MS4 --- DB4
+    MS5 --- DB5
+    MS1 & MS2 & MS3 & MS5 --- Cache
+
+    Obs -.->|"/metrics y sondas /health"| Microservicios
+
+    Gemini["Google Gemini API<br>(servicio externo de IA)"]:::extStyle
+    SMTP["Servidor SMTP<br>(Postal o institucional)"]:::extStyle
+    OSM["OpenStreetMap / Nominatim"]:::extStyle
+
+    MS5 ==>|"HTTPS / API"| Gemini
+    MS5 -->|"Herramientas de solo lectura"| MS2 & MS3 & MS4
+    MS1 & MS2 -->|"Correo transaccional"| SMTP
+    MS2 -->|"Geocodificación"| OSM
+    Clients -.->|"Teselas del mapa"| OSM

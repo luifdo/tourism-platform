@@ -1,0 +1,29 @@
+# Plan §7.4: solo entra el tráfico previsto. Agrega un bloque `from` por cada servicio que te
+# llame por REST (por ejemplo, catalog llama a iam para el contacto de los usuarios).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: service-template
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: service-template
+      app.kubernetes.io/component: api
+  policyTypes: ["Ingress"]
+  ingress:
+    - from: # Traefik (Ingress de k3s)
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: traefik }
+      ports: [{ port: 8000 }]
+    - from: # Prometheus lee /metrics
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 8000 }]
+    # - from: # otro servicio que llama a este
+    #     - podSelector:
+    #         matchLabels: { app.kubernetes.io/name: <servicio-que-llama> }
+    #   ports: [{ port: 8000 }]

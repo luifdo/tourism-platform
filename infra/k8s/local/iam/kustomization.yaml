@@ -1,0 +1,27 @@
+# iam-service en el k3s local (infra/k8s/k3s_local.py). Usa la base sin tocarla: una réplica, sin HPA,
+# imagen construida en local y correo a Mailpit. No es para producción.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: turismo-app
+
+resources:
+  - ../../../../services/iam-service/k8s/base
+
+images:
+  - name: ghcr.io/luifdo/iam-service
+    newName: iam-service
+    newTag: local # importada al clúster con `k3s_local.py imagenes`; con una etiqueta fija no se descarga
+
+components:
+  - ../comun
+
+patches:
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata: { name: iam-config }
+      data:
+        SMTP_HOST: mailpit.turismo-datos.svc
+        SMTP_PORT: "1025"
+        SMTP_TLS: "false"
+        S3_ENDPOINT_PUBLICO: http://s3.localhost:8081

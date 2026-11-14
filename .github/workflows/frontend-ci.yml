@@ -1,0 +1,62 @@
+name: Frontend · CI
+
+# Comprueba la PWA (frontend/) en cada PR, antes de fusionar. No publica nada: Pages lo hace
+# frontend-pages.yml al integrar en develop.
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Pruebas (dominio, casos de uso, adaptadores y regla de dependencias)
+        run: npm test
+
+      # Los dos modos que se publican: el del servidor (gateway real) y el de Pages (simulado).
+      - name: Compilar contra el gateway real
+        run: npm run build
+        env:
+          VITE_BASE: /
+          VITE_API_MOCK: "false"
+
+      # Las cuentas de ejemplo son del simulador: en el paquete que se sirve en producción no deben aparecer.
+      - name: El paquete real no trae cuentas de ejemplo
+        run: |
+          if grep -rqE 'samaland\.demo|maria\.perez@|Tayrona2026' dist; then
+            echo "El paquete compilado contra el gateway real contiene cuentas de ejemplo del simulador." >&2
+            exit 1
+          fi
+
+      - name: Compilar con el simulador (Pages)
+        run: npm run build
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+          VITE_API_MOCK: "true"
+
+      # La imagen que levanta infra/docker-compose.yml (servicio frontend). Solo si existe el Dockerfile.
+      - name: Construir la imagen de producción
+        if: hashFiles('frontend/Dockerfile') != ''
+        run: docker build -t frontend:ci .

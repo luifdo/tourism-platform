@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block contenido %}
+  <p>Hello {{ nombre }},</p>
+  <p>{% if cancelada_por_turista %}The tourist <strong>cancelled their booking</strong>.{% else %}The provider <strong>cancelled your booking</strong>.{% endif %}</p>
+  <table role="presentation" cellpadding="6" cellspacing="0" style="margin:16px 0;border-collapse:collapse;">
+    <tr><td style="color:#6b7478;">Service</td><td><strong>{{ servicio }}</strong></td></tr>
+    <tr><td style="color:#6b7478;">Date</td><td>{{ fecha }}</td></tr>
+    <tr><td style="color:#6b7478;">People</td><td>{{ personas }}</td></tr>
+  </table>
+  {% if motivo %}<p><strong>Reason:</strong> {{ motivo }}</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,105 @@
+# B1-B2: suite completa contra iam-verificacion, con cobertura de app/domain y app/application
+# Fecha: 2026-10-30 11:34 UTC
+# Commit: 3c09bac + cambios locales del bloque 8
+# Comando: uv run pytest -q -p no:cacheprovider --cov=app/domain --cov=app/application --cov-report=term-missing
+
+........................................................................ [ 13%]
+........................................................................ [ 27%]
+........................................................................ [ 40%]
+........................................................................ [ 54%]
+........................................................................ [ 68%]
+........................................................................ [ 81%]
+........................................................................ [ 95%]
+.......................                                                  [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  <repo>\services\iam-service\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/integration/test_consumidor_auditoria.py::test_guarda_el_evento_y_el_duplicado_no
+  <repo>\services\iam-service\.venv\Lib\site-packages\testcontainers\community\rabbitmq\__init__.py:58: DeprecationWarning: The @wait_container_is_ready decorator is deprecated and will be removed in a future version. Use structured wait strategies instead: container.waiting_for(HttpWaitStrategy(8080).for_status_code(200)) or container.waiting_for(LogMessageWaitStrategy('ready'))
+    @wait_container_is_ready(pika.exceptions.IncompatibleProtocolError, pika.exceptions.AMQPConnectionError)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.12.9-final-0 _______________
+
+Name                                                       Stmts   Miss  Cover   Missing
+----------------------------------------------------------------------------------------
+app\application\__init__.py                                    0      0   100%
+app\application\correo_recuperacion.py                        12      0   100%
+app\application\dto\__init__.py                                0      0   100%
+app\application\dto\estado_outbox.py                           6      0   100%
+app\application\dto\evento_pendiente.py                       11      0   100%
+app\application\dto\resultado_consumo.py                       4      0   100%
+app\application\dto\resultado_lote.py                          5      0   100%
+app\application\ports\__init__.py                              0      0   100%
+app\application\ports\outbox_pendiente.py                      9      0   100%
+app\application\ports\publicador_eventos.py                    4      0   100%
+app\application\use_cases\__init__.py                          0      0   100%
+app\application\use_cases\abrir_documento.py                  31      0   100%
+app\application\use_cases\aprobar_prestador.py                33      0   100%
+app\application\use_cases\cambiar_contrasena.py               46      2    96%   48, 60
+app\application\use_cases\cambiar_estado_usuario.py           10      0   100%
+app\application\use_cases\cambiar_rol_usuario.py              11      0   100%
+app\application\use_cases\cambio_administrativo.py            70      0   100%
+app\application\use_cases\cerrar_sesion.py                    16      0   100%
+app\application\use_cases\check_health.py                     15      0   100%
+app\application\use_cases\consultar_bitacora.py               28      0   100%
+app\application\use_cases\consultar_verificacion.py           25      2    92%   35, 37
+app\application\use_cases\editar_perfil.py                    45      0   100%
+app\application\use_cases\iniciar_sesion.py                   60      0   100%
+app\application\use_cases\listar_prestadores.py                8      0   100%
+app\application\use_cases\listar_usuarios.py                   8      0   100%
+app\application\use_cases\obtener_contacto_usuario.py         13      0   100%
+app\application\use_cases\obtener_perfil.py                   13      0   100%
+app\application\use_cases\obtener_usuario.py                  13      0   100%
+app\application\use_cases\publicar_eventos_pendientes.py      13      0   100%
+app\application\use_cases\rechazar_prestador.py               33      0   100%
+app\application\use_cases\registrar_acceso_denegado.py        16      0   100%
+app\application\use_cases\registrar_evento_auditoria.py       25      0   100%
+app\application\use_cases\registrar_usuario.py                50      0   100%
+app\application\use_cases\restablecer_contrasena.py           40      0   100%
+app\application\use_cases\revision_prestador.py               26      0   100%
+app\application\use_cases\revocacion_doble.py                 18      0   100%
+app\application\use_cases\solicitar_recuperacion.py           76      5    93%   91-93, 121-123
+app\application\use_cases\subir_documento.py                  75      1    99%   91
+app\application\use_cases\suprimir_datos.py                   55      0   100%
+app\application\use_cases\verificar_acceso.py                 20      0   100%
+app\domain\__init__.py                                         0      0   100%
+app\domain\entities\__init__.py                                0      0   100%
+app\domain\entities\documento_verificacion.py                 35      0   100%
+app\domain\entities\usuario.py                                27      0   100%
+app\domain\events\__init__.py                                  0      0   100%
+app\domain\events\evento_dominio.py                           10      1    90%   19
+app\domain\events\prestador_aprobado.py                       15      0   100%
+app\domain\events\prestador_suspendido.py                     11      0   100%
+app\domain\exceptions.py                                     103      0   100%
+app\domain\ports\__init__.py                                   0      0   100%
+app\domain\ports\almacen_documentos.py                         7      0   100%
+app\domain\ports\auditoria_repository.py                       8      0   100%
+app\domain\ports\documento_repository.py                      12      0   100%
+app\domain\ports\enviador_correo.py                           10      0   100%
+app\domain\ports\health.py                                     3      0   100%
+app\domain\ports\outbox.py                                     3      0   100%
+app\domain\ports\password_hasher.py                            5      0   100%
+app\domain\ports\revocacion_tokens.py                          6      0   100%
+app\domain\ports\token_service.py                              5      0   100%
+app\domain\ports\tokens_recuperacion.py                       11      0   100%
+app\domain\ports\unit_of_work.py                              11      0   100%
+app\domain\ports\usuario_repository.py                        13      0   100%
+app\domain\value_objects\__init__.py                           0      0   100%
+app\domain\value_objects\archivo_documento.py                 30      0   100%
+app\domain\value_objects\email.py                             17      1    94%   28
+app\domain\value_objects\enums.py                             20      0   100%
+app\domain\value_objects\evento_auditoria.py                  16      0   100%
+app\domain\value_objects\filtro_bitacora.py                   33      0   100%
+app\domain\value_objects\filtro_prestadores.py                23      0   100%
+app\domain\value_objects\filtro_usuarios.py                   16      0   100%
+app\domain\value_objects\password.py                          16      0   100%
+app\domain\value_objects\token.py                             16      0   100%
+----------------------------------------------------------------------------------------
+TOTAL                                                       1425     12    99%
+527 passed, 2 warnings in 195.37s (0:03:15)
+
+# Codigo de salida: 0

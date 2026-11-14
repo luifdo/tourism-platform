@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 560" width="100%" height="100%">
+<defs>
+  <style>
+    .title { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 17px; font-weight: bold; fill: #0f172a; }
+    .sub { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 12px; fill: #64748b; }
+    .nt { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: bold; }
+    .nd { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 11px; font-style: italic; }
+    .gt { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: bold; fill: #334155; }
+    .lbl { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 10.5px; fill: #475569; }
+    .lev { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 10.5px; fill: #b45309; }
+    .ci { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 12px; }
+    .ct { font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif; font-size: 14px; font-weight: bold; }
+    .wire { stroke: #64748b; stroke-width: 1.6; fill: none; }
+    .wdb { stroke: #047857; stroke-width: 1.4; fill: none; }
+    .wev { stroke: #d97706; stroke-width: 1.6; stroke-dasharray: 5,3; fill: none; }
+    .wai { stroke: #c026d3; stroke-width: 1.6; stroke-dasharray: 3,3; fill: none; }
+    .wext { stroke: #334155; stroke-width: 2.2; fill: none; }
+  </style>
+  <filter id="sh" x="-5%" y="-5%" width="110%" height="120%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-opacity="0.12"/></filter>
+  <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
+  <marker id="ae" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker>
+  <marker id="ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c026d3"/></marker>
+  <marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker>
+</defs>
+<rect width="1060" height="560" fill="#ffffff"/>
+<text x="530" y="30" class="title" text-anchor="middle">Responsabilidades por Módulo</text>
+<text x="530" y="50" class="sub" text-anchor="middle">5 microservicios (Bounded Contexts) y capa transversal</text>
+<rect x="25" y="70" width="320" height="215" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.8" filter="url(#sh)"/>
+<path d="M 25 106 L 25 78 Q 25 70 33 70 L 337 70 Q 345 70 345 78 L 345 106 Z" fill="#dbeafe"/>
+<text x="41" y="94" class="ct" text-anchor="start" fill="#1e3a8a">Módulo 1: Seguridad &amp; IAM</text>
+<text x="43" y="132" class="ci" text-anchor="start" fill="#1e3a8a">• Autenticación JWT (RS256) y ForwardAuth</text>
+<text x="43" y="157" class="ci" text-anchor="start" fill="#1e3a8a">• Control de acceso RBAC (4 roles)</text>
+<text x="43" y="182" class="ci" text-anchor="start" fill="#1e3a8a">• Verificación de prestadores (UC37, UC28)</text>
+<text x="43" y="207" class="ci" text-anchor="start" fill="#1e3a8a">• Bitácora de auditoría inmutable (RNF-10)</text>
+<text x="43" y="232" class="ci" text-anchor="start" fill="#1e3a8a">• Consume auditoria.registrada de todos</text>
+<rect x="370" y="70" width="320" height="215" rx="8" fill="#f0fdf4" stroke="#10b981" stroke-width="1.8" filter="url(#sh)"/>
+<path d="M 370 106 L 370 78 Q 370 70 378 70 L 682 70 Q 690 70 690 78 L 690 106 Z" fill="#d1fae5"/>
+<text x="386" y="94" class="ct" text-anchor="start" fill="#064e3b">Módulo 2: Catálogo, GIS &amp; Destino</text>
+<text x="388" y="132" class="ci" text-anchor="start" fill="#064e3b">• Atractivos, eventos y perfiles de prestador</text>
+<text x="388" y="157" class="ci" text-anchor="start" fill="#064e3b">• Búsqueda espacial con PostGIS y OSM</text>
+<text x="388" y="182" class="ci" text-anchor="start" fill="#064e3b">• Demanda y capacidad de carga por eventos</text>
+<text x="388" y="207" class="ci" text-anchor="start" fill="#064e3b">• Tableros, reportes CSV/PDF y alertas</text>
+<text x="388" y="232" class="ci" text-anchor="start" fill="#064e3b">• Correos transaccionales (UC36)</text>
+<text x="388" y="257" class="ci" text-anchor="start" fill="#064e3b">• Consultas para el chatbot</text>
+<rect x="715" y="70" width="320" height="215" rx="8" fill="#fefce8" stroke="#eab308" stroke-width="1.8" filter="url(#sh)"/>
+<path d="M 715 106 L 715 78 Q 715 70 723 70 L 1027 70 Q 1035 70 1035 78 L 1035 106 Z" fill="#fef9c3"/>
+<text x="731" y="94" class="ct" text-anchor="start" fill="#713f12">Módulo 3: Reservas &amp; Cupos</text>
+<text x="733" y="132" class="ci" text-anchor="start" fill="#713f12">• Cupos con bloqueo transaccional</text>
+<text x="733" y="157" class="ci" text-anchor="start" fill="#713f12">• Máquina de estados de la reserva</text>
+<text x="733" y="182" class="ci" text-anchor="start" fill="#713f12">• Expiración de solicitudes sin respuesta (48 h)</text>
+<text x="733" y="207" class="ci" text-anchor="start" fill="#713f12">• Historial del turista y panel del prestador</text>
+<text x="733" y="232" class="ci" text-anchor="start" fill="#713f12">• Consultas para el chatbot</text>
+<rect x="25" y="310" width="320" height="215" rx="8" fill="#fff1f2" stroke="#f43f5e" stroke-width="1.8" filter="url(#sh)"/>
+<path d="M 25 346 L 25 318 Q 25 310 33 310 L 337 310 Q 345 310 345 318 L 345 346 Z" fill="#ffe4e6"/>
+<text x="41" y="334" class="ct" text-anchor="start" fill="#881337">Módulo 4: Reseñas &amp; Moderación</text>
+<text x="43" y="372" class="ci" text-anchor="start" fill="#881337">• Reseñas de reservas finalizadas (RF-14)</text>
+<text x="43" y="397" class="ci" text-anchor="start" fill="#881337">• Respuestas públicas de prestadores</text>
+<text x="43" y="422" class="ci" text-anchor="start" fill="#881337">• Reporte de contenido inapropiado (UC39)</text>
+<text x="43" y="447" class="ci" text-anchor="start" fill="#881337">• Moderación manual del Administrador (UC29)</text>
+<text x="43" y="472" class="ci" text-anchor="start" fill="#881337">• Consultas para el chatbot</text>
+<rect x="370" y="310" width="320" height="215" rx="8" fill="#fdf4ff" stroke="#d946ef" stroke-width="1.8" filter="url(#sh)"/>
+<path d="M 370 346 L 370 318 Q 370 310 378 310 L 682 310 Q 690 310 690 318 L 690 346 Z" fill="#fae8ff"/>
+<text x="386" y="334" class="ct" text-anchor="start" fill="#701a75">Módulo 5: IA &amp; Recomendación</text>
+<text x="388" y="372" class="ci" text-anchor="start" fill="#701a75">• Chatbot en español e inglés</text>
+<text x="388" y="397" class="ci" text-anchor="start" fill="#701a75">• Integración con Gemini (API externa)</text>
+<text x="388" y="422" class="ci" text-anchor="start" fill="#701a75">• Herramientas de solo lectura</text>
+<text x="388" y="447" class="ci" text-anchor="start" fill="#701a75">• Respuestas justificadas (RNF-08)</text>
+<text x="388" y="472" class="ci" text-anchor="start" fill="#701a75">• Registro en RECOMENDACION_LOG</text>
+<rect x="715" y="310" width="320" height="215" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.8" filter="url(#sh)"/>
+<path d="M 715 346 L 715 318 Q 715 310 723 310 L 1027 310 Q 1035 310 1035 318 L 1035 346 Z" fill="#e2e8f0"/>
+<text x="731" y="334" class="ct" text-anchor="start" fill="#0f172a">Capa transversal</text>
+<text x="733" y="372" class="ci" text-anchor="start" fill="#0f172a">• PWA con caché sin conexión (RNF-13)</text>
+<text x="733" y="397" class="ci" text-anchor="start" fill="#0f172a">• Traefik: TLS, ForwardAuth, rate limiting</text>
+<text x="733" y="422" class="ci" text-anchor="start" fill="#0f172a">• RabbitMQ: eventos y auditoría</text>
+<text x="733" y="447" class="ci" text-anchor="start" fill="#0f172a">• Prometheus, Grafana y Loki</text>
+<text x="733" y="472" class="ci" text-anchor="start" fill="#0f172a">• Despliegue en k3s con HPA (RNF-12)</text>
+</svg>

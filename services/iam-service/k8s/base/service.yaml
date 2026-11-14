@@ -1,0 +1,16 @@
+# Destino de Traefik (/api/iam y ForwardAuth) y del worker de catalog. Solo la API, no el worker.
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam-service
+  labels:
+    app.kubernetes.io/name: iam-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: iam-service
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8001
+      targetPort: http

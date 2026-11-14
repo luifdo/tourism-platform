@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block contenido %}
+  <p>Hola, {{ nombre }}:</p>
+  <p>El turista <strong>modificó su solicitud</strong>. Antes: {{ fecha_anterior }}, {{ personas_anterior }} persona(s). Ahora:</p>
+  <table role="presentation" cellpadding="6" cellspacing="0" style="margin:16px 0;border-collapse:collapse;">
+    <tr><td style="color:#6b7478;">Servicio</td><td><strong>{{ servicio }}</strong></td></tr>
+    <tr><td style="color:#6b7478;">Fecha</td><td>{{ fecha }}</td></tr>
+    <tr><td style="color:#6b7478;">Personas</td><td>{{ personas }}</td></tr>
+  </table>
+  {% if expira %}<p>El plazo para responder se reinició: tienes hasta el <strong>{{ expira }}</strong>.</p>{% endif %}
+{% endblock %}

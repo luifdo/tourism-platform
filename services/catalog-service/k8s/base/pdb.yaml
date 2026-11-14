@@ -1,0 +1,11 @@
+# Al drenar un nodo (mantenimiento, Escenario B) siempre queda al menos una réplica atendiendo.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: catalog-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+      app.kubernetes.io/component: api

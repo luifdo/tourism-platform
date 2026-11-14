@@ -1,0 +1,16 @@
+# Destino de Traefik (/api/catalog) y de recommendation-service. Solo la API, no el worker.
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+  labels:
+    app.kubernetes.io/name: catalog-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8002
+      targetPort: http

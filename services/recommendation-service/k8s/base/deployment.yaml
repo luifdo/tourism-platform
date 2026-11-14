@@ -1,0 +1,117 @@
+# API de recommendation-service. El initContainer crea la tabla recomendacion_log si falta (el
+# servicio no tiene migraciones). No hay datos personales en las conversaciones: solo se guarda qué se recomendó y por qué.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommendation-service
+  labels:
+    app.kubernetes.io/name: recommendation-service
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0 # siempre hay réplicas atendiendo (ESC-05, RNF-12)
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recommendation-service
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: recommendation-service # catalog, booking y review dejan pasar solo esta etiqueta
+        app.kubernetes.io/component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8005"
+        prometheus.io/path: /metrics
+    spec:
+      automountServiceAccountToken: false
+      # Una consulta al chat puede tardar hasta 45 s: al apagar un pod se le da tiempo de terminar la que tenga en curso.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: esquema
+          image: postgres:16-alpine # solo para psql
+          command:
+            - sh
+            - -c
+            # DB_URL trae el prefijo de SQLAlchemy (postgresql+psycopg://); psql no lo entiende.
+            - |
+              url=$(printf %s "$DB_URL" | sed 's|^postgresql+psycopg:|postgresql:|')
+              psql "$url" --single-transaction -v ON_ERROR_STOP=1 -f /sql/preparar-esquema.sql
+          env:
+            - name: HOME
+              value: /tmp
+          envFrom:
+            - secretRef: { name: recommendation-secretos }
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: esquema, mountPath: /sql, readOnly: true }
+      containers:
+        - name: api
+          image: recommendation-service
+          ports:
+            - name: http
+              containerPort: 8005
+          envFrom:
+            - configMapRef:
+                name: recommendation-service-config
+            - secretRef:
+                name: recommendation-secretos
+          resources:
+            requests: { cpu: 100m, memory: 256Mi } # el HPA calcula su porcentaje sobre este request
+            limits: { cpu: 1000m, memory: 512Mi }
+          # Mientras la app arranca no corren las otras sondas.
+          startupProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 2
+            failureThreshold: 45
+            timeoutSeconds: 2
+          # /health responde 503 si PostgreSQL o Valkey no contestan: la réplica sale del enrutamiento.
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 2
+            failureThreshold: 2
+            timeoutSeconds: 2
+          # Liveness sin depender de la base: si cae, las réplicas salen del tráfico pero no se reinician.
+          livenessProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              # Da tiempo a que Traefik saque el pod de sus endpoints antes de apagarlo.
+              exec:
+                command: ["python", "-c", "import time; time.sleep(5)"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: esquema
+          configMap:
+            name: recommendation-service-esquema

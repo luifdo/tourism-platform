@@ -1,0 +1,53 @@
+@startuml CasosDeUso_Prestador
+!include _estilo.iuml
+left to right direction
+title Casos de uso — Prestador de Servicios Turísticos
+
+actor "Prestador de\nServicios Turísticos" as Prest
+actor "Servidor de correo\n(SMTP)" as SMTP
+
+rectangle "Plataforma Digital de Turismo — Santa Marta" {
+  package "Módulo 1: Seguridad & IAM" {
+    usecase "UC1 · Registrarse (18+)" as UC1
+    usecase "UC4 · Gestionar perfil" as UC4
+    usecase "UC37 · Cargar documentos\nRNT / RUT" as UC37
+    usecase "UC28 · Aprobar / rechazar\nprestador" as UC28 #DDDDDD
+  }
+  package "Módulo 2: Catálogo, GIS & Destino" {
+    usecase "UC17 · Registrar oferta turística" as UC17
+    usecase "UC18 · Editar servicio" as UC18
+    usecase "UC22 · Ver métricas de su oferta" as UC22
+    usecase "UC36 · Enviar correo\nde confirmación" as UC36 #DDDDDD
+  }
+  package "Módulo 3: Reservas & Cupos" {
+    usecase "UC19 · Gestionar cupos y tarifas" as UC19
+    usecase "UC20 · Confirmar / rechazar\nsolicitudes" as UC20
+  }
+  package "Módulo 4: Reseñas & Moderación" {
+    usecase "UC21 · Responder reseñas" as UC21
+    usecase "UC39 · Reportar reseña" as UC39
+  }
+}
+
+Prest --> UC1
+Prest --> UC4
+Prest --> UC37
+Prest --> UC17
+Prest --> UC18
+Prest --> UC22
+Prest --> UC19
+Prest --> UC20
+Prest --> UC21
+Prest --> UC39
+
+UC20 ..> UC36 : <<trigger>>
+UC36 --> SMTP
+
+note "Precondición de UC17: prestador aprobado\npor el Administrador (UC28), que a su vez\nrequiere los documentos de UC37." as N1
+UC17 .. N1
+N1 .. UC28
+note bottom of UC21
+  Precondición: existe una
+  reseña publicada (UC15).
+end note
+@enduml

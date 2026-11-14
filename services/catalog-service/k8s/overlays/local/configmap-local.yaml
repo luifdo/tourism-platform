@@ -1,0 +1,15 @@
+# Cambia solo lo que es distinto en local: correos a Mailpit e imágenes en el SeaweedFS del
+# compose. iam todavía no corre en el clúster; sin él, el worker reintenta los correos.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-config
+data:
+  ENVIRONMENT: development
+  IAM_URL_INTERNA: http://host.docker.internal:8001
+  SMTP_HOST: host.docker.internal
+  SMTP_PORT: "1025"
+  SMTP_STARTTLS: "false"
+  SMTP_REMITENTE: Turismo Santa Marta <no-responder@turismo-santamarta.local>
+  S3_ENDPOINT_PUBLICO: http://localhost:8333
+  IMAGENES_URL_PUBLICA: http://localhost:8333/catalogo-imagenes

@@ -1,0 +1,5 @@
+# En el clúster real lo crea infra/k8s/; en local lo crea este overlay.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: turismo-app

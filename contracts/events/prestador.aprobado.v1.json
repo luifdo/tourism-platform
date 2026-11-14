@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prestador.aprobado.v1.json",
+  "title": "prestador.aprobado (payload v1)",
+  "description": "Publicado por iam-service cuando el administrador aprueba los documentos RNT y RUT de un prestador (UC28, UC37). Habilita la publicación de ofertas en catalog-service.",
+  "type": "object",
+  "required": ["prestador_id", "usuario_id", "aprobado_por"],
+  "properties": {
+    "prestador_id": { "type": "string", "format": "uuid" },
+    "usuario_id": { "type": "string", "format": "uuid" },
+    "razon_social": { "type": "string" },
+    "aprobado_por": { "type": "string", "format": "uuid", "description": "Administrador que aprobó." }
+  },
+  "additionalProperties": false
+}

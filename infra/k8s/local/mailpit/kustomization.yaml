@@ -1,0 +1,8 @@
+# Mailpit en turismo-datos: el SMTP del k3s local. Los correos (códigos de verificación, avisos)
+# se leen en su API (puerto 8025) con `kubectl port-forward`. No es para producción.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: turismo-datos
+
+resources:
+  - mailpit.yaml

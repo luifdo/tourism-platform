@@ -1,0 +1,61 @@
+[project]
+name = "iam-service"
+version = "0.1.0"
+description = "Módulo 1: Seguridad & IAM de la Plataforma Digital de Turismo — Santa Marta"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "alembic>=1.14",
+    "asyncpg>=0.30",
+    "argon2-cffi>=23.1",
+    "pyjwt[crypto]>=2.10",
+    "prometheus-fastapi-instrumentator>=7.0",
+    "email-validator>=2.3.0",
+    "redis>=8.1.0",
+    "aio-pika>=9.4",
+    "prometheus-client>=0.21",
+    "boto3>=1.43.122",
+    "python-multipart>=0.0.32",
+    "aiosmtplib>=3.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "pytest>=8.3",
+    "httpx>=0.28",
+    "pytest-asyncio>=1.4.0",
+    "testcontainers[rabbitmq]>=4.8",
+    "jsonschema>=4.26.0",
+    "pyyaml>=6.0.3",
+    "pytest-cov>=7.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "ASYNC"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "db: pruebas de integración contra PostgreSQL (se omiten si la base no responde)",
+    "valkey: pruebas de integración contra Valkey (se omiten si no responde)",
+    "rabbitmq: pruebas de integración contra RabbitMQ efímero con testcontainers (se omiten sin Docker)",
+    "s3: pruebas de integración contra el SeaweedFS de docker-compose.dev.yml (se omiten si no responde)",
+]

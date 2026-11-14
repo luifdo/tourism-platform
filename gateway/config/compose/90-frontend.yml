@@ -1,0 +1,17 @@
+# Frontend (PWA) · cualquier ruta que no sea de un servicio. Prioridad mínima.
+# El contenedor `frontend` del compose (frontend/Dockerfile) sirve la PWA compilada con Nginx en el 8080.
+# Para desarrollar con recarga en caliente no se usa esta ruta: se abre http://localhost:5173 (npm run dev),
+# cuyo proxy de Vite manda /api a este gateway.
+http:
+  routers:
+    frontend:
+      rule: "PathPrefix(`/`)"
+      priority: 1
+      middlewares: [quitar-identidad]
+      service: frontend
+
+  services:
+    frontend:
+      loadBalancer:
+        servers:
+          - url: http://frontend:8080

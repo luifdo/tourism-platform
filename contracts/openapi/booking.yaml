@@ -1,0 +1,690 @@
+openapi: 3.0.3
+info:
+  title: booking-service — Reservas & Cupos (Módulo 3)
+  version: 1.0.0
+  description: |
+    Contrato REST acordado del booking-service. Reglas de negocio en la
+    Guía Técnica del Módulo 3 (Documents/Pages/Guia_Tecnica_Modulo_Reservas.md).
+
+    * Las rutas protegidas pasan por ForwardAuth en Traefik, que agrega
+      `X-Usuario-Id` y `X-Usuario-Rol`; el servicio verifica el rol.
+    * Horas en `America/Bogota`. La unidad de reserva es el día.
+    * Errores con el formato común `Error`.
+  contact:
+    name: Andres Felipe Gamero Sanchez (@AFGamero)
+servers:
+  - url: /api/bookings
+    description: Prefijo en el API Gateway (Traefik)
+
+tags:
+  - name: Disponibilidad
+  - name: Turista
+  - name: Prestador
+  - name: Operación
+
+security:
+  - bearerAuth: []
+
+paths:
+  /disponibilidad:
+    get:
+      tags: [Disponibilidad]
+      summary: Consultar disponibilidad de un servicio (UC10)
+      description: Ruta pública. La usa la tool `consultar_disponibilidad` del Módulo 5.
+      operationId: consultarDisponibilidad
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ServicioIdQuery'
+        - $ref: '#/components/parameters/Desde'
+        - $ref: '#/components/parameters/Hasta'
+      responses:
+        '200':
+          description: Días con cupos habilitados en el rango (máximo 62 días).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [servicio_id, dias]
+                properties:
+                  servicio_id: { type: string, format: uuid }
+                  dias:
+                    type: array
+                    items: { $ref: '#/components/schemas/DiaDisponible' }
+        '400': { $ref: '#/components/responses/Validacion' }
+
+  /:
+    post:
+      tags: [Turista]
+      summary: Solicitar una reserva (UC11)
+      operationId: solicitarReserva
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SolicitudReservaCrear' }
+      responses:
+        '201':
+          description: Reserva creada en estado `SOLICITADA`.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reserva' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: |
+            `CUPOS_INSUFICIENTES`, `DIA_NO_DISPONIBLE` (el día no está abierto o el servicio
+            está inactivo en el catálogo) o `RESERVA_DUPLICADA` (ya existe una reserva activa
+            del turista para ese servicio y fecha).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /mis-reservas:
+    get:
+      tags: [Turista]
+      summary: Historial de reservas del turista autenticado (UC13)
+      description: La usa la tool `historial_turista` del Módulo 5. El turista sale de `X-Usuario-Id`.
+      operationId: misReservas
+      parameters:
+        - $ref: '#/components/parameters/EstadoQuery'
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Reservas del turista, más recientes primero.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaReservas' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /{reserva_id}:
+    parameters:
+      - $ref: '#/components/parameters/ReservaId'
+    get:
+      tags: [Turista, Prestador]
+      summary: Detalle de una reserva
+      description: Solo para el turista que la solicitó o el prestador dueño del servicio.
+      operationId: obtenerReserva
+      responses:
+        '200':
+          description: Reserva.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reserva' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+    patch:
+      tags: [Turista]
+      summary: Modificar una reserva (UC12)
+      description: |
+        Solo en estado `SOLICITADA`. Cambia la fecha, el número de personas o ambos,
+        ajusta los cupos en una transacción y reinicia el plazo de respuesta.
+        Publica `reserva.modificada`.
+      operationId: modificarReserva
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SolicitudReservaModificar' }
+      responses:
+        '200':
+          description: Reserva modificada.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reserva' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /{reserva_id}/cancelar:
+    parameters:
+      - $ref: '#/components/parameters/ReservaId'
+    post:
+      tags: [Turista, Prestador]
+      summary: Cancelar una reserva (UC12)
+      description: |
+        * Turista: `SOLICITADA` siempre; `CONFIRMADA` hasta las 23:59 del día anterior a la reserva.
+        * Prestador dueño: `CONFIRMADA` siempre, con motivo obligatorio.
+        Libera los cupos y publica `reserva.cancelada`.
+      operationId: cancelarReserva
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Motivo' }
+      responses:
+        '200':
+          description: Reserva en estado `CANCELADA`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reserva' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: '`TRANSICION_INVALIDA` o `FUERA_DE_PLAZO`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /{reserva_id}/confirmar:
+    parameters:
+      - $ref: '#/components/parameters/ReservaId'
+    post:
+      tags: [Prestador]
+      summary: Confirmar una solicitud (UC20)
+      description: Solo el prestador dueño, en estado `SOLICITADA` y antes de `expira_en`. Publica `reserva.confirmada`.
+      operationId: confirmarReserva
+      responses:
+        '200':
+          description: Reserva en estado `CONFIRMADA`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reserva' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  /{reserva_id}/rechazar:
+    parameters:
+      - $ref: '#/components/parameters/ReservaId'
+    post:
+      tags: [Prestador]
+      summary: Rechazar una solicitud (UC20)
+      description: Solo el prestador dueño, en estado `SOLICITADA`. Libera los cupos y publica `reserva.rechazada`.
+      operationId: rechazarReserva
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MotivoObligatorio' }
+      responses:
+        '200':
+          description: Reserva en estado `RECHAZADA`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reserva' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  /prestador/solicitudes:
+    get:
+      tags: [Prestador]
+      summary: Panel de solicitudes del prestador (UC20)
+      description: Por defecto devuelve las `SOLICITADA` ordenadas por `expira_en` ascendente.
+      operationId: solicitudesPrestador
+      parameters:
+        - $ref: '#/components/parameters/EstadoQuery'
+        - name: servicio_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: desde
+          in: query
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Reservas de los servicios del prestador.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaReservas' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /prestador/calendario/{servicio_id}:
+    parameters:
+      - $ref: '#/components/parameters/ServicioIdPath'
+    get:
+      tags: [Prestador]
+      summary: Calendario de cupos y tarifas de un servicio (UC19)
+      operationId: calendarioServicio
+      parameters:
+        - $ref: '#/components/parameters/Desde'
+        - $ref: '#/components/parameters/Hasta'
+      responses:
+        '200':
+          description: Días del rango con totales, disponibles, reservados, tarifa y versión.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [servicio_id, dias]
+                properties:
+                  servicio_id: { type: string, format: uuid }
+                  dias:
+                    type: array
+                    items: { $ref: '#/components/schemas/DiaCalendario' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /prestador/calendario/{servicio_id}/rango:
+    parameters:
+      - $ref: '#/components/parameters/ServicioIdPath'
+    post:
+      tags: [Prestador]
+      summary: Abrir un rango de días (UC19)
+      description: |
+        Crea los días del rango que coincidan con `dias_semana`. Omite los que ya existen
+        y los informa en la respuesta. Formulario que la PWA puede enviar sin conexión.
+      operationId: abrirRangoCalendario
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RangoCalendario' }
+      responses:
+        '201':
+          description: Resultado de la apertura.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [creados, omitidos]
+                properties:
+                  creados:
+                    type: array
+                    items: { type: string, format: date }
+                  omitidos:
+                    type: array
+                    description: Días que ya existían.
+                    items: { type: string, format: date }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422':
+          description: '`SUPERA_AFORO`: los cupos superan la capacidad de carga oficial del servicio.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /prestador/calendario/{servicio_id}/{fecha}:
+    parameters:
+      - $ref: '#/components/parameters/ServicioIdPath'
+      - name: fecha
+        in: path
+        required: true
+        schema: { type: string, format: date }
+    put:
+      tags: [Prestador]
+      summary: Crear o editar un día del calendario (UC19)
+      description: |
+        Sin `If-Match` solo crea el día (409 si ya existe). Con `If-Match` edita el día
+        si la versión coincide (409 `VERSION_DISTINTA` si cambió en el servidor).
+      operationId: guardarDiaCalendario
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: If-Match
+          in: header
+          required: false
+          schema: { type: string }
+          description: Versión del día (`ETag`) que el prestador editó.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiaCalendarioGuardar' }
+      responses:
+        '200':
+          description: Día editado.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiaCalendario' }
+        '201':
+          description: Día creado.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DiaCalendario' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: '`DIA_EXISTENTE` (crear sin `If-Match`), `CUPOS_COMPROMETIDOS` (totales menores que lo reservado) o `VERSION_DISTINTA` (el día cambió en el servidor: `version_actual` y el día completo en `actual`, para que la PWA muestre el conflicto sin otro GET).'
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorConflicto' }
+        '422':
+          description: '`SUPERA_AFORO`.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /health:
+    get:
+      tags: [Operación]
+      summary: Estado del servicio (sondas de Kubernetes)
+      operationId: health
+      security: []
+      servers:
+        - url: /
+      responses:
+        '200':
+          description: El servicio y su base de datos responden.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Salud' }
+        '503':
+          description: La base de datos no responde; Kubernetes deja de enviarle tráfico a esta réplica.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Salud' }
+
+  /metrics:
+    get:
+      tags: [Operación]
+      summary: Métricas para Prometheus
+      description: |
+        Las genera prometheus-fastapi-instrumentator, como en los demás servicios:
+        `http_requests_total` y `http_request_duration_seconds` (etiquetas `handler`, `method`,
+        `status`). Además, `booking_eventos_consumidos_total` del consumidor de RabbitMQ.
+      operationId: metrics
+      security: []
+      servers:
+        - url: /
+      responses:
+        '200':
+          description: Métricas en formato de texto de Prometheus.
+          content:
+            text/plain:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT emitido por iam-service; Traefik lo valida con ForwardAuth y reenvía `X-Usuario-Id` y `X-Usuario-Rol`.
+
+  headers:
+    ETag:
+      description: Versión del recurso, para usar en `If-Match`.
+      schema: { type: string, example: '"3"' }
+
+  parameters:
+    ReservaId:
+      name: reserva_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ServicioIdPath:
+      name: servicio_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ServicioIdQuery:
+      name: servicio_id
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+    Desde:
+      name: desde
+      in: query
+      required: true
+      schema: { type: string, format: date }
+    Hasta:
+      name: hasta
+      in: query
+      required: true
+      description: Máximo 62 días después de `desde`.
+      schema: { type: string, format: date }
+    EstadoQuery:
+      name: estado
+      in: query
+      schema: { $ref: '#/components/schemas/EstadoReserva' }
+    Pagina:
+      name: pagina
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Tamano:
+      name: tamano
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Clave única por intento de envío; un reintento con la misma clave devuelve la misma respuesta
+        sin repetir la operación (48 h). Si la primera petición aún no termina, responde 409
+        `PETICION_EN_PROCESO` (reintentar en unos segundos con la misma clave). Si el almacén de
+        claves no responde, 503 `IDEMPOTENCIA_NO_DISPONIBLE` (no se ejecutó nada).
+      schema: { type: string, format: uuid }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Versión (`ETag`) que el usuario tenía al editar.
+      schema: { type: string }
+
+  responses:
+    Validacion:
+      description: '`VALIDACION`: datos inválidos (fecha pasada, rango mayor a 62 días, número de personas fuera de rango, motivo faltante).'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NoAutenticado:
+      description: Token ausente o inválido (lo responde Traefik).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Prohibido:
+      description: '`ROL_NO_PERMITIDO`; se registra en la bitácora de auditoría.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NoEncontrado:
+      description: '`NO_ENCONTRADO`: no existe o no pertenece al usuario.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflicto:
+      description: '`TRANSICION_INVALIDA`, `PLAZO_VENCIDO`, `CUPOS_INSUFICIENTES` o `VERSION_DISTINTA` (la reserva cambió en el servidor: la versión actual va en `ETag` y en `version_actual`, y la reserva completa en `actual`). El mensaje indica el estado actual.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorConflicto' }
+    FaltaIfMatch:
+      description: '`FALTA_IF_MATCH`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Salud:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        checks:
+          type: object
+          description: '`postgres` en el clúster; `almacen_memoria` en el modo de demostración.'
+          additionalProperties: { type: string, enum: [up, down] }
+          example: { postgres: up }
+
+    Error:
+      type: object
+      required: [error, message, correlation_id]
+      properties:
+        error: { type: string, example: CUPOS_INSUFICIENTES }
+        message: { type: string, example: Solo quedan 1 cupos para el 2026-11-05. }
+        correlation_id: { type: string }
+
+    ErrorConflicto:
+      description: |
+        Error común de un 409. Solo con `VERSION_DISTINTA` agrega `version_actual` y `actual`:
+        el registro tal como está en el servidor, con el mismo formato que su GET
+        (`Reserva` en `PATCH /{reserva_id}`; `DiaCalendario` en `PUT /prestador/calendario/...`).
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            version_actual: { type: integer, minimum: 1, example: 2 }
+            actual:
+              oneOf:
+                - $ref: '#/components/schemas/Reserva'
+                - $ref: '#/components/schemas/DiaCalendario'
+
+    EstadoReserva:
+      type: string
+      enum: [SOLICITADA, CONFIRMADA, RECHAZADA, CANCELADA, FINALIZADA]
+
+    Reserva:
+      type: object
+      required: [id, servicio_id, turista_id, prestador_id, fecha_reserva, numero_personas, estado, version, creado_en]
+      properties:
+        id: { type: string, format: uuid }
+        servicio_id: { type: string, format: uuid }
+        turista_id: { type: string, format: uuid }
+        prestador_id:
+          type: string
+          format: uuid
+          description: Id del perfil del prestador en el catálogo (el mismo de los eventos `reserva.*`).
+        fecha_reserva: { type: string, format: date }
+        numero_personas: { type: integer, minimum: 1 }
+        estado: { $ref: '#/components/schemas/EstadoReserva' }
+        expira_en:
+          type: string
+          format: date-time
+          nullable: true
+          description: Plazo de respuesta del prestador; solo en `SOLICITADA`.
+        motivo:
+          type: string
+          nullable: true
+          description: Motivo del rechazo o la cancelación.
+        cancelada_por:
+          type: string
+          nullable: true
+          enum: [Turista, Prestador, null]
+        version: { type: integer, minimum: 1 }
+        creado_en: { type: string, format: date-time }
+        actualizado_en: { type: string, format: date-time }
+
+    PaginaReservas:
+      type: object
+      required: [items, pagina, tamano, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Reserva' }
+        pagina: { type: integer }
+        tamano: { type: integer }
+        total: { type: integer }
+
+    SolicitudReservaCrear:
+      type: object
+      required: [servicio_id, fecha_reserva, numero_personas]
+      properties:
+        servicio_id: { type: string, format: uuid }
+        fecha_reserva:
+          type: string
+          format: date
+          description: A partir de mañana.
+        numero_personas: { type: integer, minimum: 1 }
+      additionalProperties: false
+
+    SolicitudReservaModificar:
+      type: object
+      minProperties: 1
+      properties:
+        fecha_reserva: { type: string, format: date }
+        numero_personas: { type: integer, minimum: 1 }
+      additionalProperties: false
+
+    Motivo:
+      type: object
+      properties:
+        motivo:
+          type: string
+          maxLength: 500
+          description: Obligatorio cuando cancela el prestador.
+      additionalProperties: false
+
+    MotivoObligatorio:
+      type: object
+      required: [motivo]
+      properties:
+        motivo: { type: string, minLength: 3, maxLength: 500 }
+      additionalProperties: false
+
+    DiaDisponible:
+      type: object
+      required: [fecha, cupos_disponibles]
+      properties:
+        fecha: { type: string, format: date }
+        cupos_disponibles: { type: integer, minimum: 0 }
+        tarifa_dia:
+          type: number
+          nullable: true
+          description: COP. Nula si aplica la tarifa base del catálogo.
+
+    DiaCalendario:
+      type: object
+      required: [fecha, cupos_totales, cupos_disponibles, cupos_reservados, version]
+      properties:
+        fecha: { type: string, format: date }
+        cupos_totales: { type: integer, minimum: 0 }
+        cupos_disponibles: { type: integer, minimum: 0 }
+        cupos_reservados: { type: integer, minimum: 0 }
+        tarifa_dia: { type: number, nullable: true }
+        version: { type: integer, minimum: 1 }
+
+    DiaCalendarioGuardar:
+      type: object
+      required: [cupos_totales]
+      properties:
+        cupos_totales:
+          type: integer
+          minimum: 0
+          description: No menor que lo ya reservado ni mayor que el aforo oficial del servicio.
+        tarifa_dia: { type: number, minimum: 0, nullable: true }
+      additionalProperties: false
+
+    RangoCalendario:
+      type: object
+      required: [desde, hasta, cupos_totales]
+      properties:
+        desde: { type: string, format: date }
+        hasta:
+          type: string
+          format: date
+          description: Máximo 366 días después de `desde`.
+        dias_semana:
+          type: array
+          description: 1 = lunes … 7 = domingo. Si se omite, todos los días.
+          items: { type: integer, minimum: 1, maximum: 7 }
+          uniqueItems: true
+        cupos_totales: { type: integer, minimum: 1 }
+        tarifa_dia: { type: number, minimum: 0, nullable: true }
+      additionalProperties: false

@@ -1,0 +1,7 @@
+# Solo lo que cambia en local respecto a la base.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-template-config
+data:
+  ENVIRONMENT: development

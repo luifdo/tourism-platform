@@ -216,3 +216,31 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Monorepo: dependencias y artefactos de Java / Node
+node_modules/
+target/
+*.class
+.gradle/
+# Secrets: RS256 keys and local env files
+*.pem
+.env
+
+# Secretos de Kubernetes que genera Kustomize (se sube solo el .example)
+secretos.env
+infra/k8s/secretos/
+
+# Acceso al clúster y al servidor (aparecen al desplegar en el VPS): nunca se suben
+kubeconfig
+*.kubeconfig
+k3s.yaml
+.kube/
+id_rsa
+id_ed25519
+id_ecdsa
+*.key
+# Llaves privadas de los certificados HTTPS (Traefik / Let's Encrypt)
+acme.json
+
+# Configuración local de Claude Code
+.claude/settings.local.json

@@ -1,0 +1,25 @@
+# Ajustes del Traefik que trae k3s (HelmChartConfig: k3s los fusiona con los valores del chart y reinstala).
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    # Con "Local" Traefik ve la IP real del cliente en vez de la del nodo (hoy ve 10.42.0.1 y todos
+    # compartirían el límite de tasa por IP; la bitácora del IAM guardaría esa IP). Hay que COMPROBARLO en el
+    # clúster real: el balanceador de k3d no conserva la IP del cliente aunque se configure así (F-08 del IAM).
+    service:
+      spec:
+        externalTrafficPolicy: Local
+    # Registro de acceso en JSON, sin la ruta ni la línea de la petición: incluyen el query string, y el enlace de
+    # /restablecer-contrasena lleva ahí el token de recuperación. Se conservan router, servicio, método y estado.
+    logs:
+      access:
+        enabled: true
+        format: json
+        fields:
+          general:
+            names:
+              RequestPath: drop
+              RequestLine: drop

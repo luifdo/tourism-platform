@@ -1,0 +1,17 @@
+# Cada carpeta requiere la revisión de su responsable (SRS, Apéndice C).
+# Los cambios de contratos los revisa el arquitecto (Luis Fernando Barraza) además del dueño del servicio.
+
+*                                   @luifdo
+
+/services/iam-service/              @nievesita
+/services/catalog-service/          @luifdo
+/services/booking-service/          @AFGamero
+/services/review-service/           @luifdo
+/services/recommendation-service/   @alvaroospino
+
+/frontend/                          @JuanFranG
+/gateway/                           @JuanFranG
+/infra/                             @luifdo
+/contracts/                         @luifdo
+/templates/                         @alvaroospino
+/Documents/                         @luifdo @nievesita

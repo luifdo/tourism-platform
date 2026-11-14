@@ -1,0 +1,15 @@
+# Plan §7.2. kube-system (Traefik) ya viene con k3s.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: turismo-app
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: turismo-datos
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observabilidad

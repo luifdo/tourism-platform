@@ -1,0 +1,6 @@
+node_modules
+dist
+
+# El .gitignore de la raíz (plantilla de Python) ignora lib/ y .env; aquí se re-incluye el código del frontend
+!lib/
+!.env.example

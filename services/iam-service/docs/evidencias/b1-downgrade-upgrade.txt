@@ -1,0 +1,28 @@
+# B1: alembic downgrade base y upgrade head, con los datos de las pruebas en la base
+# Fecha: 2026-10-30 11:39 UTC
+# Commit: 3c09bac + cambios locales del bloque 8
+# Comando: bash -c uv run alembic downgrade base && uv run alembic current && uv run alembic upgrade head && uv run alembic current
+
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade d4a9e2c7b1f3 -> c8e4b1f6a920, usuario: version (RNF-13) y datos_suprimidos_en (C-10, C-27)
+INFO  [alembic.runtime.migration] Running downgrade c8e4b1f6a920 -> b3f7a2c9d104, documentos de verificacion: vigente, tipo y tamano; razon_social
+INFO  [alembic.runtime.migration] Running downgrade b3f7a2c9d104 -> 9a41d6c3e2b8, outbox
+INFO  [alembic.runtime.migration] Running downgrade 9a41d6c3e2b8 -> 5c2e8f41a7d3, usuario: idioma
+INFO  [alembic.runtime.migration] Running downgrade 5c2e8f41a7d3 -> 077dd88b0ea8, bitacora: event_id y correlation_id
+INFO  [alembic.runtime.migration] Running downgrade 077dd88b0ea8 -> , esquema inicial iam_db
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 077dd88b0ea8, esquema inicial iam_db
+INFO  [alembic.runtime.migration] Running upgrade 077dd88b0ea8 -> 5c2e8f41a7d3, bitacora: event_id y correlation_id
+INFO  [alembic.runtime.migration] Running upgrade 5c2e8f41a7d3 -> 9a41d6c3e2b8, usuario: idioma
+INFO  [alembic.runtime.migration] Running upgrade 9a41d6c3e2b8 -> b3f7a2c9d104, outbox
+INFO  [alembic.runtime.migration] Running upgrade b3f7a2c9d104 -> c8e4b1f6a920, documentos de verificacion: vigente, tipo y tamano; razon_social
+INFO  [alembic.runtime.migration] Running upgrade c8e4b1f6a920 -> d4a9e2c7b1f3, usuario: version (RNF-13) y datos_suprimidos_en (C-10, C-27)
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+d4a9e2c7b1f3 (head)
+
+# Codigo de salida: 0

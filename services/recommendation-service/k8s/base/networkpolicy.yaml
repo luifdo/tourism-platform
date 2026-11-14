@@ -1,0 +1,26 @@
+# Plan §7.4: solo entra el tráfico previsto. Al chat solo llega Traefik, que valida el JWT y pone
+# X-Usuario-Id y X-Usuario-Rol; el servicio confía en esos encabezados, así que ningún otro pod
+# debe poder llamarlo. Sus propias llamadas a catalog, booking y review ya las permite la política de cada uno.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recommendation-service
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: recommendation-service
+      app.kubernetes.io/component: api
+  policyTypes: ["Ingress"]
+  ingress:
+    - from: # Traefik (Ingress de k3s)
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: traefik }
+      ports: [{ port: 8005 }]
+    - from: # Prometheus lee /metrics
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observabilidad }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 8005 }]

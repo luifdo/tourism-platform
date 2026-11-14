@@ -1,0 +1,464 @@
+"""Prueba de humo del iam-service contra el servicio levantado.
+Uso: uv run python scripts/smoke_test.py
+"""
+
+import asyncio
+import os
+import re
+import sys
+import time
+import uuid
+
+import asyncpg
+import httpx
+import jwt
+
+BASE = os.environ.get("IAM_BASE_URL", "http://localhost:8001")
+MAILPIT = os.environ.get("MAILPIT_URL", "http://localhost:8025") + "/api/v1"
+# Solo para leer la bitácora: el smoke no tiene un Admin sembrado.
+BASE_DE_DATOS = os.environ.get(
+    "IAM_SMOKE_DATABASE_URL", "postgresql://iam_user:iam_password@localhost:5433/iam_db"
+)
+todo_ok = True
+
+
+def check(nombre: str, condicion: bool, detalle: str = "") -> None:
+    global todo_ok
+    print(("OK    " if condicion else "FALLA ") + nombre + ("" if condicion else f"  -> {detalle}"))
+    todo_ok = todo_ok and condicion
+
+
+def leer_enlace(destinatario: str, intentos: int = 20) -> str | None:
+    """Enlace de recuperación del último correo en Mailpit. El correo sale en segundo plano
+    (C-50): se espera hasta unos segundos."""
+    for _ in range(intentos):
+        mensajes = httpx.get(f"{MAILPIT}/messages", timeout=5).json()["messages"]
+        for mensaje in mensajes:
+            if any(d["Address"] == destinatario for d in mensaje["To"]):
+                texto = httpx.get(f"{MAILPIT}/message/{mensaje['ID']}", timeout=5).json()["Text"]
+                encontrado = re.search(r"https?://\S+", texto)
+                return encontrado.group(0) if encontrado else None
+        time.sleep(0.25)
+    return None
+
+
+async def _filas_de_bitacora(accion: str, usuario_id: str) -> list[str]:
+    conexion = await asyncpg.connect(BASE_DE_DATOS)
+    try:
+        filas = await conexion.fetch(
+            "SELECT detalles::text AS detalles FROM bitacora_auditoria "
+            "WHERE accion = $1 AND usuario_id = $2::uuid",
+            accion,
+            usuario_id,
+        )
+    finally:
+        await conexion.close()
+    return [fila["detalles"] for fila in filas]
+
+
+def filas_de_bitacora(accion: str, usuario_id: str) -> list[str]:
+    return asyncio.run(_filas_de_bitacora(accion, usuario_id))
+
+
+async def _publicado_en_del_outbox(event_type: str, usuario_id: str) -> list[object]:
+    conexion = await asyncpg.connect(BASE_DE_DATOS)
+    try:
+        filas = await conexion.fetch(
+            "SELECT publicado_en FROM outbox "
+            "WHERE event_type = $1 AND sobre->'payload'->>'usuario_id' = $2",
+            event_type,
+            usuario_id,
+        )
+    finally:
+        await conexion.close()
+    return [fila["publicado_en"] for fila in filas]
+
+
+def publicado_en_del_outbox(event_type: str, usuario_id: str) -> list[object]:
+    return asyncio.run(_publicado_en_del_outbox(event_type, usuario_id))
+
+
+with httpx.Client(base_url=BASE, timeout=10) as c:
+    # Operación
+    r = c.get("/health")
+    check("GET /health -> 200", r.status_code == 200, r.text)
+    r = c.get("/metrics")
+    check("GET /metrics expone métricas", r.status_code == 200 and "http_requests_total" in r.text)
+
+    # Registro (UC1 + UC6)
+    email = f"smoke.{uuid.uuid4().hex[:8]}@example.com"
+    clave = "Smoke12345"
+    datos = {
+        "email": email,
+        "password": clave,
+        "nombre_completo": "Prueba Humo",
+        "rol": "Turista",
+        "habeas_data_aceptado": True,
+        "es_mayor_de_edad": True,
+    }
+    r = c.post("/api/iam/register", json=datos)
+    check("Registro -> 201", r.status_code == 201, r.text)
+    check("Registro no devuelve el hash", "password" not in r.text)
+    r = c.post("/api/iam/register", json=datos)
+    check(
+        "Duplicado -> 409 EMAIL_EN_USO",
+        r.status_code == 409 and r.json().get("code") == "EMAIL_EN_USO",
+        r.text,
+    )
+    r = c.post(
+        "/api/iam/register", json={**datos, "email": "otro." + email, "habeas_data_aceptado": False}
+    )
+    check(
+        "Sin habeas data -> 422",
+        r.status_code == 422 and r.json().get("code") == "HABEAS_DATA_REQUERIDO",
+        r.text,
+    )
+    r = c.post("/api/iam/register", json={**datos, "email": "otro2." + email, "rol": "Admin"})
+    check("Rol Admin rechazado -> 422", r.status_code == 422, r.text)
+
+    # Login (UC2)
+    r = c.post("/api/iam/login", json={"email": email, "password": clave})
+    check("Login -> 200", r.status_code == 200, r.text)
+    token = r.json()["access_token"]
+    # Mismo X-Correlation-ID en los dos: si no, cada cuerpo lleva el suyo (C-12) y difieren.
+    corr = {"X-Correlation-ID": "smoke-401"}
+    r1 = c.post("/api/iam/login", json={"email": email, "password": "Incorrecta99"}, headers=corr)
+    r2 = c.post(
+        "/api/iam/login",
+        json={"email": "nadie.existe@example.com", "password": "Incorrecta99"},
+        headers=corr,
+    )
+    check(
+        "Los dos 401 son idénticos",
+        r1.status_code == r2.status_code == 401 and r1.content == r2.content,
+        f"{r1.text} / {r2.text}",
+    )
+
+    # JWKS y firma RS256
+    r = c.get("/api/iam/.well-known/jwks.json")
+    check(
+        "JWKS -> 200 con Cache-Control",
+        r.status_code == 200 and "max-age" in r.headers.get("cache-control", ""),
+    )
+    llave = jwt.PyJWK(r.json()["keys"][0])
+    claims = jwt.decode(token, llave.key, algorithms=["RS256"], issuer="iam-service")
+    check("Token verificado con la llave del JWKS", claims["rol"] == "Turista" and "jti" in claims)
+
+    # ForwardAuth (RF-09) y RBAC
+    auth = {"Authorization": f"Bearer {token}"}
+    traefik = {"X-Forwarded-Method": "GET", "X-Forwarded-Uri": "/api/bookings/reservas"}
+    r = c.get("/api/iam/auth/verificar", headers={**auth, **traefik})
+    check(
+        "Verificar con token válido -> 200 + X-Usuario-*",
+        r.status_code == 200
+        and r.headers.get("x-usuario-id") == claims["sub"]
+        and r.headers.get("x-usuario-rol") == "Turista"
+        and r.headers.get("cache-control") == "no-store",
+        f"{r.status_code} {dict(r.headers)}",
+    )
+    r = c.get("/api/iam/auth/verificar", headers=traefik)
+    check(
+        "Verificar sin token -> 401 TOKEN_INVALIDO",
+        r.status_code == 401 and r.json().get("code") == "TOKEN_INVALIDO",
+        r.text,
+    )
+    r = c.get("/api/iam/admin/usuarios", headers=auth)
+    check(
+        "admin/usuarios con Turista -> 403 ROL_INSUFICIENTE",
+        r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
+        r.text,
+    )
+    r = c.get("/api/iam/admin/bitacora", headers=auth)
+    check(
+        "admin/bitacora con Turista -> 403 ROL_INSUFICIENTE",
+        r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
+        r.text,
+    )
+    r = c.get("/api/iam/admin/bitacora")
+    check(
+        "admin/bitacora sin token -> 401 TOKEN_INVALIDO",
+        r.status_code == 401 and r.json().get("code") == "TOKEN_INVALIDO",
+        r.text,
+    )
+
+    # Documentos de verificación (UC37). Requiere SeaweedFS y el bucket
+    # (uv run python -m scripts.crear_bucket).
+    pdf = b"%PDF-1.7\n%smoke\n"
+    r = c.post(
+        "/api/iam/prestador/documentos",
+        data={"tipo": "RNT"},
+        files={"archivo": ("rnt.pdf", pdf, "application/pdf")},
+        headers=auth,
+    )
+    check(
+        "Turista sube documento -> 403 ROL_INSUFICIENTE",
+        r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
+        r.text,
+    )
+    email_p = f"smoke.prestador.{uuid.uuid4().hex[:8]}@example.com"
+    r = c.post("/api/iam/register", json={**datos, "email": email_p, "rol": "Prestador"})
+    check("Registro de Prestador -> 201", r.status_code == 201, r.text)
+    r = c.post("/api/iam/login", json={"email": email_p, "password": clave})
+    auth_p = {"Authorization": f"Bearer {r.json().get('access_token')}"}
+    r = c.post(
+        "/api/iam/prestador/documentos",
+        data={"tipo": "RNT"},
+        files={"archivo": ("rnt.pdf", b"MZ\x90\x00", "application/pdf")},
+        headers=auth_p,
+    )
+    check(
+        "Ejecutable con nombre .pdf -> 422 TIPO_ARCHIVO_NO_PERMITIDO",
+        r.status_code == 422 and r.json().get("code") == "TIPO_ARCHIVO_NO_PERMITIDO",
+        r.text,
+    )
+    r = c.post(
+        "/api/iam/prestador/documentos",
+        data={"tipo": "RNT"},
+        files={"archivo": ("rnt.pdf", pdf, "application/pdf")},
+        headers=auth_p,
+    )
+    check("Carga del RNT -> 201 Pendiente", r.status_code == 201, r.text)
+    r = c.post(
+        "/api/iam/prestador/documentos",
+        data={"tipo": "RUT", "razon_social": "Humo SAS"},
+        files={"archivo": ("rut.pdf", pdf, "application/pdf")},
+        headers=auth_p,
+    )
+    check("Carga del RUT con razón social -> 201", r.status_code == 201, r.text)
+    r = c.get("/api/iam/prestador/documentos", headers=auth_p)
+    check(
+        "Mis documentos -> pendiente, sin la llave interna",
+        r.status_code == 200
+        and r.json().get("estado") == "pendiente"
+        and "objeto_s3" not in r.text,
+        r.text,
+    )
+    r = c.get("/api/iam/admin/prestadores", headers=auth_p)
+    check(
+        "admin/prestadores con Prestador -> 403",
+        r.status_code == 403 and r.json().get("code") == "ROL_INSUFICIENTE",
+        r.text,
+    )
+
+    # Perfil (UC4) con ETag e If-Match
+    r = c.get("/api/iam/perfil", headers=auth)
+    etag = r.headers.get("etag", "")
+    check(
+        "Perfil -> 200 con ETag y sin el hash",
+        r.status_code == 200 and etag == '"1"' and "password" not in r.text,
+        r.text,
+    )
+    con_version = {**auth, "If-Match": etag}
+    r = c.patch("/api/iam/perfil", json={"nombre": "Humo Editado"}, headers=con_version)
+    check(
+        "PATCH perfil con If-Match -> 200, ETag nuevo",
+        r.status_code == 200
+        and r.json().get("nombre") == "Humo Editado"
+        and r.headers.get("etag") == '"2"',
+        r.text,
+    )
+    r = c.patch("/api/iam/perfil", json={"nombre": "Otro Nombre"}, headers=con_version)
+    check(
+        "PATCH con If-Match viejo -> 409 VERSION_CONFLICTO",
+        r.status_code == 409 and r.json().get("code") == "VERSION_CONFLICTO",
+        r.text,
+    )
+    r = c.patch("/api/iam/perfil", json={"email": "otro@example.com"}, headers=auth)
+    check("PATCH del correo -> 422 VALIDACION", r.status_code == 422, r.text)
+
+    # Recuperación (UC3): recuperar -> leer el enlace en Mailpit -> restablecer -> login
+    r = c.post("/api/iam/auth/recuperar", json={"email": email})
+    r2 = c.post("/api/iam/auth/recuperar", json={"email": "nadie.existe@example.com"})
+    check(
+        "Recuperar -> 202, misma respuesta si el correo no existe",
+        r.status_code == r2.status_code == 202 and r.content == r2.content,
+        f"{r.text} / {r2.text}",
+    )
+    enlace = leer_enlace(email)
+    check(
+        "El enlace llega a Mailpit y apunta a la PWA",
+        enlace is not None and "/restablecer-contrasena?token=" in enlace,
+        str(enlace),
+    )
+    token_reset = (enlace or "=").split("token=")[-1]
+    r = c.post("/api/iam/auth/restablecer", json={"token": token_reset, "password": "corta"})
+    check(
+        "Contraseña débil -> 422 PASSWORD_INVALIDA",
+        r.status_code == 422 and r.json().get("code") == "PASSWORD_INVALIDA",
+        r.text,
+    )
+    clave_nueva = "Restablecida123"
+    r = c.post(
+        "/api/iam/auth/restablecer",
+        json={"token": token_reset, "password": clave_nueva, "confirmacion": clave_nueva},
+    )
+    check("Restablecer (el 422 no gastó el enlace) -> 204", r.status_code == 204, r.text)
+    r = c.post("/api/iam/auth/restablecer", json={"token": token_reset, "password": clave_nueva})
+    check(
+        "El enlace es de un solo uso -> 400 TOKEN_INVALIDO",
+        r.status_code == 400 and r.json().get("code") == "TOKEN_INVALIDO",
+        r.text,
+    )
+    r = c.post("/api/iam/login", json={"email": email, "password": clave})
+    check("Login con la contraseña vieja -> 401", r.status_code == 401, r.text)
+    r = c.get("/api/iam/perfil", headers=auth)
+    check("El token anterior al restablecer -> 401", r.status_code == 401, r.text)
+    r = c.post("/api/iam/login", json={"email": email, "password": clave_nueva})
+    check("Login con la contraseña nueva -> 200", r.status_code == 200, r.text)
+    # La marca de revocación va en segundos e incluye el segundo del cambio (C-21).
+    time.sleep(1.1)
+    r = c.post("/api/iam/login", json={"email": email, "password": clave_nueva})
+    auth = {"Authorization": f"Bearer {r.json().get('access_token')}"}
+
+    # Cambio de contraseña (UC4)
+    r = c.post(
+        "/api/iam/perfil/contrasena",
+        json={"password_actual": "Incorrecta99", "password_nueva": "Cambiada12345"},
+        headers=auth,
+    )
+    check(
+        "Contraseña actual incorrecta -> 422 PASSWORD_ACTUAL_INCORRECTA",
+        r.status_code == 422 and r.json().get("code") == "PASSWORD_ACTUAL_INCORRECTA",
+        r.text,
+    )
+    r = c.post(
+        "/api/iam/perfil/contrasena",
+        json={"password_actual": clave_nueva, "password_nueva": "Cambiada12345"},
+        headers=auth,
+    )
+    check("Cambio de contraseña -> 204", r.status_code == 204, r.text)
+    r = c.get("/api/iam/perfil", headers=auth)
+    check("El token anterior al cambio -> 401", r.status_code == 401, r.text)
+    time.sleep(1.1)
+    r = c.post("/api/iam/login", json={"email": email, "password": "Cambiada12345"})
+    auth = {"Authorization": f"Bearer {r.json().get('access_token')}"}
+
+    # Supresión de datos del Prestador con documentos en SeaweedFS (Ley 1581, C-27)
+    r = c.request("DELETE", "/api/iam/perfil", json={"password": "Incorrecta99"}, headers=auth_p)
+    check(
+        "Supresión con contraseña incorrecta -> 401 CREDENCIALES_INVALIDAS",
+        r.status_code == 401 and r.json().get("code") == "CREDENCIALES_INVALIDAS",
+        r.text,
+    )
+    r = c.request("DELETE", "/api/iam/perfil", json={"password": clave}, headers=auth_p)
+    check("Supresión -> 204", r.status_code == 204, r.text)
+    r = c.get("/api/iam/perfil", headers=auth_p)
+    check("El token del suprimido -> 401", r.status_code == 401, r.text)
+    r = c.post("/api/iam/login", json={"email": email_p, "password": clave})
+    check(
+        "Login del suprimido -> 401 CREDENCIALES_INVALIDAS",
+        r.status_code == 401 and r.json().get("code") == "CREDENCIALES_INVALIDAS",
+        r.text,
+    )
+    r = c.post("/api/iam/auth/recuperar", json={"email": email_p})
+    check(
+        "Recuperar del suprimido -> 202 sin correo",
+        r.status_code == 202 and leer_enlace(email_p, intentos=4) is None,
+        r.text,
+    )
+    id_p = jwt.decode(auth_p["Authorization"].split()[1], options={"verify_signature": False})[
+        "sub"
+    ]
+    r = c.get(f"/internal/usuarios/{id_p}/contacto")
+    check("Contacto interno del suprimido -> 404", r.status_code == 404, r.text)
+    # El relay lo retiene hasta que catalog esté desplegado con su cola (C-63).
+    publicado = publicado_en_del_outbox("usuario.suprimido", id_p)
+    check(
+        "usuario.suprimido queda en el outbox con publicado_en NULL",
+        publicado == [None],
+        str(publicado),
+    )
+
+    # Logout y revocación
+    r = c.post("/api/iam/logout", headers=auth)
+    check("Logout -> 204", r.status_code == 204, r.text)
+    r = c.get("/api/iam/auth/verificar", headers={**auth, **traefik})
+    check("Verificar después del logout -> 401", r.status_code == 401, r.text)
+    r = c.post("/api/iam/logout", headers=auth)
+    check("Token revocado -> 401", r.status_code == 401, r.text)
+    r = c.post("/api/iam/logout")
+    check("Logout sin token -> 401", r.status_code == 401, r.text)
+
+    # Sesión y refresh token (C-20, C-60)
+    email_s = f"smoke.sesion.{uuid.uuid4().hex[:8]}@example.com"
+    r = c.post("/api/iam/register", json={**datos, "email": email_s})
+    check("Registro para la sesión -> 201", r.status_code == 201, r.text)
+    id_s = r.json().get("id", "")
+    credenciales = {"email": email_s, "password": clave}
+    corr = {"X-Correlation-ID": "smoke-refresh"}
+
+    def renovar(refresh_token: str) -> httpx.Response:
+        return c.post("/api/iam/auth/refresh", json={"refresh_token": refresh_token}, headers=corr)
+
+    def verifica(access_token: str) -> int:
+        cabeceras = {"Authorization": f"Bearer {access_token}"}
+        return c.get("/api/iam/auth/verificar", headers=cabeceras).status_code
+
+    r = c.post("/api/iam/login", json=credenciales)
+    inicial = r.json()
+    check(
+        "Login agrega refresh_token y refresh_expires_in, con no-store",
+        r.status_code == 200
+        and bool(inicial.get("refresh_token"))
+        and inicial.get("refresh_expires_in") == 604800
+        and {"access_token", "token_type", "expires_in", "usuario"} <= inicial.keys()
+        and r.headers.get("cache-control") == "no-store",
+        r.text[:200],
+    )
+    claims_s = jwt.decode(inicial["access_token"], options={"verify_signature": False})
+    check("El access token lleva sid", bool(claims_s.get("sid")))
+    otra_sesion = c.post("/api/iam/login", json=credenciales).json()
+
+    r = renovar(inicial["refresh_token"])
+    renovada = r.json()
+    check(
+        "Refresh -> 200 con tokens nuevos y el mismo sid",
+        r.status_code == 200
+        and renovada.get("refresh_token") != inicial["refresh_token"]
+        and jwt.decode(renovada["access_token"], options={"verify_signature": False}).get("sid")
+        == claims_s.get("sid")
+        and r.headers.get("cache-control") == "no-store",
+        r.text[:200],
+    )
+    check("El access token renovado sirve", verifica(renovada["access_token"]) == 200)
+
+    reutilizado = renovar(inicial["refresh_token"])
+    check(
+        "El refresh viejo otra vez -> 401 TOKEN_INVALIDO",
+        reutilizado.status_code == 401 and reutilizado.json().get("code") == "TOKEN_INVALIDO",
+        reutilizado.text,
+    )
+    filas = filas_de_bitacora("REFRESH_REUTILIZADO", id_s)
+    check(
+        "Queda una fila REFRESH_REUTILIZADO con la familia",
+        len(filas) == 1 and claims_s.get("sid", "?") in filas[0],
+        str(filas),
+    )
+    revocado = renovar(renovada["refresh_token"])
+    check("El nuevo también -> 401 (familia revocada)", revocado.status_code == 401, revocado.text)
+    check(
+        "Los 401 no revelan la causa (mismo cuerpo)",
+        revocado.content == reutilizado.content,
+        f"{revocado.text} / {reutilizado.text}",
+    )
+    check(
+        "Tras el robo, los access tokens de esa sesión -> 401",
+        verifica(inicial["access_token"]) == 401 and verifica(renovada["access_token"]) == 401,
+    )
+    check("La otra sesión del usuario sigue -> 200", verifica(otra_sesion["access_token"]) == 200)
+
+    r = c.post(
+        "/api/iam/logout", headers={"Authorization": f"Bearer {otra_sesion['access_token']}"}
+    )
+    check("Logout de la otra sesión -> 204", r.status_code == 204, r.text)
+    r = renovar(otra_sesion["refresh_token"])
+    check("Refresh después del logout -> 401", r.status_code == 401, r.text)
+    check(
+        "Sin una fila más de robo",
+        len(filas_de_bitacora("REFRESH_REUTILIZADO", id_s)) == 1,
+    )
+    r = c.post("/api/iam/auth/refresh", json={"refresh_token": ""})
+    check("Refresh vacío -> 422", r.status_code == 422, r.text)
+
+print("\nTODO FUNCIONA" if todo_ok else "\nHAY FALLAS")
+sys.exit(0 if todo_ok else 1)

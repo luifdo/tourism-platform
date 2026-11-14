@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "resena.publicada.v1.json",
+  "title": "resena.publicada (payload v1)",
+  "description": "Publicado por review-service cuando una reseña cuenta en el promedio con su puntuación actual: al crearla y al editarla (UC15), y cuando el Administrador vuelve a publicar una reseña OCULTA (UC29). Una reseña EN_REVISION sigue contando, así que pasar por revisión y volver a publicarse no lo emite. Hay una sola reseña por turista y servicio; catalog-service guarda una fila por resena_id y actualiza la calificación promedio y las métricas del prestador (UC22).",
+  "type": "object",
+  "required": [
+    "resena_id",
+    "servicio_id",
+    "turista_id",
+    "puntuacion"
+  ],
+  "properties": {
+    "resena_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "servicio_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "turista_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "puntuacion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    }
+  },
+  "additionalProperties": false
+}

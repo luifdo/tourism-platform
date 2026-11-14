@@ -1,0 +1,9 @@
+Hello {{ nombre }},
+
+You have a new booking request.
+
+Service: {{ servicio }}
+Date: {{ fecha }}
+People: {{ personas }}
+
+You have 48 hours to confirm or reject it from your dashboard. If you don't reply, the request expires and the tourist is notified.

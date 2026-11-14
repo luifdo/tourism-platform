@@ -1,0 +1,15 @@
+# Cambia solo lo que es distinto en local: correos a Mailpit y documentos en el SeaweedFS de
+# docker-compose.dev.yml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iam-config
+data:
+  ENVIRONMENT: development
+  S3_ENDPOINT_URL: http://host.docker.internal:8333
+  S3_ENDPOINT_PUBLICO: http://localhost:8333
+  SMTP_HOST: host.docker.internal
+  SMTP_PORT: "1025"
+  SMTP_TLS: "false"
+  SMTP_FROM: Turismo Santa Marta <no-responder@turismo-santamarta.local>
+  PWA_URL: http://localhost:5173

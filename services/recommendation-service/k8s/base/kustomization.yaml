@@ -1,0 +1,31 @@
+# recommendation-service (Módulo 5), con la misma estructura que los demás servicios (Plan §7.2-7.4).
+# Solo la API: no tiene worker ni CronJobs.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: turismo-app
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: turismo-santa-marta
+    includeSelectors: false
+
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+
+# Scripts SQL del initContainer `esquema`. Cambiarlos reinicia los pods (el nombre lleva hash).
+configMapGenerator:
+  - name: recommendation-service-esquema
+    files:
+      - preparar-esquema.sql
+      - 01-recomendacion-log.sql
+
+images:
+  - name: recommendation-service
+    newName: ghcr.io/luifdo/recommendation-service
+    newTag: develop # CI la cambia por el commit: kustomize edit set image recommendation-service=...:<sha>

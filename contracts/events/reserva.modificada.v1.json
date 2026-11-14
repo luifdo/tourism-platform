@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "reserva.modificada.v1.json",
+  "title": "reserva.modificada (payload v1)",
+  "description": "Publicado por booking-service cuando el turista modifica la fecha o el número de personas de una reserva en estado Solicitada (UC12). Los cupos ya se ajustaron y el plazo de respuesta se reinició.",
+  "type": "object",
+  "required": ["reserva_id", "servicio_id", "turista_id", "prestador_id", "fecha_anterior", "numero_personas_anterior", "fecha_reserva", "numero_personas", "expira_en"],
+  "properties": {
+    "reserva_id": { "type": "string", "format": "uuid" },
+    "servicio_id": { "type": "string", "format": "uuid" },
+    "turista_id": { "type": "string", "format": "uuid" },
+    "prestador_id": { "type": "string", "format": "uuid" },
+    "fecha_anterior": { "type": "string", "format": "date" },
+    "numero_personas_anterior": { "type": "integer", "minimum": 1 },
+    "fecha_reserva": { "type": "string", "format": "date" },
+    "numero_personas": { "type": "integer", "minimum": 1 },
+    "expira_en": { "type": "string", "format": "date-time", "description": "Nuevo plazo de respuesta del prestador." }
+  },
+  "additionalProperties": false
+}

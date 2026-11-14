@@ -1,0 +1,19 @@
+# review-service · /api/reviews → review-service:8004 sin quitar el prefijo. Equivale a ../../compose/40-review.yml.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata: { name: review-service }
+spec:
+  entryPoints: [web]
+  routes:
+    - match: >-
+        Method(`GET`) && (PathRegexp(`^/api/reviews/servicios/[^/]+/(resenas|resumen)$`)
+        || PathRegexp(`^/api/reviews/resenas/[^/]+$`))
+      kind: Rule
+      priority: 100
+      middlewares: [{ name: quitar-identidad }]
+      services: [{ name: review-service, port: 8004 }]
+    - match: PathPrefix(`/api/reviews`)
+      kind: Rule
+      priority: 10
+      middlewares: [{ name: protegida }]
+      services: [{ name: review-service, port: 8004 }]

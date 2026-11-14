@@ -1,0 +1,140 @@
+<script setup>
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
+import { useSession } from '../ui/useSession'
+import BrandLogo from './BrandLogo.vue'
+import InstallButton from './InstallButton.vue'
+import LangSwitch from './LangSwitch.vue'
+
+const { t } = useI18n()
+const router = useRouter()
+const route = useRoute()
+const { sesion, salir } = useSession()
+const menu = ref(false)
+const userMenu = ref(false)
+const saliendo = ref(false)
+const zonaUsuario = ref(null)
+const panelMovil = ref(null)
+const botonMenu = ref(null)
+
+// El menú del móvil y el de la cuenta no pueden estar abiertos a la vez (se tapaban entre sí): abrir uno cierra el otro.
+const cerrarTodo = () => { menu.value = false; userMenu.value = false }
+const alternarMenu = () => { userMenu.value = false; menu.value = !menu.value }
+const alternarUsuario = () => { menu.value = false; userMenu.value = !userMenu.value }
+// Tocar o hacer clic fuera cierra lo que esté abierto. Se escucha `pointerdown` y no `click`: en iOS/Safari un toque sobre un elemento que
+// no es un botón ni un enlace no genera `click`, y el menú no se cerraba en el móvil; tampoco sirve `focusout` (los botones no toman foco al
+// tocarlos). Cada panel se cierra si el toque cae fuera de él y de su botón, aunque sea dentro de la barra.
+const alTocarFuera = (e) => {
+  const d = e.target
+  if (userMenu.value && !zonaUsuario.value?.contains(d)) userMenu.value = false
+  if (menu.value && !panelMovil.value?.contains(d) && !botonMenu.value?.contains(d)) menu.value = false
+}
+onMounted(() => document.addEventListener('pointerdown', alTocarFuera, { passive: true }))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', alTocarFuera))
+watch(() => route.fullPath, cerrarTodo)
+
+// Accesos según el rol: cada uno tiene su propio panel; el Turista tiene sus reservas y sus reseñas
+const ENLACES_ROL = {
+  Turista: [['my-bookings', 'nav.reservations'], ['my-reviews', 'nav.reviews']],
+  Prestador: [['provider', 'nav.panel']],
+  Entidad: [['entity', 'nav.entityPanel']],
+  Admin: [['admin', 'nav.adminPanel'], ['entity', 'nav.entityPanel']],
+}
+const enlacesRol = computed(() => ENLACES_ROL[sesion.usuario?.rol] ?? [])
+const primerNombre = computed(() => (sesion.usuario?.nombre_completo ?? '').trim().split(/\s+/)[0])
+const inicial = computed(() => primerNombre.value.charAt(0).toUpperCase())
+// Cierra el menú del usuario al salir de él con el teclado o al tocar fuera
+const alPerderFoco = (e) => { if (!zonaUsuario.value?.contains(e.relatedTarget)) userMenu.value = false }
+
+async function cerrarSesion() {
+  saliendo.value = true
+  try { await salir() } finally { saliendo.value = false; userMenu.value = false; menu.value = false }
+  router.push({ name: 'home' })
+}
+
+const links = [['catalog', '#catalogo'], ['map', '#mapa'], ['routes', '#rutas'], ['ethics', '#compromiso']].map(([k, hash]) => [k, { name: 'home', hash }])
+</script>
+
+<template>
+  <!-- Cinta superior (se desplaza con la página) -->
+  <div class="flex items-center justify-between gap-4 bg-cream px-[clamp(16px,3vw,32px)] font-mono text-[11px] text-ink-control" style="height: var(--ticker-h)">
+    <p class="flex min-w-0 items-center gap-2.5 truncate">
+      <i class="size-1.5 shrink-0 rounded-full bg-teal" />
+      <b class="shrink-0 font-semibold uppercase tracking-wider text-navy-darkest">{{ t('ticker.badge') }}</b>
+      <span class="hidden truncate text-muted sm:inline">· {{ t('ticker.text') }}</span>
+    </p>
+    <div class="flex shrink-0 items-center gap-4">
+      <span class="hidden items-center gap-1.5 text-teal md:flex">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12a7 7 0 0114 0M8.5 12a3.5 3.5 0 017 0" /><circle cx="12" cy="12" r="1" /></svg>
+        {{ t('ticker.live') }}
+      </span>
+      <LangSwitch />
+    </div>
+  </div>
+
+  <!-- Barra principal fija -->
+  <header class="sticky top-0 z-50 bg-cream/90 px-[clamp(16px,3vw,32px)] backdrop-blur-xl" style="height: var(--nav-h)">
+    <nav class="mx-auto flex h-full max-w-[1400px] items-center justify-between gap-3 xl:gap-4" aria-label="Principal">
+      <RouterLink :to="{ name: 'home' }" class="shrink-0" aria-label="Samaland adventure"><BrandLogo /></RouterLink>
+
+      <div class="hidden items-center rounded-full border border-sand/30 bg-white px-3 py-1.5 shadow-card xl:flex">
+        <RouterLink v-for="[k, to] in links" :key="k" :to="to" class="whitespace-nowrap rounded-full px-3 py-1.5 text-center text-[13px] font-medium leading-tight text-ink-control transition-colors hover:bg-cream hover:text-navy 2xl:px-4">{{ t(`nav.${k}`) }}</RouterLink>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-2 sm:gap-3">
+        <!-- También en la barra fija: la cinta de arriba se va al bajar -->
+        <span class="hidden sm:block"><LangSwitch grande /></span><!-- en el móvil va en el menú -->
+        <InstallButton />
+
+        <!-- Con sesión: acceso a reservas y menú de la cuenta -->
+        <template v-if="sesion.autenticado">
+          <RouterLink v-if="enlacesRol[0]" :to="{ name: enlacesRol[0][0] }" class="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[13px] font-medium text-navy transition-colors hover:text-teal" :title="t(enlacesRol[0][1])" :aria-label="t(enlacesRol[0][1])">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></svg>
+            <span class="hidden sm:inline xl:hidden 2xl:inline">{{ t(enlacesRol[0][1]) }}</span>
+          </RouterLink>
+          <div ref="zonaUsuario" class="relative" @focusout="alPerderFoco" @keydown.esc="cerrarTodo">
+            <button type="button" class="flex items-center gap-2 rounded-full border border-sand/40 bg-white py-1 pl-1 pr-3 text-[13px] font-medium text-ink-control shadow-card transition hover:border-teal" :aria-expanded="userMenu" aria-haspopup="menu" :aria-label="t('auth.menu.account')" @click="alternarUsuario">
+              <span class="grid size-7 place-items-center rounded-full bg-navy text-xs font-bold text-white" aria-hidden="true">{{ inicial }}</span>
+              <span class="hidden max-w-[110px] truncate md:inline">{{ primerNombre }}</span>
+            </button>
+            <div v-if="userMenu" role="menu" class="absolute right-0 top-[calc(100%+8px)] w-64 rounded-card border border-sand/30 bg-white p-2 shadow-elevated">
+              <div class="px-3 py-2">
+                <p class="truncate text-sm font-semibold text-navy-darkest">{{ sesion.usuario?.nombre_completo }}</p>
+                <p class="truncate font-mono text-[11px] text-muted">{{ sesion.usuario?.email }}</p>
+                <p class="mt-1 w-fit rounded bg-teal/15 px-1.5 font-mono text-[10px] uppercase tracking-widest text-teal">{{ sesion.usuario?.rol }}</p>
+              </div>
+              <RouterLink v-for="[nombre, clave] in enlacesRol" :key="nombre" :to="{ name: nombre }" role="menuitem" class="block rounded-lg px-3 py-2 text-sm text-ink-control hover:bg-cream" @click="userMenu = false">{{ t(clave) }}</RouterLink>
+              <RouterLink :to="{ name: 'profile' }" role="menuitem" class="block rounded-lg px-3 py-2 text-sm text-ink-control hover:bg-cream" @click="userMenu = false">{{ t('nav.profile') }}</RouterLink>
+              <button type="button" role="menuitem" class="block w-full rounded-lg px-3 py-2 text-left text-sm text-danger hover:bg-danger-bg disabled:opacity-50" :disabled="saliendo" @click="cerrarSesion">{{ saliendo ? t('auth.menu.loggingOut') : t('auth.menu.logout') }}</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- Sin sesión: ingresar o crear cuenta -->
+        <template v-else>
+          <RouterLink :to="{ name: 'login' }" class="text-[13px] font-medium text-navy transition-colors hover:text-teal">{{ t('auth.menu.login') }}</RouterLink>
+          <RouterLink :to="{ name: 'register' }" class="hidden rounded-full bg-navy px-4 py-2 text-[13px] font-semibold text-white shadow-cta transition hover:-translate-y-0.5 hover:bg-blue sm:inline-block">{{ t('auth.menu.register') }}</RouterLink>
+        </template>
+
+        <button ref="botonMenu" type="button" class="xl:hidden" :aria-label="t('nav.menu')" :aria-expanded="menu" @click="alternarMenu">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+        </button>
+      </div>
+    </nav>
+
+    <div v-if="menu" ref="panelMovil" class="absolute inset-x-0 top-full flex flex-col gap-1 border-b border-sand/30 bg-cream p-4 shadow-elevated xl:hidden">
+      <RouterLink v-for="[k, to] in links" :key="k" :to="to" class="rounded-lg px-3 py-3 font-medium text-ink-control hover:bg-white" @click="menu = false">{{ t(`nav.${k}`) }}</RouterLink>
+      <div class="flex items-center justify-between rounded-lg px-3 py-2 font-medium text-ink-control">{{ t('nav.language') }}<LangSwitch grande /></div>
+      <template v-if="sesion.autenticado">
+        <RouterLink v-for="[nombre, clave] in enlacesRol" :key="nombre" :to="{ name: nombre }" class="rounded-lg px-3 py-3 font-medium text-navy hover:bg-white" @click="menu = false">{{ t(clave) }}</RouterLink>
+        <RouterLink :to="{ name: 'profile' }" class="rounded-lg px-3 py-3 font-medium text-navy hover:bg-white" @click="menu = false">{{ t('nav.profile') }}</RouterLink>
+        <button type="button" class="rounded-lg px-3 py-3 text-left font-medium text-danger hover:bg-white" :disabled="saliendo" @click="cerrarSesion">{{ t('auth.menu.logout') }}</button>
+      </template>
+      <template v-else>
+        <RouterLink :to="{ name: 'login' }" class="rounded-lg px-3 py-3 font-medium text-navy hover:bg-white" @click="menu = false">{{ t('auth.menu.login') }}</RouterLink>
+        <RouterLink :to="{ name: 'register' }" class="rounded-full bg-navy px-5 py-3 text-center font-semibold text-white" @click="menu = false">{{ t('auth.menu.register') }}</RouterLink>
+      </template>
+    </div>
+  </header>
+</template>

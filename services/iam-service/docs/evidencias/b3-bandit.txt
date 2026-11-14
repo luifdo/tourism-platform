@@ -1,0 +1,173 @@
+# B3: bandit -r app
+# Fecha: 2026-10-30 11:40 UTC
+# Commit: 3c09bac + cambios locales del bloque 8
+# Comando: uvx bandit -r app
+
+Installed 8 packages in 460ms
+[main]	INFO	profile include tests: None
+[main]	INFO	profile exclude tests: None
+[main]	INFO	cli include tests: None
+[main]	INFO	cli exclude tests: None
+[main]	INFO	running on Python 3.14.3
+Working... ---------------------------------------- 100% 0:00:01
+Run started:2026-10-30 11:40:24.150139+00:00
+
+Test results:
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'Tayrona2026'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: app\api\schemas\auth.py:16:20
+15	                    "email": "maria.perez@example.com",
+16	                    "password": "Tayrona2026",
+17	                    "nombre_completo": "María Pérez",
+18	                    "rol": "Turista",
+19	                    "habeas_data_aceptado": True,
+20	                    "es_mayor_de_edad": True,
+21	                    "idioma": "es",
+22	                }
+23	            ]
+24	        }
+25	    )
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'Tayrona2026'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: app\api\schemas\auth.py:42:62
+41	        json_schema_extra={
+42	            "examples": [{"email": "maria.perez@example.com", "password": "Tayrona2026"}]
+43	        }
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\application\use_cases\iniciar_sesion.py:66:8
+65	
+66	        assert encontrado.id is not None
+67	        async with self._uow as uow:
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\application\use_cases\revision_prestador.py:45:4
+44	def verificacion(prestador: Usuario, vigentes: list[DocumentoVerificacion]) -> Verificacion:
+45	    assert prestador.id is not None
+46	    return Verificacion(
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'iam:reset:'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: app\infrastructure\cache\valkey_tokens_recuperacion.py:14:16
+13	
+14	PREFIJO_TOKEN = "iam:reset:"
+15	PREFIJO_ESPERA = "iam:reset-espera:"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\infrastructure\messaging\consumidor_rabbitmq.py:137:8
+136	    ) -> None:
+137	        assert self._canal is not None
+138	        try:
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\infrastructure\messaging\consumidor_rabbitmq.py:154:8
+153	    ) -> None:
+154	        assert self._dlx is not None
+155	        cabeceras = {"x-cola": self._cola, _INTENTOS: intentos, "x-error": _texto(error)}
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\infrastructure\persistence\documento_repository.py:94:8
+93	        )
+94	        assert model is not None
+95	        return _to_entity(model)
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\infrastructure\persistence\unit_of_work.py:38:8
+37	    ) -> None:
+38	        assert self._session is not None
+39	        try:
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\infrastructure\persistence\unit_of_work.py:47:8
+46	    async def commit(self) -> None:
+47	        assert self._session is not None
+48	        await self._session.commit()
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\infrastructure\persistence\unit_of_work.py:51:8
+50	    async def rollback(self) -> None:
+51	        assert self._session is not None
+52	        await self._session.rollback()
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\infrastructure\persistence\usuario_repository.py:124:8
+123	        )
+124	        assert model is not None
+125	        return _to_entity(model)
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: app\infrastructure\persistence\usuario_repository.py:141:8
+140	        )
+141	        assert model is not None
+142	        return _to_entity(model)
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 5798
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 13
+		Medium: 0
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 3
+		High: 10
+Files skipped (0):
+
+# Codigo de salida: 1

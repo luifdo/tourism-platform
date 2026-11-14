@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block contenido %}
+  <p>Hello {{ nombre }},</p>
+  <p>The tourist <strong>changed their request</strong>. Before: {{ fecha_anterior }}, {{ personas_anterior }} people. Now:</p>
+  <table role="presentation" cellpadding="6" cellspacing="0" style="margin:16px 0;border-collapse:collapse;">
+    <tr><td style="color:#6b7478;">Service</td><td><strong>{{ servicio }}</strong></td></tr>
+    <tr><td style="color:#6b7478;">Date</td><td>{{ fecha }}</td></tr>
+    <tr><td style="color:#6b7478;">People</td><td>{{ personas }}</td></tr>
+  </table>
+  {% if expira %}<p>The response deadline was reset: you have until <strong>{{ expira }}</strong>.</p>{% endif %}
+{% endblock %}

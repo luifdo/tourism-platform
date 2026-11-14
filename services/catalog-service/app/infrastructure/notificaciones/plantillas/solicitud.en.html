@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block contenido %}
+  <p>Hello {{ nombre }},</p>
+  <p>You have a <strong>new booking request</strong>.</p>
+  <table role="presentation" cellpadding="6" cellspacing="0" style="margin:16px 0;border-collapse:collapse;">
+    <tr><td style="color:#6b7478;">Service</td><td><strong>{{ servicio }}</strong></td></tr>
+    <tr><td style="color:#6b7478;">Date</td><td>{{ fecha }}</td></tr>
+    <tr><td style="color:#6b7478;">People</td><td>{{ personas }}</td></tr>
+  </table>
+  <p>You have <strong>48 hours</strong> to confirm or reject it from your dashboard. If you don't reply, the request expires and the tourist is notified.</p>
+{% endblock %}

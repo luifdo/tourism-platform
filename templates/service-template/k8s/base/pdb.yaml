@@ -1,0 +1,11 @@
+# Al drenar un nodo siempre queda al menos una réplica atendiendo.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: service-template
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: service-template
+      app.kubernetes.io/component: api

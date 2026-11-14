@@ -1,0 +1,109 @@
+# API del servicio. Si usa migraciones de Alembic, descomenta el initContainer y agrega en
+# migrations/env.py el candado pg_advisory_xact_lock (como catalog-service): así varios pods
+# que arrancan a la vez no migran al mismo tiempo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-template
+  labels:
+    app.kubernetes.io/name: service-template
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2 # mínimo del Plan §7.3; el HPA lo ajusta
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0 # siempre hay réplicas atendiendo (ESC-05, RNF-12)
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: service-template
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: service-template
+        app.kubernetes.io/component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # initContainers:
+      #   - name: migraciones
+      #     image: service-template
+      #     command: ["alembic", "upgrade", "head"]
+      #     envFrom:
+      #       - configMapRef: { name: service-template-config }
+      #       - secretRef: { name: service-template-secretos }
+      #     resources:
+      #       requests: { cpu: 50m, memory: 128Mi }
+      #       limits: { cpu: 1000m, memory: 256Mi }
+      #     securityContext:
+      #       allowPrivilegeEscalation: false
+      #       readOnlyRootFilesystem: true
+      #       capabilities: { drop: ["ALL"] }
+      #     volumeMounts:
+      #       - { name: tmp, mountPath: /tmp }
+      containers:
+        - name: api
+          image: service-template
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: service-template-config
+            - secretRef:
+                name: service-template-secretos
+          resources:
+            requests: { cpu: 100m, memory: 256Mi } # el HPA calcula su porcentaje sobre este request
+            limits: { cpu: 1000m, memory: 512Mi } # 1 CPU al arrancar: importar la app es pesado
+          # Mientras la app arranca no corren las otras sondas: hasta 90 s para empezar a
+          # escuchar en un nodo lento, sin que la liveness lo mate a medio arranque.
+          # En el Dockerfile, compila la stdlib (python -m compileall /usr/local/lib/python3.12):
+          # la imagen oficial no trae sus .pyc y con disco de solo lectura cada arranque tarda > 20 s.
+          startupProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 2
+            failureThreshold: 45
+            timeoutSeconds: 2
+          # Readiness con /health: cada 2 s y 2 fallos, sale del enrutamiento en < 5 s (ESC-01).
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 2
+            failureThreshold: 2
+            timeoutSeconds: 2
+          # Liveness con una ruta que no dependa de la base (por ejemplo /metrics): si la base
+          # cae, las réplicas salen del tráfico pero no se reinician todas sin motivo.
+          livenessProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              # Da tiempo a que Traefik saque el pod de sus endpoints antes de apagarlo.
+              exec:
+                command: ["python", "-c", "import time; time.sleep(5)"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

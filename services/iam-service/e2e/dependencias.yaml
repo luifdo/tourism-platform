@@ -1,0 +1,275 @@
+# ENTORNO DE PRUEBA, NO DE PRODUCCIÓN. Dependencias mínimas para el e2e de iam-service en k3d:
+# sin persistencia ni alta disponibilidad, con credenciales falsas y evidentes.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: turismo-datos
+---
+# El rol de la app no es superusuario, como se le pide a infra/ en el README del servicio.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: turismo-datos
+data:
+  01-iam.sql: |
+    CREATE ROLE iam_user LOGIN PASSWORD 'solo-para-pruebas-e2e';
+    CREATE DATABASE iam_db OWNER iam_user;
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: turismo-datos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - { name: POSTGRES_PASSWORD, value: solo-para-pruebas-e2e }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "iam_user", "-d", "iam_db"]
+            periodSeconds: 2
+          volumeMounts:
+            - { name: init, mountPath: /docker-entrypoint-initdb.d }
+      volumes:
+        - name: init
+          configMap: { name: postgres-init }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: turismo-datos
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  namespace: turismo-datos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: valkey }
+  template:
+    metadata:
+      labels: { app: valkey }
+    spec:
+      containers:
+        - name: valkey
+          image: valkey/valkey:8
+          ports: [{ containerPort: 6379 }]
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+  namespace: turismo-datos
+spec:
+  selector: { app: valkey }
+  ports: [{ port: 6379 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: turismo-datos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: rabbitmq }
+  template:
+    metadata:
+      labels: { app: rabbitmq }
+    spec:
+      securityContext:
+        fsGroup: 999 # el usuario rabbitmq debe poder leer su cookie
+      volumes:
+        - name: datos
+          emptyDir: {}
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4-management
+          env:
+            - { name: RABBITMQ_DEFAULT_USER, value: e2e }
+            - { name: RABBITMQ_DEFAULT_PASS, value: solo-para-pruebas-e2e }
+          ports:
+            - { containerPort: 5672 }
+            - { containerPort: 15672 }
+          volumeMounts:
+            - { name: datos, mountPath: /var/lib/rabbitmq }
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            periodSeconds: 5
+            timeoutSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: turismo-datos
+spec:
+  selector: { app: rabbitmq }
+  ports:
+    - { name: amqp, port: 5672 }
+    - { name: gestion, port: 15672 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  namespace: turismo-datos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: mailpit }
+  template:
+    metadata:
+      labels: { app: mailpit }
+    spec:
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.21
+          ports:
+            - { containerPort: 1025 }
+            - { containerPort: 8025 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+  namespace: turismo-datos
+spec:
+  selector: { app: mailpit }
+  ports:
+    - { name: smtp, port: 1025 }
+    - { name: web, port: 8025 }
+---
+# Lo que se le pide a infra/ (C-46): la identidad iam solo en su bucket y anonymous en otro.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: seaweedfs-identidades
+  namespace: turismo-datos
+data:
+  s3.json: |
+    {
+      "identities": [
+        {
+          "name": "iam",
+          "credentials": [{ "accessKey": "iam_access_e2e", "secretKey": "solo-para-pruebas-e2e" }],
+          "actions": [
+            "Read:documentos-verificacion",
+            "Write:documentos-verificacion",
+            "List:documentos-verificacion"
+          ]
+        },
+        { "name": "anonymous", "actions": ["Read:catalogo-imagenes"] }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seaweedfs
+  namespace: turismo-datos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: seaweedfs }
+  template:
+    metadata:
+      labels: { app: seaweedfs }
+    spec:
+      containers:
+        - name: seaweedfs
+          image: chrislusf/seaweedfs:3.80
+          args:
+            - server
+            - -ip.bind=0.0.0.0
+            - -dir=/data
+            - -s3
+            - -s3.port=8333
+            - -s3.config=/etc/seaweedfs/s3.json
+            # Con 5, como infra/docker-compose.yml, la colección por defecto puede quedarse con todos
+            # y el bucket de documentos no tiene dónde escribir: ver F-10 en docs/verificacion-fase4.md.
+            - -volume.max=30
+          ports:
+            - { containerPort: 8333 }
+            - { containerPort: 9333 }
+          readinessProbe:
+            httpGet: { path: /cluster/status, port: 9333 }
+            periodSeconds: 2
+          volumeMounts:
+            - { name: identidades, mountPath: /etc/seaweedfs }
+            - { name: datos, mountPath: /data }
+      volumes:
+        - name: identidades
+          configMap: { name: seaweedfs-identidades }
+        - name: datos
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs
+  namespace: turismo-datos
+spec:
+  selector: { app: seaweedfs }
+  ports:
+    - { name: s3, port: 8333 }
+    - { name: master, port: 9333 }
+    # weed shell usa gRPC con el maestro y el filer.
+    - { name: master-grpc, port: 19333 }
+    - { name: filer, port: 8888 }
+    - { name: filer-grpc, port: 18888 }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seaweedfs-buckets
+  namespace: turismo-datos
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: crear
+          image: chrislusf/seaweedfs:3.80
+          command: ["/bin/sh", "-c"]
+          args:
+            - >-
+              printf 's3.bucket.create -name documentos-verificacion\ns3.bucket.create -name catalogo-imagenes\n'
+              | weed shell -master=seaweedfs:9333 -filer=seaweedfs:8888
+---
+# El navegador del Admin abre las URL firmadas por este host: va dentro de la firma (C-30).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: seaweedfs-publico
+  namespace: turismo-datos
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Host(`documentos.localhost`)
+      kind: Rule
+      services:
+        - { name: seaweedfs, port: 8333 }

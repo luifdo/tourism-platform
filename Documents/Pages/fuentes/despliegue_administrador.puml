@@ -1,0 +1,31 @@
+@startuml Diagrama_Despliegue_Administrador
+!include _estilo_despliegue.iuml
+left to right direction
+title Despliegue — Vista del Administrador de la Plataforma
+
+actor "Administrador" as Adm
+node "Equipo del administrador\n(navegador de escritorio)" {
+  artifact "PWA\n(panel administrativo)" as PWA
+}
+node "Clúster k3s" {
+  artifact "Traefik" as Tfk
+  artifact "iam-service\n(usuarios, roles, bitácora)" as Iam
+  artifact "review-service\n(moderación)" as Rev
+  artifact "Grafana" as Graf
+  artifact "Prometheus · Loki" as Prom
+  queue "RabbitMQ" as Rmq
+  database "PostgreSQL\n(iam_db, review_db)" as Pg
+  database "SeaweedFS\n(RNT / RUT)" as Sw
+}
+
+Adm --> PWA
+PWA --> Tfk : HTTPS
+Tfk --> Iam : aprobar prestadores, roles
+Tfk --> Rev : moderar reseñas
+Tfk --> Graf : telemetría (UC31)
+Iam --> Pg
+Iam --> Sw : revisar documentos
+Rev --> Pg
+Rmq --> Iam : auditoria.registrada
+Graf --> Prom
+@enduml

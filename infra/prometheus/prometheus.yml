@@ -1,0 +1,56 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alertas.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  # Mensajes por cola (rabbitmq_detailed_queue_messages): /metrics solo trae totales del nodo. La
+  # alerta MensajesEnDLQ lo usa para turismo.dead-letter.
+  - job_name: rabbitmq-colas
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics]
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  - job_name: iam-service
+    static_configs:
+      - targets: ["iam-service:8001"]
+
+  - job_name: iam-worker
+    static_configs:
+      - targets: ["iam-worker:9101"]
+
+  - job_name: catalog-service
+    static_configs:
+      - targets: ["catalog-service:8002"]
+
+  - job_name: catalog-worker
+    static_configs:
+      - targets: ["catalog-worker:9102"]
+
+  - job_name: booking-service
+    static_configs:
+      - targets: ["booking-service:8003"]
+
+  - job_name: review-service
+    static_configs:
+      - targets: ["review-service:8004"]
+
+  - job_name: review-worker
+    static_configs:
+      - targets: ["review-worker:9104"]
+
+  - job_name: recommendation-service
+    static_configs:
+      - targets: ["recommendation-service:8005"]

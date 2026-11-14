@@ -1,0 +1,9 @@
+namespace: turismo-app
+resources:
+  - middlewares.yaml
+  - iam.yaml
+  - catalog.yaml
+  - booking.yaml
+  - review.yaml
+  - recommendation.yaml
+  - frontend.yaml

@@ -1,0 +1,757 @@
+openapi: 3.0.3
+info:
+  title: review-service — Reseñas & Moderación (Módulo 4)
+  version: 1.0.0
+  description: |
+    Contrato REST del review-service: reseñas de turistas con reserva finalizada (UC15),
+    respuesta pública del prestador (UC21), reportes (UC39) y moderación del Administrador
+    (UC29). RF-14.
+
+    * Las rutas protegidas pasan por ForwardAuth en Traefik, que agrega `X-Usuario-Id` y
+      `X-Usuario-Rol`; el servicio verifica el rol. Un rol no permitido responde 403 y se
+      publica `auditoria.registrada` (ACCESS_DENIED).
+    * **Quién puede reseñar:** un turista con al menos una reserva finalizada del servicio
+      (`reserva.finalizada`), y **una sola reseña por turista y servicio**; después puede
+      editarla.
+    * **Privacidad:** el autor es anónimo. Las respuestas públicas y las del prestador dicen
+      "Turista verificado" y el mes de la visita; nunca el nombre ni el id del turista.
+    * **Moderación posterior:** la reseña se publica al instante. Un reporte no la oculta: entra
+      en la cola del Administrador. Pasa a `EN_REVISION` (oculta hasta su decisión) cuando
+      acumula 3 reportes o la reporta el prestador dueño del servicio. Mientras está en revisión
+      su puntuación sigue contando en el promedio; solo `OCULTA` la quita.
+    * **Eventos:** `resena.publicada` al crear, editar o volver a publicar desde `OCULTA`;
+      `resena.ocultada` al ocultarla. catalog-service recalcula el promedio con ellos.
+    * Idioma: `Accept-Language` (`es` o `en`, por defecto `es`) para mensajes de error y
+      etiquetas; el texto que escribe el usuario se muestra tal cual, sin traducir.
+    * Errores con el formato común `Error`.
+  contact:
+    name: Luis Fernando Barraza Sanchez (@luifdo)
+servers:
+  - url: /api/reviews
+    description: Prefijo en el API Gateway (Traefik)
+
+tags:
+  - name: Público
+  - name: Turista
+  - name: Prestador
+  - name: Moderación
+  - name: Operación
+
+security:
+  - bearerAuth: []
+
+paths:
+  /servicios/{servicio_id}/resenas:
+    parameters:
+      - $ref: '#/components/parameters/ServicioIdPath'
+    get:
+      tags: [Público]
+      summary: Reseñas visibles de un servicio
+      description: |
+        Ruta pública. Solo las reseñas `PUBLICADA` (las que están en revisión u ocultas no
+        aparecen). La usa la tool `resenas_servicio` del Módulo 5.
+      operationId: listarResenasServicio
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/OrdenResenas'
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de reseñas.
+          headers:
+            Content-Language: { $ref: '#/components/headers/ContentLanguage' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaResenas' }
+        '400': { $ref: '#/components/responses/Validacion' }
+
+  /servicios/{servicio_id}/resumen:
+    parameters:
+      - $ref: '#/components/parameters/ServicioIdPath'
+    get:
+      tags: [Público]
+      summary: Calificación de un servicio
+      description: |
+        Ruta pública. Promedio, total, distribución por estrellas y promedio de cada aspecto.
+        Cuentan las reseñas `PUBLICADA` y `EN_REVISION` (igual que el promedio de
+        catalog-service); las `OCULTA`, no. Un servicio sin reseñas responde `total: 0` y
+        `promedio: null`. La usa la tool `resenas_servicio` del Módulo 5.
+      operationId: resumenServicio
+      security: []
+      responses:
+        '200':
+          description: Resumen.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResumenServicio' }
+        '400': { $ref: '#/components/responses/Validacion' }
+
+  /resenas:
+    post:
+      tags: [Turista]
+      summary: Escribir una reseña (UC15)
+      description: |
+        Solo `Turista`, con una reserva finalizada del servicio (si no, 403 `NO_ELEGIBLE` y se
+        audita como ACCESS_DENIED). Una por turista y servicio: si ya existe, 409
+        `YA_RESENADO` (se edita con `PUT /resenas/{resena_id}`). Queda `PUBLICADA` y se publica
+        `resena.publicada`. Admite `Idempotency-Key` para el envío diferido de la PWA (RNF-13).
+      operationId: crearResena
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResenaCrear' }
+      responses:
+        '201':
+          description: Reseña publicada.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResenaPropia' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoNoElegible' }
+        '409': { $ref: '#/components/responses/ConflictoCrear' }
+
+  /resenas/{resena_id}:
+    parameters:
+      - $ref: '#/components/parameters/ResenaIdPath'
+    get:
+      tags: [Público]
+      summary: Una reseña visible
+      description: Ruta pública. 404 si no existe o no está `PUBLICADA`.
+      operationId: obtenerResena
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: La reseña.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResenaPublica' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+    put:
+      tags: [Turista]
+      summary: Editar mi reseña (UC15)
+      description: |
+        Solo su autor y mientras esté `PUBLICADA` (en revisión u oculta, 409
+        `RESENA_EN_MODERACION`). Publica `resena.publicada` con la puntuación nueva. La
+        respuesta del prestador, si la había, se conserva.
+      operationId: editarResena
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResenaGuardar' }
+      responses:
+        '200':
+          description: Reseña editada.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResenaPropia' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/ConflictoEdicion' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /resenas/{resena_id}/respuesta:
+    parameters:
+      - $ref: '#/components/parameters/ResenaIdPath'
+    put:
+      tags: [Prestador]
+      summary: Responder públicamente una reseña (UC21)
+      description: |
+        Solo el `Prestador` dueño del servicio reseñado (lo sabe por `servicio.publicado`); una
+        respuesta por reseña, que se crea o reemplaza con esta ruta. `If-Match` es la versión de
+        la reseña. No se puede responder una reseña `OCULTA` (409 `RESENA_EN_MODERACION`).
+      operationId: responderResena
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RespuestaGuardar' }
+      responses:
+        '200':
+          description: Respuesta guardada.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResenaPrestador' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/ConflictoEdicion' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /resenas/{resena_id}/reportes:
+    parameters:
+      - $ref: '#/components/parameters/ResenaIdPath'
+    post:
+      tags: [Turista, Prestador]
+      summary: Reportar una reseña inapropiada (UC39)
+      description: |
+        `Turista` o `Prestador`, sobre una reseña `PUBLICADA` que no sea suya. Un reporte por
+        usuario y reseña (409 `YA_REPORTADA`) y como máximo 10 reportes por usuario por hora
+        (429). El reporte no oculta la reseña: entra en la cola del Administrador. Pasa a
+        `EN_REVISION` al tercer reporte o si la reporta el prestador dueño del servicio.
+      operationId: reportarResena
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReporteCrear' }
+      responses:
+        '204':
+          description: Reporte registrado.
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/ProhibidoReporte' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/YaReportada' }
+        '429': { $ref: '#/components/responses/DemasiadosReportes' }
+
+  /resenas/{resena_id}/moderacion:
+    parameters:
+      - $ref: '#/components/parameters/ResenaIdPath'
+    post:
+      tags: [Moderación]
+      summary: Decidir sobre una reseña reportada (UC29)
+      description: |
+        Solo `Admin`. `PUBLICAR` la deja visible y cierra sus reportes (si estaba `OCULTA`,
+        vuelve a contar: `resena.publicada`). `OCULTAR` la deja `OCULTA` y la quita del
+        promedio (`resena.ocultada`); `motivo` es obligatorio. Cada decisión se audita
+        (`auditoria.registrada`, acción MODERACION). `If-Match` es la versión de la reseña.
+      operationId: moderarResena
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecisionModeracion' }
+      responses:
+        '200':
+          description: Decisión aplicada.
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResenaModeracion' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/VersionDistinta' }
+        '428': { $ref: '#/components/responses/FaltaIfMatch' }
+
+  /turista/resenas:
+    get:
+      tags: [Turista]
+      summary: Mis reseñas
+      description: Solo `Turista`. Todas sus reseñas, con su estado (también en revisión u ocultas).
+      operationId: misResenas
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de reseñas propias.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaResenasPropias' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /turista/pendientes:
+    get:
+      tags: [Turista]
+      summary: Servicios que puedo reseñar
+      description: |
+        Solo `Turista`. Servicios con al menos una reserva finalizada y sin reseña suya, con la
+        fecha de la última visita. El nombre del servicio lo toma la PWA del catálogo.
+      operationId: pendientesDeResena
+      responses:
+        '200':
+          description: Lista (puede estar vacía).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServicioPendiente' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /prestador/resenas:
+    get:
+      tags: [Prestador]
+      summary: Reseñas de mis servicios
+      description: |
+        Solo `Prestador`. Reseñas de los servicios de los que es dueño, `PUBLICADA` y
+        `EN_REVISION` (sabe cuáles están en revisión), con su versión para responder.
+      operationId: resenasDelPrestador
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: servicio_id
+          in: query
+          description: Solo las de este servicio.
+          schema: { type: string, format: uuid }
+        - name: sin_respuesta
+          in: query
+          description: Solo las que todavía no tienen respuesta.
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de reseñas.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaResenasPrestador' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /moderacion/resenas:
+    get:
+      tags: [Moderación]
+      summary: Cola de moderación (UC29)
+      description: |
+        Solo `Admin`. Reseñas con reportes sin resolver: primero las `EN_REVISION` (ocultas
+        esperando decisión) y luego las `PUBLICADA` con reportes, las más reportadas primero.
+      operationId: colaModeracion
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: estado
+          in: query
+          description: Solo las de este estado.
+          schema: { type: string, enum: [PUBLICADA, EN_REVISION] }
+        - $ref: '#/components/parameters/Pagina'
+        - $ref: '#/components/parameters/Tamano'
+      responses:
+        '200':
+          description: Página de la cola.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaModeracion' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+
+  /health:
+    get:
+      tags: [Operación]
+      summary: Estado del servicio (sondas de Kubernetes)
+      operationId: health
+      security: []
+      servers:
+        - url: /
+      responses:
+        '200':
+          description: El servicio y su base de datos responden.
+        '503':
+          description: La base de datos no responde.
+
+  /metrics:
+    get:
+      tags: [Operación]
+      summary: Métricas para Prometheus
+      operationId: metrics
+      security: []
+      servers:
+        - url: /
+      responses:
+        '200':
+          description: Métricas en formato de texto de Prometheus.
+          content:
+            text/plain:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT emitido por iam-service; Traefik lo valida con ForwardAuth y reenvía `X-Usuario-Id` y `X-Usuario-Rol`.
+
+  headers:
+    ETag:
+      description: Versión de la reseña, para usar en `If-Match`.
+      schema: { type: string, example: '"3"' }
+    ContentLanguage:
+      description: Idioma de la respuesta (mensajes y etiquetas).
+      schema: { type: string, enum: [es, en] }
+
+  parameters:
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      required: false
+      description: Idioma preferido. Cualquier valor distinto de `en` se trata como `es`.
+      schema: { type: string, example: en }
+    ServicioIdPath:
+      name: servicio_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ResenaIdPath:
+      name: resena_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrdenResenas:
+      name: orden
+      in: query
+      description: '`recientes` (por defecto), `mejores` o `peores` (por puntuación y luego por fecha).'
+      schema: { type: string, enum: [recientes, mejores, peores], default: recientes }
+    Pagina:
+      name: pagina
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
+    Tamano:
+      name: tamano
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: 'Versión (`ETag`) de la reseña que se tenía: `"3"`, `W/"3"` o `3`. Vacía o ausente, 428; con otro formato, 400.'
+      schema: { type: string, pattern: '^(W/)?"?0*[1-9][0-9]*"?$' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Clave única por intento de envío; un reintento con la misma clave devuelve la misma
+        respuesta (con `Idempotent-Replayed: true`) sin repetir la operación, durante 48 h.
+        Solo se guardan las respuestas exitosas. Si llega mientras el primer intento sigue en
+        curso, responde 409 `SOLICITUD_EN_PROCESO`.
+      schema: { type: string, format: uuid }
+
+  responses:
+    Validacion:
+      description: '`VALIDACION`: datos inválidos (puntuación fuera de 1 a 5, aspecto desconocido, texto demasiado largo, `motivo` faltante al ocultar).'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NoAutenticado:
+      description: Token ausente o inválido (lo responde Traefik). Si la petición llega sin `X-Usuario-Id` o `X-Usuario-Rol`, el servicio responde `NO_AUTENTICADO`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Prohibido:
+      description: '`ROL_NO_PERMITIDO` (se registra en la bitácora de auditoría) o `NO_ES_DUENO` (la reseña no es del usuario, o el servicio no es del prestador).'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ProhibidoNoElegible:
+      description: '`ROL_NO_PERMITIDO` o `NO_ELEGIBLE` (sin reserva finalizada del servicio). Ambos se registran en la bitácora de auditoría.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ProhibidoReporte:
+      description: '`ROL_NO_PERMITIDO` o `RESENA_PROPIA` (no se puede reportar la reseña propia).'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NoEncontrado:
+      description: '`NO_ENCONTRADO`: la reseña no existe o no está visible para el usuario.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ConflictoCrear:
+      description: '`YA_RESENADO` (el turista ya reseñó el servicio; se edita con PUT) o `SOLICITUD_EN_PROCESO` (mismo `Idempotency-Key` en curso).'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ConflictoEdicion:
+      description: '`VERSION_DISTINTA` (la reseña cambió; la versión actual va en `ETag`) o `RESENA_EN_MODERACION` (en revisión u oculta no se puede editar; oculta no se puede responder).'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    VersionDistinta:
+      description: '`VERSION_DISTINTA`: la reseña cambió en el servidor; la versión actual va en `ETag`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    YaReportada:
+      description: '`YA_REPORTADA`: el usuario ya reportó esta reseña.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    DemasiadosReportes:
+      description: '`DEMASIADOS_REPORTES`: más de 10 reportes en la última hora; `Retry-After` dice cuántos segundos esperar.'
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    FaltaIfMatch:
+      description: '`FALTA_IF_MATCH`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message, correlation_id]
+      properties:
+        error: { type: string, example: NO_ELEGIBLE }
+        message: { type: string, description: En el idioma de `Accept-Language`. }
+        correlation_id: { type: string }
+
+    Nulo:
+      description: |
+        Valor nulo. En OpenAPI 3.0 `nullable` no se aplica a un `$ref`, así que un campo que
+        puede ser nulo y apunta a otro esquema se escribe
+        `anyOf: [{ $ref: ... }, { $ref: '#/components/schemas/Nulo' }]`.
+      type: object
+      nullable: true
+      enum: [null]
+
+    EstadoResena:
+      type: string
+      description: '`PUBLICADA` (visible), `EN_REVISION` (oculta esperando al Administrador; su puntuación sigue contando), `OCULTA` (decisión del Administrador; no cuenta).'
+      enum: [PUBLICADA, EN_REVISION, OCULTA]
+
+    Aspecto:
+      type: string
+      description: Aspecto calificable; la etiqueta en el idioma pedido va en `aspectos_etiquetas`.
+      enum: [LIMPIEZA, ATENCION, CALIDAD_PRECIO, SEGURIDAD, GUIANZA]
+
+    Puntuacion:
+      type: integer
+      minimum: 1
+      maximum: 5
+
+    Aspectos:
+      type: object
+      description: Calificación opcional de 1 a 5 por aspecto; se informa solo lo que aplica.
+      additionalProperties: false
+      properties:
+        LIMPIEZA: { $ref: '#/components/schemas/Puntuacion' }
+        ATENCION: { $ref: '#/components/schemas/Puntuacion' }
+        CALIDAD_PRECIO: { $ref: '#/components/schemas/Puntuacion' }
+        SEGURIDAD: { $ref: '#/components/schemas/Puntuacion' }
+        GUIANZA: { $ref: '#/components/schemas/Puntuacion' }
+
+    ResenaGuardar:
+      type: object
+      required: [puntuacion]
+      additionalProperties: false
+      properties:
+        puntuacion: { $ref: '#/components/schemas/Puntuacion' }
+        aspectos: { $ref: '#/components/schemas/Aspectos' }
+        comentario: { type: string, maxLength: 2000, nullable: true, description: 'Texto libre; se guarda tal cual y se muestra como texto, nunca como HTML.' }
+
+    ResenaCrear:
+      type: object
+      required: [servicio_id, puntuacion]
+      additionalProperties: false
+      properties:
+        servicio_id: { type: string, format: uuid }
+        puntuacion: { $ref: '#/components/schemas/Puntuacion' }
+        aspectos: { $ref: '#/components/schemas/Aspectos' }
+        comentario: { type: string, maxLength: 2000, nullable: true, description: 'Texto libre; se guarda tal cual y se muestra como texto, nunca como HTML.' }
+
+    RespuestaGuardar:
+      type: object
+      required: [texto]
+      additionalProperties: false
+      properties:
+        texto: { type: string, minLength: 1, maxLength: 1000 }
+
+    RespuestaPrestador:
+      type: object
+      required: [texto, respondida_en]
+      properties:
+        texto: { type: string }
+        respondida_en: { type: string, format: date-time }
+
+    ResenaPublica:
+      type: object
+      description: Vista pública y anónima.
+      required: [id, servicio_id, autor, mes_visita, puntuacion, aspectos, aspectos_etiquetas, comentario, respuesta, creada_en, editada_en]
+      properties:
+        id: { type: string, format: uuid }
+        servicio_id: { type: string, format: uuid }
+        autor: { type: string, description: '"Turista verificado" en el idioma pedido; nunca el nombre.', example: Turista verificado }
+        mes_visita: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$', description: Mes de la visita más reciente al escribir o editar la reseña (AAAA-MM); una visita posterior no lo cambia hasta que el turista la edite., example: 2026-11 }
+        puntuacion: { $ref: '#/components/schemas/Puntuacion' }
+        aspectos: { $ref: '#/components/schemas/Aspectos' }
+        aspectos_etiquetas:
+          type: object
+          description: Etiqueta en el idioma pedido de cada aspecto presente.
+          additionalProperties: { type: string }
+          example: { LIMPIEZA: Limpieza }
+        comentario: { type: string, nullable: true }
+        respuesta:
+          anyOf: [{ $ref: '#/components/schemas/RespuestaPrestador' }, { $ref: '#/components/schemas/Nulo' }]
+        creada_en: { type: string, format: date-time }
+        editada_en: { type: string, format: date-time, nullable: true }
+
+    ResenaPropia:
+      description: La reseña vista por su autor, con su estado y versión.
+      allOf:
+        - $ref: '#/components/schemas/ResenaPublica'
+        - type: object
+          required: [estado, estado_etiqueta, version]
+          properties:
+            estado: { $ref: '#/components/schemas/EstadoResena' }
+            estado_etiqueta: { type: string }
+            version: { type: integer, minimum: 1 }
+
+    ResenaPrestador:
+      description: La reseña vista por el prestador dueño del servicio (sigue siendo anónima).
+      allOf:
+        - $ref: '#/components/schemas/ResenaPublica'
+        - type: object
+          required: [estado, estado_etiqueta, version]
+          properties:
+            estado: { type: string, enum: [PUBLICADA, EN_REVISION] }
+            estado_etiqueta: { type: string }
+            version: { type: integer, minimum: 1 }
+
+    Reporte:
+      type: object
+      required: [motivo, motivo_etiqueta, detalle, rol_reportante, reportado_en]
+      properties:
+        motivo: { $ref: '#/components/schemas/MotivoReporte' }
+        motivo_etiqueta: { type: string }
+        detalle: { type: string, nullable: true }
+        rol_reportante: { type: string, enum: [Turista, Prestador] }
+        es_dueno: { type: boolean, description: 'Lo reportó el prestador dueño del servicio.' }
+        reportado_en: { type: string, format: date-time }
+
+    ResenaModeracion:
+      description: Vista del Administrador, con los reportes sin resolver y el autor (para auditar).
+      allOf:
+        - $ref: '#/components/schemas/ResenaPublica'
+        - type: object
+          required: [estado, estado_etiqueta, version, turista_id, reportes]
+          properties:
+            estado: { $ref: '#/components/schemas/EstadoResena' }
+            estado_etiqueta: { type: string }
+            version: { type: integer, minimum: 1 }
+            turista_id: { type: string, format: uuid }
+            reportes:
+              type: array
+              items: { $ref: '#/components/schemas/Reporte' }
+
+    MotivoReporte:
+      type: string
+      enum: [OFENSIVO, SPAM, FALSO, DATOS_PERSONALES, OTRO]
+
+    ReporteCrear:
+      type: object
+      required: [motivo]
+      additionalProperties: false
+      properties:
+        motivo: { $ref: '#/components/schemas/MotivoReporte' }
+        detalle: { type: string, maxLength: 500, nullable: true, description: 'Obligatorio con `OTRO`.' }
+
+    DecisionModeracion:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision: { type: string, enum: [PUBLICAR, OCULTAR] }
+        motivo: { type: string, minLength: 1, maxLength: 500, nullable: true, description: 'Obligatorio con `OCULTAR`; queda en la auditoría.' }
+
+    ResumenServicio:
+      type: object
+      required: [servicio_id, total, promedio, distribucion, aspectos]
+      properties:
+        servicio_id: { type: string, format: uuid }
+        total: { type: integer, minimum: 0 }
+        promedio: { type: number, minimum: 1, maximum: 5, nullable: true, description: 'Con dos decimales; nulo sin reseñas.' }
+        distribucion:
+          type: object
+          description: Cuántas reseñas tienen cada puntuación.
+          required: ['1', '2', '3', '4', '5']
+          properties:
+            '1': { type: integer, minimum: 0 }
+            '2': { type: integer, minimum: 0 }
+            '3': { type: integer, minimum: 0 }
+            '4': { type: integer, minimum: 0 }
+            '5': { type: integer, minimum: 0 }
+        aspectos:
+          type: object
+          description: Promedio y cantidad de cada aspecto calificado al menos una vez.
+          additionalProperties:
+            type: object
+            required: [promedio, total]
+            properties:
+              promedio: { type: number, minimum: 1, maximum: 5 }
+              total: { type: integer, minimum: 1 }
+
+    ServicioPendiente:
+      type: object
+      required: [servicio_id, ultima_visita]
+      properties:
+        servicio_id: { type: string, format: uuid }
+        ultima_visita: { type: string, format: date }
+
+    PaginaResenas:
+      type: object
+      required: [items, pagina, tamano, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ResenaPublica' } }
+        pagina: { type: integer }
+        tamano: { type: integer }
+        total: { type: integer }
+
+    PaginaResenasPropias:
+      type: object
+      required: [items, pagina, tamano, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ResenaPropia' } }
+        pagina: { type: integer }
+        tamano: { type: integer }
+        total: { type: integer }
+
+    PaginaResenasPrestador:
+      type: object
+      required: [items, pagina, tamano, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ResenaPrestador' } }
+        pagina: { type: integer }
+        tamano: { type: integer }
+        total: { type: integer }
+
+    PaginaModeracion:
+      type: object
+      required: [items, pagina, tamano, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ResenaModeracion' } }
+        pagina: { type: integer }
+        tamano: { type: integer }
+        total: { type: integer }

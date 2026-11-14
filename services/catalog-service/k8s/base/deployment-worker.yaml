@@ -1,0 +1,79 @@
+# Worker: relay del outbox hacia RabbitMQ, consumidores de eventos, correos y limpieza diaria.
+# Una réplica alcanza para el prototipo. Se puede subir a 2 sin duplicar publicaciones: el
+# relay toma los eventos con SKIP LOCKED y los consumidores son idempotentes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-worker
+  labels:
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-service
+        app.kubernetes.io/component: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9102"
+        prometheus.io/path: /metrics
+    spec:
+      automountServiceAccountToken: false
+      # Al recibir SIGTERM el worker termina el lote en curso y cierra las conexiones.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: catalog-service
+          command: ["python", "-m", "app.worker"]
+          ports:
+            - name: metricas
+              containerPort: 9102
+          envFrom:
+            - configMapRef:
+                name: catalog-config
+            - secretRef:
+                name: catalog-secretos
+          resources:
+            requests: { cpu: 50m, memory: 192Mi }
+            limits: { cpu: 1000m, memory: 384Mi }
+          # Hasta 90 s para arrancar en un nodo lento antes de que empiece la liveness.
+          startupProbe:
+            httpGet: { path: /metrics, port: metricas }
+            periodSeconds: 2
+            failureThreshold: 45
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet: { path: /metrics, port: metricas }
+            periodSeconds: 15
+            failureThreshold: 3
+            timeoutSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

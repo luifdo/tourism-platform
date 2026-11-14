@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "resena.ocultada.v1.json",
+  "title": "resena.ocultada (payload v1)",
+  "description": "Publicado por review-service cuando el Administrador oculta una reseña tras moderarla (UC29), por ejemplo por falsa u ofensiva. catalog-service la quita de la calificación promedio; si después se vuelve a publicar (resena.publicada), vuelve a contar. Trae la puntuación para que catalog la registre aunque este evento llegue antes que su resena.publicada.",
+  "type": "object",
+  "required": [
+    "resena_id",
+    "servicio_id",
+    "turista_id",
+    "puntuacion",
+    "moderada_por"
+  ],
+  "properties": {
+    "resena_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "servicio_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "turista_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "puntuacion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "moderada_por": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Administrador que la ocultó."
+    },
+    "motivo": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "additionalProperties": false
+}

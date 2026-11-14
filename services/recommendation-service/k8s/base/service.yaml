@@ -1,0 +1,16 @@
+# Destino de Traefik (/api/recommendations). Nadie más llama al chatbot.
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommendation-service
+  labels:
+    app.kubernetes.io/name: recommendation-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: recommendation-service
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8005
+      targetPort: http

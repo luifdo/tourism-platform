@@ -1,0 +1,8 @@
+# Cambia solo lo que es distinto en local. Las credenciales hacia el PostgreSQL y el RabbitMQ
+# del compose van en secretos.env.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: review-config
+data:
+  ENVIRONMENT: development

@@ -1,0 +1,26 @@
+# El servicio pasa casi todo el tiempo esperando a Groq, así que la CPU casi no se mueve: el HPA
+# sirve para tener réplicas de respaldo. La cuota del proveedor, no las réplicas, limita el chat.
+# Rango pendiente de confirmar con el Plan §7.3 y con Alvaro.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: recommendation-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: recommendation-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+    scaleDown:
+      stabilizationWindowSeconds: 300

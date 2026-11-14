@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "disponibilidad.actualizada.v1.json",
+  "title": "disponibilidad.actualizada (payload v1)",
+  "description": "Publicado por booking-service cada vez que cambia la fila de DISPONIBILIDAD_CUPO de un servicio en un día: el prestador edita su calendario (UC19) o una reserva toma o libera cupos (solicitar, modificar, rechazar, cancelar, expirar). catalog-service mantiene con él una proyección para filtrar la búsqueda y el mapa por fecha y personas sin llamar a booking (Plan §4.1: solo el Módulo 5 llama a otros servicios). Lleva el estado completo del día, no la diferencia, y la `version` de la fila: el consumidor descarta las versiones menores o iguales a la que ya tiene, así el orden de llegada no importa. Al reservar, booking vuelve a comprobar los cupos con bloqueo: este dato es para buscar, no para garantizar el cupo.",
+  "type": "object",
+  "required": [
+    "servicio_id",
+    "fecha",
+    "cupos_totales",
+    "cupos_disponibles",
+    "version"
+  ],
+  "properties": {
+    "servicio_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "fecha": {
+      "type": "string",
+      "format": "date",
+      "description": "Día en America/Bogota."
+    },
+    "cupos_totales": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0 si el prestador cerró el día en su calendario (UC19)."
+    },
+    "cupos_disponibles": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "No mayor que cupos_totales."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Versión de la fila de DISPONIBILIDAD_CUPO en booking_db."
+    }
+  },
+  "additionalProperties": false
+}

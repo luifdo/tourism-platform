@@ -1,0 +1,16 @@
+# recommendation-service · /api/recommendations → recommendation-service:8005, sin quitar el prefijo.
+# Contrato: contracts/openapi/recommendation.yaml. Todo exige sesión; la respuesta del modelo puede tardar hasta 45 s.
+http:
+  routers:
+    recommendation-protegidas:
+      rule: "PathPrefix(`/api/recommendations`)"
+      priority: 10
+      middlewares: [protegida]
+      service: recommendation-service
+
+  services:
+    recommendation-service:
+      loadBalancer:
+        serversTransport: respuesta-larga
+        servers:
+          - url: http://recommendation-service:8005

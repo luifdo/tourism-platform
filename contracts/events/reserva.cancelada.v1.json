@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "reserva.cancelada.v1.json",
+  "title": "reserva.cancelada (payload v1)",
+  "description": "Publicado por booking-service cuando el turista o el prestador cancela una reserva (UC12).",
+  "type": "object",
+  "required": ["reserva_id", "servicio_id", "turista_id", "prestador_id", "fecha_reserva", "numero_personas", "cancelada_por"],
+  "properties": {
+    "reserva_id": { "type": "string", "format": "uuid" },
+    "servicio_id": { "type": "string", "format": "uuid" },
+    "turista_id": { "type": "string", "format": "uuid" },
+    "prestador_id": { "type": "string", "format": "uuid" },
+    "fecha_reserva": { "type": "string", "format": "date" },
+    "numero_personas": { "type": "integer", "minimum": 1 },
+    "cancelada_por": { "type": "string", "enum": ["Turista", "Prestador"] },
+    "motivo": { "type": "string", "maxLength": 500 }
+  },
+  "additionalProperties": false
+}

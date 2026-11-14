@@ -1,0 +1,112 @@
+# API REST. Antes de atender, el initContainer aplica las migraciones; si varios pods arrancan
+# a la vez, el candado de migrations/env.py hace que esperen al primero. Las migraciones deben
+# ser compatibles hacia atrás: durante el rolling update los pods viejos siguen atendiendo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+  labels:
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2 # el HPA lo ajusta entre 2 y 6
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-service
+        app.kubernetes.io/component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8002"
+        prometheus.io/path: /metrics
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migraciones
+          image: catalog-service
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: catalog-config
+            - secretRef:
+                name: catalog-secretos
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 1000m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: api
+          image: catalog-service
+          ports:
+            - name: http
+              containerPort: 8002
+          envFrom:
+            - configMapRef:
+                name: catalog-config
+            - secretRef:
+                name: catalog-secretos
+          resources:
+            requests: { cpu: 100m, memory: 256Mi } # el HPA calcula el 70 % sobre este request
+            limits: { cpu: 1000m, memory: 512Mi } # 1 CPU al arrancar: importar la app es pesado
+          # Mientras la app arranca no corren las otras sondas: hasta 90 s para empezar a
+          # escuchar en un nodo lento, sin que la liveness lo mate a medio arranque.
+          startupProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 2
+            failureThreshold: 45
+            timeoutSeconds: 2
+          # Readiness con /health (incluye la base): una réplica con problemas sale del
+          # enrutamiento en menos de 5 s (ESC-01, Plan §7.3).
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 2
+            failureThreshold: 2
+            timeoutSeconds: 2
+          # Liveness con /metrics, que no toca la base: si PostgreSQL cae, las réplicas dejan
+          # de recibir tráfico pero no se reinician todas sin motivo.
+          livenessProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              # Da tiempo a que Traefik saque el pod de sus endpoints antes de apagarlo.
+              exec:
+                command: ["python", "-c", "import time; time.sleep(5)"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

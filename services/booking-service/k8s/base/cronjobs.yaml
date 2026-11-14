@@ -1,0 +1,112 @@
+# Tareas programadas de la Guía §6.4. Usan la imagen de la API con otro comando (src/cron.py).
+# * Cada 15 min, hora de Bogotá. concurrencyPolicy Forbid: nunca dos ejecuciones de la misma tarea.
+# * Aunque coincidieran (p. ej. un Job manual), FOR UPDATE SKIP LOCKED reparte las filas sin repetir.
+# * Los eventos quedan en evento_outbox y los publica el relay de los pods de la API: el Job no
+#   habla con RabbitMQ y la NetworkPolicy (solo de entrada) no lo afecta.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: booking-expirar-solicitudes
+  labels:
+    app.kubernetes.io/name: booking-service
+    app.kubernetes.io/component: cron
+spec:
+  schedule: "*/15 * * * *"
+  timeZone: America/Bogota
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300 # si el clúster estuvo caído, no corre las ejecuciones viejas acumuladas
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: booking-service
+            app.kubernetes.io/component: cron
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: tarea
+              image: booking-service
+              command: ["python", "-m", "cron", "expirar-solicitudes"]
+              envFrom:
+                - configMapRef: { name: booking-service-config }
+                - secretRef: { name: booking-service-secretos }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: booking-finalizar-reservas
+  labels:
+    app.kubernetes.io/name: booking-service
+    app.kubernetes.io/component: cron
+spec:
+  schedule: "*/15 * * * *"
+  timeZone: America/Bogota
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: booking-service
+            app.kubernetes.io/component: cron
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: tarea
+              image: booking-service
+              command: ["python", "-m", "cron", "finalizar-reservas"]
+              envFrom:
+                - configMapRef: { name: booking-service-config }
+                - secretRef: { name: booking-service-secretos }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi

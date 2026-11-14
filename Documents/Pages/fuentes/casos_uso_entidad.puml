@@ -1,0 +1,34 @@
+@startuml CasosDeUso_Entidad
+!include _estilo.iuml
+left to right direction
+title Casos de uso — Entidad de Gestión del Destino
+
+actor "Entidad de Gestión\ndel Destino" as Ent
+
+rectangle "Plataforma Digital de Turismo — Santa Marta" {
+  package "Transversal" {
+    usecase "UC2 · Iniciar sesión" as UC2
+    usecase "UC5 · Cambiar idioma ES / EN" as UC5
+  }
+  package "Módulo 2: Catálogo, GIS & Inteligencia de Destino" {
+    usecase "UC16 · Ver mapa interactivo" as UC16
+    usecase "UC23 · Consultar indicadores\nde demanda" as UC23
+    usecase "UC24 · Monitorear capacidad\nde carga" as UC24
+    usecase "UC25 · Generar tableros\nde planificación" as UC25
+    usecase "UC38 · Exportar reportes\nCSV / PDF" as UC38
+    usecase "UC26 · Publicar alertas oficiales" as UC26
+  }
+}
+
+Ent --> UC2
+Ent --> UC5
+Ent --> UC16
+Ent --> UC23
+Ent --> UC24
+Ent --> UC25
+Ent --> UC26
+
+UC25 ..> UC23 : <<include>>
+UC25 ..> UC24 : <<include>>
+UC38 ..> UC25 : <<extend>>
+@enduml

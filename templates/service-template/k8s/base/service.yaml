@@ -1,0 +1,16 @@
+# Destino de Traefik (/api/<prefijo>) y de los servicios que llaman a este por REST.
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-template
+  labels:
+    app.kubernetes.io/name: service-template
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: service-template
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

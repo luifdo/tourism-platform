@@ -1,0 +1,31 @@
+# F-07: la imagen sin pip construye y corre en solo lectura
+# Fecha: 2026-10-30 14:46 UTC
+# Commit: 3c09bac + cambios locales de los arreglos previos al PR
+# Comando: bash -c 
+echo "--- pip y demas"; MSYS_NO_PATHCONV=1 docker run --rm --entrypoint sh iam-service:verificacion -c "
+command -v pip pip3 idle pydoc 2to3 || echo sin-binarios
+python -c \"import importlib.util as u; print({m: bool(u.find_spec(m)) for m in [\\\"pip\\\",\\\"setuptools\\\",\\\"ensurepip\\\",\\\"idlelib\\\",\\\"lib2to3\\\",\\\"test\\\",\\\"tkinter\\\",\\\"turtledemo\\\"]})\"
+python -c \"import app.main, app.worker, argon2, boto3, asyncpg, aio_pika; print(\\\"importa la app y el worker\\\")\" 2>&1 | tail -1
+id -u"
+
+
+--- pip y demas
+sin-binarios
+{'pip': False, 'setuptools': False, 'ensurepip': False, 'idlelib': False, 'lib2to3': False, 'test': False, 'tkinter': False, 'turtledemo': False}
+importa la app y el worker
+1000
+
+# Codigo de salida: 0
+
+--- corriendo en solo lectura, sin capacidades
+/iam-verif-api readonly=true capdrop=[ALL] corriendo=true reinicios=0
+/iam-verif-worker readonly=true capdrop=[ALL] corriendo=true reinicios=0
+/health -> 200
+worker /metrics -> 200
+alembic current, en solo lectura:
+d4a9e2c7b1f3 (head)
+errores de escritura en los logs: 0
+
+--- imagen final, tras el ultimo cambio del adaptador
+/iam-verif-api readonly=true capdrop=[ALL] corriendo=true reinicios=0
+errores de escritura en los logs: 0

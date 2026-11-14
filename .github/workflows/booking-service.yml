@@ -1,0 +1,242 @@
+name: booking-service
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "services/booking-service/**"
+      # test_outbox y test_manejador_servicios validan los eventos contra contracts/events/.
+      - "contracts/**"
+      - ".github/workflows/booking-service.yml"
+  push:
+    branches: [develop]
+    paths:
+      - "services/booking-service/**"
+      - "contracts/**"
+      - ".github/workflows/booking-service.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: booking-service-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+env:
+  IMAGEN_LOCAL: booking-service:ci
+
+jobs:
+  calidad:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: services/booking-service
+    # Mismos puertos, imágenes y credenciales que scripts/*_pruebas.py, que es lo que esperan
+    # las pruebas de integración por defecto (tests/integration/conftest.py).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: booking_db
+          POSTGRES_USER: booking
+          POSTGRES_PASSWORD: booking
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U booking -d booking_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: booking
+          RABBITMQ_DEFAULT_PASS: booking
+        ports:
+          - 5673:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Instalar uv y Python 3.12
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.1"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: services/booking-service/pyproject.toml
+
+      # Sin lockfile: se instalan las dependencias del pyproject (como el Dockerfile) más el
+      # extra dev. El código se importa desde src/ (pythonpath del pyproject), sin instalarlo.
+      - name: Instalar dependencias
+        run: |
+          uv venv
+          uv pip install -r pyproject.toml --extra dev
+
+      # Cada sesión parte de una base vacía y migrada (tests/integration/conftest.py).
+      - name: Pruebas con cobertura
+        run: >-
+          uv run --no-project pytest -q -rs
+          --cov=src/domain
+          --cov=src/application
+          --cov-report=term
+          --cov-fail-under=70
+          --junitxml=reporte-pruebas.xml
+
+      - name: Exigir cero pruebas omitidas
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --no-project python - <<'PY'
+          import os
+          import subprocess
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          reporte = Path("reporte-pruebas.xml")
+          if not reporte.is_file():
+              sys.exit("pytest no generó el reporte: no se puede comprobar qué se omitió.")
+
+          casos = list(ET.parse(reporte).getroot().iter("testcase"))
+          omitidas = [c for c in casos if c.find("skipped") is not None]
+          fallidas = [c for c in casos if c.find("failure") is not None or c.find("error") is not None]
+          cobertura = subprocess.run(
+              ["coverage", "report", "--format=total"], capture_output=True, text=True
+          ).stdout.strip()
+
+          lineas = [
+              "### booking-service: pruebas",
+              "",
+              f"- Ejecutadas: {len(casos)}",
+              f"- Fallidas: {len(fallidas)}",
+              f"- Omitidas: {len(omitidas)}",
+              f"- Cobertura de src/domain y src/application: {cobertura or 'sin dato'} %",
+              "",
+          ]
+          for caso in omitidas:
+              motivo = caso.find("skipped").get("message", "sin motivo")
+              lineas.append(f"- Omitida: `{caso.get('classname')}.{caso.get('name')}`: {motivo}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as resumen:
+              resumen.write("\n".join(lineas) + "\n")
+
+          if not casos:
+              sys.exit("El reporte no tiene pruebas.")
+          if omitidas:
+              # Si Postgres, RabbitMQ o Valkey no responden, la integración se omite sola:
+              # sin esto, el job pasaría en verde.
+              sys.exit(f"{len(omitidas)} pruebas omitidas: la regla es cero omisiones.")
+          PY
+
+  imagen:
+    needs: calidad
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Construir la imagen
+        uses: docker/build-push-action@v7
+        with:
+          context: services/booking-service
+          push: false
+          load: true
+          tags: ${{ env.IMAGEN_LOCAL }}
+          cache-from: type=gha,scope=booking-service
+          cache-to: type=gha,mode=max,scope=booking-service
+
+      - name: Escanear con Trivy
+        # Sin etiqueta mayor en este repositorio: se fija por el commit de la etiqueta.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGEN_LOCAL }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          # Guarda la base de vulnerabilidades con actions/cache, para no descargarla cada vez.
+          cache: "true"
+
+      - name: Resumen
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          {
+            echo "### booking-service: imagen"
+            echo ""
+            echo "Construida y escaneada (CRITICAL con parche disponible)."
+            echo ""
+            echo "En push a \`develop\`, el job \`publicar\` la sube como" \
+              "\`ghcr.io/${OWNER,,}/booking-service\` con dos etiquetas: el SHA del commit y \`develop\`."
+            echo "Para desplegar se fija el SHA en un PR \`deploy(booking-service): <sha>\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publicar:
+    needs: imagen
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Entrar a GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calcular el nombre de la imagen
+        id: nombre
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "imagen=ghcr.io/${OWNER,,}/booking-service" >> "$GITHUB_OUTPUT"
+
+      # Reutiliza de la caché las capas que escaneó el job imagen.
+      - name: Publicar con la etiqueta del commit y develop
+        uses: docker/build-push-action@v7
+        with:
+          context: services/booking-service
+          push: true
+          tags: |
+            ${{ steps.nombre.outputs.imagen }}:${{ github.sha }}
+            ${{ steps.nombre.outputs.imagen }}:develop
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=booking-service
+
+      - name: Resumen
+        env:
+          IMAGEN: ${{ steps.nombre.outputs.imagen }}
+        run: |
+          {
+            echo "### booking-service: imagen publicada"
+            echo ""
+            echo "- \`${IMAGEN}:${GITHUB_SHA}\`"
+            echo "- \`${IMAGEN}:develop\`"
+          } >> "$GITHUB_STEP_SUMMARY"

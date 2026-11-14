@@ -1,0 +1,14 @@
+# recommendation-service · /api/recommendations → recommendation-service:8005 sin quitar el prefijo.
+# Equivale a ../../compose/50-recommendation.yml. El Service está en services/recommendation-service/k8s/base.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata: { name: recommendation-service }
+spec:
+  entryPoints: [web]
+  routes:
+    - match: PathPrefix(`/api/recommendations`)
+      kind: Rule
+      priority: 10
+      middlewares: [{ name: protegida }]
+      services:
+        - { name: recommendation-service, port: 8005, serversTransport: respuesta-larga }

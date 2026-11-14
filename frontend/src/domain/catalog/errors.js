@@ -4,6 +4,7 @@ export const CODIGOS = Object.freeze({
   NO_ENCONTRADO: 'NO_ENCONTRADO',
   SIN_CONEXION: 'SIN_CONEXION',
   RESPUESTA_INVALIDA: 'RESPUESTA_INVALIDA',
+  PERFIL_INACTIVO: 'PERFIL_INACTIVO', // 403 de un prestador cuyo RNT y RUT el Admin aún no aprueba (o cuya cuenta se suspendió)
   ERROR: 'ERROR',
 })
 

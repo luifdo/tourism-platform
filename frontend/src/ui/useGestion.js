@@ -42,5 +42,8 @@ export function useGestion() {
     return true
   }
 
-  return { mensaje, camposDe, sesionVencida, esVencida }
+  /** El 403 de un prestador sin aprobar (o suspendido): no es una falla, es un estado de la cuenta. */
+  const esPerfilInactivo = (e) => e?.code === 'PERFIL_INACTIVO'
+
+  return { mensaje, camposDe, sesionVencida, esVencida, esPerfilInactivo }
 }

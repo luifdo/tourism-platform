@@ -34,7 +34,7 @@ function aDetalle(s, idioma) {
  * Adaptador simulado del puerto CatalogGateway: responde con el catálogo de demostración, con la misma forma que
  * el real, para desarrollar y probar la interfaz sin Gateway (VITE_API_MOCK=true).
  */
-export function createMockCatalogGateway({ servicios = DEMO_SERVICIOS, esperaMs = 150, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+export function createMockCatalogGateway({ servicios = DEMO_SERVICIOS, verificarPrestador = async () => {}, esperaMs = 150, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const buscar = (id) => servicios.find((s) => s.id === id)
 
   return {
@@ -78,6 +78,8 @@ export function createMockCatalogGateway({ servicios = DEMO_SERVICIOS, esperaMs 
     /** El simulador le da al prestador con sesión todos los servicios de demostración (no hay dueños distintos). */
     async serviciosPrestador({ pagina = 1, tamano = 100 } = {}, idioma) {
       await sleep(esperaMs)
+      // Como el real: 403 PERFIL_INACTIVO si el prestador aún no está aprobado
+      await verificarPrestador().catch((e) => { throw new CatalogError(e.code === 'PERFIL_INACTIVO' ? CODIGOS.PERFIL_INACTIVO : CODIGOS.ERROR, e.message, { status: e.status ?? 0 }) })
       const l = lang(idioma)
       const todos = servicios.map((s) => ({
         id: s.id, nombre: s[l].nombre, categoria: s.categoria, categoriaEtiqueta: CATEGORIAS_DEMO[s.categoria][l],

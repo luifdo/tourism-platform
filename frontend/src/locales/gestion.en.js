@@ -4,14 +4,14 @@ export default {
     loading: 'Loading…', retry: 'Retry', empty: 'Nothing to show yet.', save: 'Save', saving: 'Saving…', sending: 'Sending…', searching: 'Searching…',
     cancel: 'Cancel', confirm: 'Confirm', edit: 'Edit', remove: 'Remove', all: 'All', clear: 'Clear', apply: 'Apply', optional: 'optional', days: 'days',
     from: 'From', to: 'To', prev: 'Previous', next: 'Next', pagination: 'Pagination', pageOf: 'Page {n} of {total}',
-    unexpected: 'Something went wrong on the page. Reference: {ref}.', reload: 'Reload', dismiss: 'Dismiss', reference: 'reference',
+    noPermission: 'You do not have permission to view that page.', unexpected: 'Something went wrong on the page. Reference: {ref}.', reload: 'Reload', dismiss: 'Dismiss', reference: 'reference',
     needOnline: 'Requires a connection.',
     errors: {
       generic: 'We could not complete the action. Please try again.', SIN_CONEXION: 'No connection. Try again when the network is back.',
       NO_AUTENTICADO: 'Your session expired. Log in again.', ROL_INSUFICIENTE: 'Your role cannot do this.', NO_ENCONTRADO: 'We could not find what you are looking for.',
       VALIDACION: 'Check the data and try again.', SERVICIO_NO_DISPONIBLE: 'The service is unavailable right now. Try again in a moment.',
       VERSION_DISTINTA: 'Someone else changed this while you were editing. We reloaded the current version: review it and try again.',
-      VERSION_CONFLICTO: 'Someone else changed this while you were editing. Reload and try again.', FALTA_IF_MATCH: 'The version is missing: reload the page.',
+      PERFIL_INACTIVO: 'Available once the Admin approves your account. Upload your RNT and RUT in “My business”.', VERSION_CONFLICTO: 'Someone else changed this while you were editing. Reload and try again.', FALTA_IF_MATCH: 'The version is missing: reload the page.',
       TOKEN_INVALIDO: 'Your session expired. Log in again.',
     },
     fieldErrors: {
@@ -66,7 +66,7 @@ export default {
   negocio: {
     title: 'My business', lead: 'What tourists see on each of your listings: how to reach you and your cancellation policy.', businessName: 'Business name', phone: 'Contact phone', address: 'Address',
     policyEs: 'Cancellation policy (Spanish)', policyEn: 'Cancellation policy (English)', policyNote: 'It can be more flexible than the platform rule, never stricter.', saved: 'Details saved.',
-    errors: { VERSION_DISTINTA: 'Someone else changed these details. We reloaded the current version: review it and save again.', VALIDACION: 'Check the data (phone up to 30 characters, address up to 200).' },
+    errors: { PERFIL_INACTIVO: 'Available once the Admin approves your account.', VERSION_DISTINTA: 'Someone else changed these details. We reloaded the current version: review it and save again.', VALIDACION: 'Check the data (phone up to 30 characters, address up to 200).' },
   },
 
   oferta: {
@@ -140,7 +140,7 @@ export default {
     approveConfirm: 'The current RNT and RUT will be approved and the provider will be able to publish offers.', rejectHelp: 'Choose which documents you reject and write the reason for each.', rejectReason: 'Reason for rejection',
     approved: 'You approved “{nombre}”.', rejected: 'You rejected the documents of “{nombre}”.',
     usersTitle: 'Users and roles', usersLead: 'Search accounts, change their role, or activate and deactivate them. You cannot change your own account.', search: 'Search', searchPh: 'Name or email', searchGo: 'Search', activeOnly: 'Active only', inactiveOnly: 'Inactive only',
-    usersEmpty: 'There are no users with those filters.', inactive: 'Inactive', you: 'You', since: 'since {fecha}', changeRole: 'Change role', newRole: 'New role', deactivate: 'Deactivate', activate: 'Activate',
+    viewAudit: 'View in the audit log', usersEmpty: 'There are no users with those filters.', inactive: 'Inactive', you: 'You', since: 'since {fecha}', changeRole: 'Change role', newRole: 'New role', deactivate: 'Deactivate', activate: 'Activate',
     deactivateConfirm: 'The person will not be able to log in and their sessions will end.', activateConfirm: 'The person will be able to log in again.', revokesSessions: 'Changing the role or deactivating the account ends all of their sessions.', reasonOptional: 'Reason (optional)',
     roleChanged: 'You changed the role of {nombre}.', activated: 'You activated the account of {nombre}.', deactivated: 'You deactivated the account of {nombre}.',
     moderationTitle: 'Moderate reviews', moderationLead: 'Reported reviews. First the ones under review (hidden, waiting for your decision), then the published ones with reports.', moderationEmpty: 'There are no reviews to moderate.',

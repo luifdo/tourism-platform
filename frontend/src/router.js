@@ -35,7 +35,7 @@ router.beforeEach((to) => {
     return { name: 'login', query: { redirect: to.fullPath, ...(e.expirada ? { expirada: '1' } : {}) } }
   if (to.meta.guestOnly && e.autenticado) return { path: rutaSegura(to.query.redirect) }
   // Una pantalla de un rol (el panel del prestador, de la Entidad, del Admin) no la abre quien tiene otro: el servicio igual respondería 403
-  if (to.meta.roles && e.usuario && !to.meta.roles.includes(e.usuario.rol)) return { name: 'home' }
+  if (to.meta.roles && e.usuario && !to.meta.roles.includes(e.usuario.rol)) return { name: 'home', query: { sinpermiso: '1' } } // y la portada avisa por qué (App.vue)
 })
 
 export default router

@@ -19,6 +19,8 @@ const IDS = ['prestadores', 'usuarios', 'resenas', 'bitacora']
 const pestana = ref(IDS.includes(route.hash.slice(1)) ? route.hash.slice(1) : 'prestadores')
 watch(pestana, (p) => router.replace({ hash: `#${p}` }))
 watch(() => route.hash, (h) => { if (IDS.includes(h.slice(1))) pestana.value = h.slice(1) }) // un enlace con #resenas abre esa pestaña
+const usuarioBitacora = ref('')
+function verBitacoraDe(id) { usuarioBitacora.value = id; pestana.value = 'bitacora' }
 const pestanas = computed(() => IDS.map((id) => ({ id, label: t(`admin.tabs.${id}`) })))
 </script>
 
@@ -31,9 +33,9 @@ const pestanas = computed(() => IDS.map((id) => ({ id, label: t(`admin.tabs.${id
       <TabsNav v-model="pestana" :tabs="pestanas" :etiqueta="t('admin.title')" prefijo="adm" />
       <div :id="`adm-panel-${pestana}`" class="mt-6" role="tabpanel" :aria-labelledby="`adm-${pestana}`">
         <PrestadoresAdmin v-if="pestana === 'prestadores'" />
-        <UsuariosAdmin v-else-if="pestana === 'usuarios'" />
+        <UsuariosAdmin v-else-if="pestana === 'usuarios'" @ver-bitacora="verBitacoraDe" />
         <ModeracionResenas v-else-if="pestana === 'resenas'" />
-        <BitacoraAdmin v-else />
+        <BitacoraAdmin v-else :usuario-id="usuarioBitacora" />
       </div>
     </div>
   </div>

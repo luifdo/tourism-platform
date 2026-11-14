@@ -1,5 +1,5 @@
 <script setup>
-import { watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSession } from './ui/useSession'
 import AppNavbar from './components/AppNavbar.vue'
@@ -14,6 +14,9 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { sesion } = useSession()
+// La guarda del router manda al inicio a quien abre una pantalla de otro rol (/admin siendo prestador): el aviso explica qué pasó
+const sinPermiso = computed(() => route.query.sinpermiso === '1')
+const cerrarAviso = () => { const { sinpermiso, ...resto } = route.query; router.replace({ query: resto, hash: route.hash }) }
 watch(() => sesion.expirada, (expirada) => {
   if (expirada && route.meta.requiresAuth && navigator.onLine)
     router.replace({ name: 'login', query: { redirect: route.fullPath, expirada: '1' } })
@@ -23,6 +26,10 @@ watch(() => sesion.expirada, (expirada) => {
 <template>
   <AppNavbar />
   <OfflineBar />
+  <div v-if="sinPermiso" class="flex flex-wrap items-center justify-between gap-3 bg-warn-bg px-[clamp(16px,3vw,32px)] py-2.5 text-sm text-ink-control" role="status">
+    <p>{{ t('gestion.noPermission') }}</p>
+    <button type="button" class="font-semibold underline" @click="cerrarAviso">{{ t('gestion.dismiss') }}</button>
+  </div>
   <!-- Un error inesperado: se avisa en vez de dejar la pantalla a medias; la referencia sirve para reportarlo -->
   <div v-if="errorGlobal.hay" class="flex flex-wrap items-center justify-between gap-3 bg-danger-bg px-[clamp(16px,3vw,32px)] py-2.5 text-sm text-danger" role="alert">
     <p>{{ t('gestion.unexpected', { ref: errorGlobal.referencia }) }}</p>

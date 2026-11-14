@@ -67,3 +67,37 @@ describe('fetch autenticado', () => {
     await expect(f('/x')).rejects.toThrow('Failed to fetch')
   })
 })
+
+describe('qué 401 se renuevan', () => {
+  // Una respuesta con cuerpo JSON legible (clone().json()), como la del servicio real
+  const con401 = (cuerpo) => ({ status: 401, ok: false, clone: () => ({ json: async () => { if (cuerpo === undefined) throw new SyntaxError('sin JSON'); return cuerpo } }) })
+  const armar = (primera) => {
+    const fetchFn = vi.fn().mockImplementationOnce(async () => primera).mockImplementationOnce(async () => ({ status: 200, ok: true }))
+    const tokens = { obtener: vi.fn(async () => 'a1'), renovarTras401: vi.fn(async () => 'a2') }
+    return { fetchFn, tokens, f: createAuthorizedFetch({ fetchFn, tokens }) }
+  }
+
+  it('TOKEN_INVALIDO (iam) renueva y repite', async () => {
+    const { f, fetchFn, tokens } = armar(con401({ code: 'TOKEN_INVALIDO' }))
+    expect((await f('/x')).status).toBe(200)
+    expect(tokens.renovarTras401).toHaveBeenCalledTimes(1)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+  it('NO_AUTENTICADO (catalog y booking, campo `error`) renueva y repite', async () => {
+    const { f, tokens } = armar(con401({ error: 'NO_AUTENTICADO', message: 'x' }))
+    expect((await f('/x')).status).toBe(200)
+    expect(tokens.renovarTras401).toHaveBeenCalledTimes(1)
+  })
+  it('CREDENCIALES_INVALIDAS (contraseña mal al borrar la cuenta) NO gasta una rotación ni repite la petición', async () => {
+    const { f, fetchFn, tokens } = armar(con401({ code: 'CREDENCIALES_INVALIDAS', detail: 'La contraseña no es correcta.' }))
+    const r = await f('/api/iam/perfil', { method: 'DELETE', body: '{"password":"mala"}' })
+    expect(r.status).toBe(401)
+    expect(tokens.renovarTras401).not.toHaveBeenCalled()
+    expect(fetchFn).toHaveBeenCalledTimes(1) // un DELETE irreversible no se repite
+  })
+  it('un 401 sin cuerpo legible (un proxy, un cuerpo vacío) se trata como token vencido, como antes', async () => {
+    const { f, tokens } = armar(con401(undefined))
+    expect((await f('/x')).status).toBe(200)
+    expect(tokens.renovarTras401).toHaveBeenCalledTimes(1)
+  })
+})
